@@ -268,8 +268,31 @@ export interface Database {
         { read_at?: string | null }
       >;
       order_timeline: TableShape<OrderTimelineRow, never, never>;
-      activity_logs: TableShape<ActivityLogRow, never, never>;
-      audit_logs: TableShape<AuditLogRow, never, never>;
+      activity_logs: TableShape<
+        ActivityLogRow,
+        {
+          actor_id?: string | null;
+          verb: string;
+          summary: string;
+          reference_type?: ReferenceType | null;
+          reference_id?: string | null;
+          metadata?: Json;
+        },
+        never
+      >;
+      audit_logs: TableShape<
+        AuditLogRow,
+        {
+          actor_id?: string | null;
+          action: AuditAction;
+          entity_type: string;
+          entity_id?: string | null;
+          old_values?: Json | null;
+          new_values?: Json | null;
+          metadata?: Json;
+        },
+        never
+      >;
       organization_settings: TableShape<
         OrganizationSettingsRow,
         never,

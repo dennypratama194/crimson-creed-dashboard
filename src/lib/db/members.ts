@@ -1,9 +1,70 @@
 import "server-only";
 
+import type { AppRole } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
+import type { MemberListStatus } from "@/lib/validation/member";
 
 export type Member = Tables<"members">;
+export type MemberWithOrderCount = Member & { order_count: number };
+
+export const MEMBER_PAGE_SIZE = 25;
+
+export async function listMembers(options: {
+  page?: number;
+  search?: string;
+  status?: MemberListStatus;
+  role?: AppRole;
+}): Promise<{
+  rows: MemberWithOrderCount[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const supabase = await createClient();
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = MEMBER_PAGE_SIZE;
+  const offset = (page - 1) * pageSize;
+
+  let query = supabase
+    .from("members")
+    .select("*", { count: "exact" })
+    .order("display_name", { ascending: true });
+
+  if (options.status === "active") query = query.eq("status", "ACTIVE");
+  if (options.status === "inactive") query = query.eq("status", "INACTIVE");
+  if (options.role) query = query.eq("role", options.role);
+
+  const search = options.search
+    ?.replace(/[,()%*]/g, " ")
+    .trim()
+    .slice(0, 60);
+  if (search) {
+    query = query.or(
+      `display_name.ilike.%${search}%,username.ilike.%${search}%`,
+    );
+  }
+
+  const { data, error, count } = await query.range(
+    offset,
+    offset + pageSize - 1,
+  );
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const { data: orderRows } = await supabase.from("orders").select("member_id");
+  const counts = new Map<string, number>();
+  for (const row of orderRows ?? []) {
+    counts.set(row.member_id, (counts.get(row.member_id) ?? 0) + 1);
+  }
+
+  return {
+    rows: rows.map((m) => ({ ...m, order_count: counts.get(m.id) ?? 0 })),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
+}
 
 /** Map of member id -> display name, for decorating rows that only carry ids. */
 export async function getMemberNames(

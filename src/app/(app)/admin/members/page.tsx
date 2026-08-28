@@ -1,15 +1,151 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Plus, Users } from "lucide-react";
 
-import { PagePlaceholder } from "@/components/patterns/page-placeholder";
+import { APP_ROLES, type AppRole } from "@/lib/constants/enums";
+import {
+  APP_ROLE_LABEL,
+  MEMBER_RANK_LABEL,
+  MEMBER_STATUS_LABEL,
+} from "@/lib/constants/labels";
+import { listMembers } from "@/lib/db/members";
+import {
+  MEMBER_LIST_STATUSES,
+  type MemberListStatus,
+} from "@/lib/validation/member";
+import { EmptyState } from "@/components/patterns/empty-state";
+import { PageHeader } from "@/components/patterns/page-header";
+import { Pagination } from "@/components/patterns/pagination";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { MembersFilterBar } from "@/app/(app)/admin/members/members-filter-bar";
 
 export const metadata: Metadata = { title: "Members" };
 
-export default function AdminMembersPage() {
+function one(v: string | string[] | undefined) {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function AdminMembersPage({
+  searchParams,
+}: PageProps<"/admin/members">) {
+  const sp = await searchParams;
+  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const search = one(sp.q) ?? "";
+  const rawStatus = one(sp.status);
+  const status: MemberListStatus = (
+    MEMBER_LIST_STATUSES as readonly string[]
+  ).includes(rawStatus ?? "")
+    ? (rawStatus as MemberListStatus)
+    : "all";
+  const rawRole = one(sp.role);
+  const role = (APP_ROLES as readonly string[]).includes(rawRole ?? "")
+    ? (rawRole as AppRole)
+    : undefined;
+
+  const { rows, total, pageSize } = await listMembers({
+    page,
+    search,
+    status,
+    role,
+  });
+
+  const isFiltered = search !== "" || status !== "all" || !!role;
+
   return (
-    <PagePlaceholder
-      title="Members"
-      description="Create, edit and deactivate member accounts."
-      phase={9}
-    />
+    <>
+      <PageHeader
+        title="Members"
+        description="Accounts, ranks, and access."
+        actions={
+          <Button asChild>
+            <Link href="/admin/members/new">
+              <Plus aria-hidden />
+              New member
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col gap-4">
+        <MembersFilterBar />
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={isFiltered ? "No members match" : "No members yet"}
+            description={
+              isFiltered
+                ? "Try clearing a filter."
+                : "Create the first member account."
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Rank</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <span data-align="right" className="block">
+                      Orders
+                    </span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell>
+                      <Link
+                        href={`/admin/members/${m.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {m.display_name}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">
+                        @{m.username}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {MEMBER_RANK_LABEL[m.rank]}
+                    </TableCell>
+                    <TableCell>
+                      {m.role === "SUPER_ADMIN" ? (
+                        <Badge tone="brand">{APP_ROLE_LABEL[m.role]}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {APP_ROLE_LABEL[m.role]}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge tone={m.status === "ACTIVE" ? "success" : "gray"}>
+                        {MEMBER_STATUS_LABEL[m.status]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {m.order_count}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Pagination page={page} pageSize={pageSize} total={total} />
+          </>
+        )}
+      </div>
+    </>
   );
 }
