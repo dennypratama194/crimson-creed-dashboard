@@ -71,7 +71,7 @@ NEXT_PUBLIC_APP_URL="http://localhost:3000"
 
 ## 4. Apply the database schema
 
-There are **16 ordered migrations** in `supabase/migrations/` (`0001` … `0016`).
+There are **17 ordered migrations** in `supabase/migrations/` (`0001` … `0017`).
 Pick **one** of the two methods below. Don't mix them.
 
 ### Method A — Supabase CLI (recommended)
@@ -89,13 +89,13 @@ npx supabase login
 #       when prompted (or pass it: --password "<db password>").
 npx supabase link --project-ref <your-ref>
 
-# 4A.3  Push all migrations. It prints the list of 16 files and asks to
+# 4A.3  Push all migrations. It prints the list of 17 files and asks to
 #       confirm — type "y".
 npx supabase db push
 ```
 
 Expected: `Applying migration 0001_init_helpers.sql...` … through
-`0016_settings_rpc.sql`, ending with `Finished supabase db push.`
+`0017_item_images.sql`, ending with `Finished supabase db push.`
 
 Optional — regenerate the typed schema (the committed
 `src/lib/database.types.ts` already matches the migrations, so this is only
@@ -127,6 +127,7 @@ Dashboard → **SQL Editor** → **New query**. Open each file in
 0014_rls.sql
 0015_item_rpc.sql
 0016_settings_rpc.sql
+0017_item_images.sql
 ```
 
 Each should report **Success**. If one fails, stop and fix before continuing —
