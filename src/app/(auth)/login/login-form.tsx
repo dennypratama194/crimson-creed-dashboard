@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 
-import { signIn, type FormState } from "@/lib/auth/actions";
+import { signIn } from "@/lib/auth/actions";
+import type { FormState } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -83,7 +83,7 @@ ConfirmDialog, MoneyText) · `components/<feature>/*` · `components/layout/*` �
 | 1 ✅ | Supabase schema, RLS, RPC, hand-authored types, seed                                                  | 14 migrations + 48 PGlite RLS/RPC assertions pass                |
 | 2 ✅ | Auth: login/logout, proxy session gate, ACTIVE enforcement, password change, admin service client     | login flow + guards typecheck/build green; proxy wired           |
 | 3 ✅ | App shell: sidebar + mobile drawer, theme toggle, role-aware nav, admin gate, primitives + patterns   | responsive shell; all routes stubbed; validate + build green     |
-| 4    | Items catalogue (admin CRUD, soft delete)                                                             | table + filters + pagination; no hard delete                     |
+| 4 ✅ | Items catalogue: admin CRUD via RPC (audited), soft-delete/restore, filter + sort + server pagination | 55 DB assertions; validate + build green                         |
 | 5    | Orders (member): builder, server price preview, create RPC, own list/detail, cancel, timeline         | E2E: member create/view/cancel; totals server-authoritative      |
 | 6    | Orders (admin): list + filters, 3-dimension detail, transition workflow, payment verify, distribution | illegal transitions rejected; transitions write timeline + audit |
 | 7    | Inventory: stock view, movements, adjustments, low-stock                                              | adjustment = movement + qty update, atomic                       |

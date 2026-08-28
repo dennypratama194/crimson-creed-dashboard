@@ -4,25 +4,11 @@ import type { Route } from "next";
 import { redirect } from "next/navigation";
 
 import { getUser } from "@/lib/auth/session";
+import { fieldErrorsFrom, type FormState } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
 import { changePasswordSchema, signInSchema } from "@/lib/validation/auth";
 
-export type FormState = {
-  ok: boolean;
-  error?: string;
-  fieldErrors?: Record<string, string>;
-};
-
 const GENERIC_SIGNIN_ERROR = "That email and password did not match.";
-
-function fieldErrorsFrom(issues: { path: PropertyKey[]; message: string }[]) {
-  const out: Record<string, string> = {};
-  for (const issue of issues) {
-    const key = String(issue.path[0] ?? "form");
-    out[key] ??= issue.message;
-  }
-  return out;
-}
 
 export async function signIn(
   _prev: FormState,

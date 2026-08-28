@@ -400,6 +400,92 @@ await expect("dropping below threshold notifies admins", async () => {
   assert(r.n === 1, `expected 1 low-stock notification, got ${r.n}`);
 });
 
+// ── item catalogue RPCs ────────────────────────────────────────────────
+console.log("\nItem catalogue");
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot create an item",
+  () =>
+    db.query(
+      `select create_item('Hack','OTHER','UNIT',1,null,null,0,true,true)`,
+    ),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+let catItem;
+await expect("admin creates an item (audit + inventory row)", async () => {
+  catItem = await one(
+    `select * from create_item($1,'VEST','UNIT',$2,$3,$4,$5,true,true)`,
+    ["Trauma Plate", 1250, "Ceramic insert", "TP-01", 12],
+  );
+  assert(Number(catItem.price) === 1250, `price ${catItem.price}`);
+  await asRole(null);
+  const inv = await one(
+    `select count(*)::int n from inventory where item_id = $1`,
+    [catItem.id],
+  );
+  assert(inv.n === 1, "inventory row not auto-created");
+  const aud = await one(
+    `select count(*)::int n from audit_logs where action='ITEM_CREATED' and entity_id=$1`,
+    [catItem.id],
+  );
+  assert(aud.n === 1, "no ITEM_CREATED audit row");
+  await asRole("authenticated", admin.id);
+});
+await expect("admin updates an item; price change is audited", async () => {
+  const updated = await one(
+    `select * from update_item($1,'Trauma Plate','VEST','UNIT',$2,null,null,12,true,true)`,
+    [catItem.id, 1400],
+  );
+  assert(Number(updated.price) === 1400, `price ${updated.price}`);
+  await asRole(null);
+  const aud = await one(
+    `select old_values->>'price' o, new_values->>'price' n
+       from audit_logs where action='ITEM_UPDATED' and entity_id=$1
+       order by created_at desc limit 1`,
+    [catItem.id],
+  );
+  assert(
+    Number(aud.o) === 1250 && Number(aud.n) === 1400,
+    `audit price delta wrong: ${aud.o} -> ${aud.n}`,
+  );
+  await asRole("authenticated", admin.id);
+});
+await expect(
+  "archiving hides the item from members but keeps it orderable-safe",
+  async () => {
+    const archived = await one(`select * from archive_item($1)`, [catItem.id]);
+    assert(archived.archived_at !== null, "archived_at not set");
+    assert(
+      archived.active === false && archived.orderable === false,
+      "flags not cleared",
+    );
+    await asRole("authenticated", m1.id);
+    const visible = await one(
+      `select count(*)::int n from items where id = $1`,
+      [catItem.id],
+    );
+    assert(visible.n === 0, "archived item still visible to member");
+    await asRole("authenticated", admin.id);
+  },
+);
+await expectThrows(
+  "cannot edit an archived item",
+  () =>
+    db.query(
+      `select update_item($1,'x','VEST','UNIT',1,null,null,0,true,true)`,
+      [catItem.id],
+    ),
+  "Restore this item",
+);
+await expect("restore brings it back", async () => {
+  const restored = await one(`select * from restore_item($1)`, [catItem.id]);
+  assert(
+    restored.archived_at === null && restored.active === true,
+    "not restored",
+  );
+});
+
 // ── append-only enforcement ─────────────────────────────────────────────
 console.log("\nAppend-only");
 await asRole(null); // back to postgres/superuser — still must be blocked by trigger

@@ -325,6 +325,37 @@ export interface Database {
         };
         Returns: InventoryRow;
       };
+      create_item: {
+        Args: {
+          p_name: string;
+          p_category: ItemCategory;
+          p_unit: ItemUnit;
+          p_price: number;
+          p_description?: string | null;
+          p_sku?: string | null;
+          p_low_stock_threshold?: number;
+          p_orderable?: boolean;
+          p_active?: boolean;
+        };
+        Returns: ItemRow;
+      };
+      update_item: {
+        Args: {
+          p_item_id: string;
+          p_name: string;
+          p_category: ItemCategory;
+          p_unit: ItemUnit;
+          p_price: number;
+          p_description?: string | null;
+          p_sku?: string | null;
+          p_low_stock_threshold?: number;
+          p_orderable?: boolean;
+          p_active?: boolean;
+        };
+        Returns: ItemRow;
+      };
+      archive_item: { Args: { p_item_id: string }; Returns: ItemRow };
+      restore_item: { Args: { p_item_id: string }; Returns: ItemRow };
     };
     Enums: {
       app_role: AppRole;
