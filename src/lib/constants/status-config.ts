@@ -1,0 +1,74 @@
+import type {
+  DistributionStatus,
+  OrderStatus,
+  PaymentStatus,
+} from "@/lib/constants/enums";
+
+/** Visual tone tokens (see globals.css --tone-* variables). */
+export type Tone = "gray" | "brand" | "success" | "warning" | "error" | "info";
+
+export const ORDER_STATUS_TONE: Record<OrderStatus, Tone> = {
+  PENDING: "warning",
+  PROCESSING: "info",
+  COMPLETED: "success",
+  CANCELLED: "gray",
+  REJECTED: "error",
+};
+
+export const PAYMENT_STATUS_TONE: Record<PaymentStatus, Tone> = {
+  UNPAID: "gray",
+  PAYMENT_SUBMITTED: "warning",
+  PAID: "success",
+  PAYMENT_REJECTED: "error",
+};
+
+export const DISTRIBUTION_STATUS_TONE: Record<DistributionStatus, Tone> = {
+  NOT_DISTRIBUTED: "gray",
+  DISTRIBUTED: "success",
+};
+
+/**
+ * Allowed order-status transitions (PRD §25 — no arbitrary transitions such as
+ * COMPLETED -> PENDING). The server RPC layer is the enforcement point; the UI
+ * uses this only to decide which actions to render.
+ */
+export const ORDER_STATUS_TRANSITIONS: Record<
+  OrderStatus,
+  readonly OrderStatus[]
+> = {
+  PENDING: ["PROCESSING", "CANCELLED", "REJECTED"],
+  PROCESSING: ["COMPLETED", "CANCELLED", "REJECTED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  REJECTED: [],
+};
+
+export const PAYMENT_STATUS_TRANSITIONS: Record<
+  PaymentStatus,
+  readonly PaymentStatus[]
+> = {
+  UNPAID: ["PAYMENT_SUBMITTED"],
+  PAYMENT_SUBMITTED: ["PAID", "PAYMENT_REJECTED"],
+  PAYMENT_REJECTED: ["PAYMENT_SUBMITTED"],
+  PAID: [],
+};
+
+export const DISTRIBUTION_STATUS_TRANSITIONS: Record<
+  DistributionStatus,
+  readonly DistributionStatus[]
+> = {
+  NOT_DISTRIBUTED: ["DISTRIBUTED"],
+  DISTRIBUTED: [],
+};
+
+export function canTransitionOrderStatus(
+  from: OrderStatus,
+  to: OrderStatus,
+): boolean {
+  return ORDER_STATUS_TRANSITIONS[from].includes(to);
+}
+
+/** Members may cancel only their own PENDING orders (PRD §9, §24). */
+export function memberCanCancel(status: OrderStatus): boolean {
+  return status === "PENDING";
+}
