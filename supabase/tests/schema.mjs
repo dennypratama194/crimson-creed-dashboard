@@ -83,6 +83,23 @@ await db.exec(`
   $$;
   grant usage on schema auth to anon, authenticated, service_role;
   grant execute on function auth.uid() to anon, authenticated, service_role;
+
+  -- minimal stand-in for Supabase Storage (0017 targets storage.buckets/objects)
+  create schema storage;
+  create table storage.buckets (
+    id text primary key,
+    name text,
+    public boolean default false,
+    file_size_limit bigint,
+    allowed_mime_types text[]
+  );
+  create table storage.objects (
+    id uuid primary key default gen_random_uuid(),
+    bucket_id text references storage.buckets (id),
+    name text
+  );
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to anon, authenticated, service_role;
 `);
 
 // ── apply migrations in order ─────────────────────────────────────────────
@@ -413,25 +430,39 @@ await expectThrows(
 );
 await asRole("authenticated", admin.id);
 let catItem;
-await expect("admin creates an item (audit + inventory row)", async () => {
-  catItem = await one(
-    `select * from create_item($1,'VEST','UNIT',$2,$3,$4,$5,true,true)`,
-    ["Trauma Plate", 1250, "Ceramic insert", "TP-01", 12],
-  );
-  assert(Number(catItem.price) === 1250, `price ${catItem.price}`);
-  await asRole(null);
-  const inv = await one(
-    `select count(*)::int n from inventory where item_id = $1`,
-    [catItem.id],
-  );
-  assert(inv.n === 1, "inventory row not auto-created");
-  const aud = await one(
-    `select count(*)::int n from audit_logs where action='ITEM_CREATED' and entity_id=$1`,
-    [catItem.id],
-  );
-  assert(aud.n === 1, "no ITEM_CREATED audit row");
-  await asRole("authenticated", admin.id);
-});
+await expect(
+  "admin creates an item (audit + inventory row + image)",
+  async () => {
+    catItem = await one(
+      `select * from create_item($1,'VEST','UNIT',$2,$3,$4,$5,true,true,$6)`,
+      [
+        "Trauma Plate",
+        1250,
+        "Ceramic insert",
+        "TP-01",
+        12,
+        "https://img.test/plate.png",
+      ],
+    );
+    assert(Number(catItem.price) === 1250, `price ${catItem.price}`);
+    assert(
+      catItem.image_url === "https://img.test/plate.png",
+      `image_url ${catItem.image_url}`,
+    );
+    await asRole(null);
+    const inv = await one(
+      `select count(*)::int n from inventory where item_id = $1`,
+      [catItem.id],
+    );
+    assert(inv.n === 1, "inventory row not auto-created");
+    const aud = await one(
+      `select count(*)::int n from audit_logs where action='ITEM_CREATED' and entity_id=$1`,
+      [catItem.id],
+    );
+    assert(aud.n === 1, "no ITEM_CREATED audit row");
+    await asRole("authenticated", admin.id);
+  },
+);
 await expect("admin updates an item; price change is audited", async () => {
   const updated = await one(
     `select * from update_item($1,'Trauma Plate','VEST','UNIT',$2,null,null,12,true,true)`,

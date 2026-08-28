@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ImageUploadField } from "@/components/patterns/image-upload-field";
 import {
   createItemAction,
   updateItemAction,
@@ -62,6 +63,11 @@ export function ItemForm({ item }: { item?: Item }) {
           aria-invalid={Boolean(errors.name)}
         />
       </Field>
+
+      <ImageUploadField defaultUrl={item?.image_url ?? ""} />
+      {errors.imageUrl ? (
+        <p className="-mt-4 text-xs text-tone-error-fg">{errors.imageUrl}</p>
+      ) : null}
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Field

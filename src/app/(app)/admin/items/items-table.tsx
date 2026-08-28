@@ -1,6 +1,7 @@
 import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import type { Item } from "@/lib/db/items";
 import { formatMoney, formatQuantity } from "@/lib/format";
+import { ItemThumb } from "@/components/patterns/item-thumb";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -47,12 +48,17 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
         {rows.map((item) => (
           <TableRow key={item.id}>
             <TableCell>
-              <div className="font-medium">{item.name}</div>
-              {item.description ? (
-                <div className="line-clamp-1 max-w-md text-xs text-muted-foreground">
-                  {item.description}
+              <div className="flex items-center gap-3">
+                <ItemThumb src={item.image_url} name={item.name} size="sm" />
+                <div className="min-w-0">
+                  <div className="font-medium">{item.name}</div>
+                  {item.description ? (
+                    <div className="line-clamp-1 max-w-md text-xs text-muted-foreground">
+                      {item.description}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
             </TableCell>
             <TableCell className="text-muted-foreground">
               {ITEM_CATEGORY_LABEL[item.category]}

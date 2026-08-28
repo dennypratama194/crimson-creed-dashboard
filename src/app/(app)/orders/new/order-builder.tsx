@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ItemThumb } from "@/components/patterns/item-thumb";
 import { createOrderAction } from "@/app/(app)/orders/actions";
 
 type Line = { key: string; itemId: string; quantity: string };
@@ -142,7 +143,14 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
                   </div>
                   {inCategory.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.name} — {formatMoney(item.price)}
+                      <span className="flex items-center gap-2">
+                        <ItemThumb
+                          src={item.image_url}
+                          name={item.name}
+                          size="sm"
+                        />
+                        {item.name} — {formatMoney(item.price)}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -176,9 +184,18 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
                 return (
                   <tr key={line.key} className="border-t border-border">
                     <td className="px-4 py-2">
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        per {ITEM_UNIT_LABEL[item.unit].toLowerCase()}
+                      <div className="flex items-center gap-3">
+                        <ItemThumb
+                          src={item.image_url}
+                          name={item.name}
+                          size="sm"
+                        />
+                        <div>
+                          <div className="font-medium">{item.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            per {ITEM_UNIT_LABEL[item.unit].toLowerCase()}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">

@@ -31,6 +31,7 @@ export async function createItemAction(
     p_low_stock_threshold: item.lowStockThreshold,
     p_orderable: item.orderable,
     p_active: item.active,
+    p_image_url: item.imageUrl,
   });
 
   if (error) {
@@ -73,6 +74,7 @@ export async function updateItemAction(
     p_low_stock_threshold: item.lowStockThreshold,
     p_orderable: item.orderable,
     p_active: item.active,
+    p_image_url: item.imageUrl,
   });
 
   if (error) {

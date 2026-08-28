@@ -27,6 +27,16 @@ export const itemInputSchema = z.object({
     .max(10_000_000, "Too large"),
   orderable: z.boolean(),
   active: z.boolean(),
+  imageUrl: z
+    .string()
+    .trim()
+    .max(1000, "URL is too long")
+    .refine(
+      (v) => v === "" || v.startsWith("http://") || v.startsWith("https://"),
+      { message: "Enter an http(s) image URL" },
+    )
+    .transform((v) => (v === "" ? null : v))
+    .nullable(),
 });
 
 export type ItemInput = z.infer<typeof itemInputSchema>;
@@ -53,6 +63,10 @@ export function parseItemForm(formData: FormData) {
     lowStockThreshold: num("lowStockThreshold"),
     orderable: formData.get("orderable") === "on",
     active: formData.get("active") === "on",
+    imageUrl:
+      typeof formData.get("imageUrl") === "string"
+        ? (formData.get("imageUrl") as string)
+        : "",
   });
 }
 

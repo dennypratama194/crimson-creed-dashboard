@@ -105,6 +105,7 @@ type ItemRow = {
   active: boolean;
   orderable: boolean;
   low_stock_threshold: number;
+  image_url: string | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -252,6 +253,7 @@ export interface Database {
           active?: boolean;
           orderable?: boolean;
           low_stock_threshold?: number;
+          image_url?: string | null;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -359,6 +361,7 @@ export interface Database {
           p_low_stock_threshold?: number;
           p_orderable?: boolean;
           p_active?: boolean;
+          p_image_url?: string | null;
         };
         Returns: ItemRow;
       };
@@ -374,6 +377,7 @@ export interface Database {
           p_low_stock_threshold?: number;
           p_orderable?: boolean;
           p_active?: boolean;
+          p_image_url?: string | null;
         };
         Returns: ItemRow;
       };
