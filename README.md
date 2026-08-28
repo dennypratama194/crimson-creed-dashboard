@@ -7,6 +7,19 @@ in-game currency.
 
 See `Crimson_Creed_Operations_System_PRD.pdf` for the full V1 specification. It is
 the source of truth for scope, workflows, business rules, and data model.
+`IMPLEMENTATION_PLAN.md` tracks the phase-by-phase build (Phases 0–13 complete).
+
+## What's built
+
+Auth (username/password, INACTIVE lockout, admin-managed accounts, password
+reset) · role-aware app shell (sidebar + mobile drawer, light/dark/system) ·
+item catalogue with soft-delete · member order builder + list + detail/timeline ·
+admin order workflow (verify/reject payment, processing, distribution with stock
+draw-down, complete, cancel/reject) · inventory with immutable movement ledger ·
+notifications centre + live unread badge · members management · activity &
+append-only audit feeds · role-aware dashboards · organization settings ·
+profile. Every multi-table write goes through an audited Postgres RPC; RLS is the
+final authorization boundary.
 
 ## Stack
 

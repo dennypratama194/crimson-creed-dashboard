@@ -1,6 +1,5 @@
 import "server-only";
 
-import type { MovementType } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
 import { createClient } from "@/lib/supabase/server";
@@ -145,15 +144,4 @@ export async function getInventoryDetail(
     movementPage: page,
     movementPageSize: pageSize,
   };
-}
-
-export type StockAction =
-  | { kind: "add"; quantity: number; notes: string }
-  | { kind: "remove"; quantity: number; notes: string }
-  | { kind: "set"; target: number; notes: string };
-
-export function movementTypeFor(kind: StockAction["kind"]): MovementType {
-  if (kind === "add") return "IN";
-  if (kind === "remove") return "OUT";
-  return "ADJUSTMENT";
 }
