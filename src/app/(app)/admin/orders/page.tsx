@@ -1,15 +1,86 @@
 import type { Metadata } from "next";
+import { ClipboardList } from "lucide-react";
 
-import { PagePlaceholder } from "@/components/patterns/page-placeholder";
+import {
+  DISTRIBUTION_STATUSES,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  type DistributionStatus,
+  type OrderStatus,
+  type PaymentStatus,
+} from "@/lib/constants/enums";
+import { listAdminOrders } from "@/lib/db/orders";
+import { EmptyState } from "@/components/patterns/empty-state";
+import { PageHeader } from "@/components/patterns/page-header";
+import { Pagination } from "@/components/patterns/pagination";
+import { AdminOrdersFilterBar } from "@/app/(app)/admin/orders/admin-orders-filter-bar";
+import { AdminOrdersTable } from "@/app/(app)/admin/orders/admin-orders-table";
 
-export const metadata: Metadata = { title: "All orders" };
+export const metadata: Metadata = { title: "Orders" };
 
-export default function AdminOrdersPage() {
+function one(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+function pick<T extends string>(
+  raw: string | undefined,
+  allowed: readonly T[],
+): T | undefined {
+  return raw && (allowed as readonly string[]).includes(raw)
+    ? (raw as T)
+    : undefined;
+}
+
+export default async function AdminOrdersPage({
+  searchParams,
+}: PageProps<"/admin/orders">) {
+  const sp = await searchParams;
+  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const search = one(sp.q) ?? "";
+  const status = pick<OrderStatus>(one(sp.status), ORDER_STATUSES);
+  const paymentStatus = pick<PaymentStatus>(one(sp.payment), PAYMENT_STATUSES);
+  const distributionStatus = pick<DistributionStatus>(
+    one(sp.distribution),
+    DISTRIBUTION_STATUSES,
+  );
+
+  const { rows, total, pageSize } = await listAdminOrders({
+    page,
+    search,
+    status,
+    paymentStatus,
+    distributionStatus,
+  });
+
+  const isFiltered =
+    search !== "" || !!status || !!paymentStatus || !!distributionStatus;
+
   return (
-    <PagePlaceholder
-      title="Orders"
-      description="Every order, with payment and distribution workflow."
-      phase={6}
-    />
+    <>
+      <PageHeader
+        title="Orders"
+        description="Every order, with its payment and distribution workflow."
+      />
+
+      <div className="flex flex-col gap-4">
+        <AdminOrdersFilterBar />
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={ClipboardList}
+            title={isFiltered ? "No orders match" : "No orders yet"}
+            description={
+              isFiltered
+                ? "Try clearing a filter."
+                : "Orders placed by members show up here."
+            }
+          />
+        ) : (
+          <>
+            <AdminOrdersTable rows={rows} />
+            <Pagination page={page} pageSize={pageSize} total={total} />
+          </>
+        )}
+      </div>
+    </>
   );
 }
