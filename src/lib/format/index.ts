@@ -40,3 +40,9 @@ export function formatDateTime(value: string | Date): string {
     typeof value === "string" ? new Date(value) : value,
   );
 }
+
+/** "ITEM_UPDATED" -> "Item updated" */
+export function humanizeToken(token: string): string {
+  const lower = token.toLowerCase().replace(/_/g, " ");
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
