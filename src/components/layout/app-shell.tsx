@@ -1,12 +1,12 @@
 "use client";
 
-import { Bell, Menu } from "lucide-react";
-import Link from "next/link";
+import { Menu } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import type { AppRole } from "@/lib/constants/enums";
 import { navFor } from "@/lib/constants/nav";
 import { Brand } from "@/components/layout/brand";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -21,10 +21,12 @@ import {
 export function AppShell({
   role,
   displayName,
+  unreadCount,
   children,
 }: {
   role: AppRole;
   displayName: string;
+  unreadCount: number;
   children: ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -71,16 +73,7 @@ export function AppShell({
 
           <div className="flex-1" />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            asChild
-            aria-label="Notifications"
-          >
-            <Link href="/notifications">
-              <Bell />
-            </Link>
-          </Button>
+          <NotificationBell initialCount={unreadCount} />
           <ThemeToggle />
           <UserMenu displayName={displayName} role={role} />
         </header>
