@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 
 import { DevQuickLogin } from "./dev-quick-login";
 import { LoginForm } from "./login-form";
@@ -17,10 +18,14 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-2">
-        <span className="text-sm font-semibold tracking-wide text-primary uppercase">
-          Crimson Creed
-        </span>
+      <header className="flex flex-col items-center gap-3 text-center">
+        <Image
+          src="/logo.webp"
+          alt="Crimson Creed"
+          width={104}
+          height={159}
+          priority
+        />
         <h1 className="text-2xl font-semibold tracking-tight">
           Operations System
         </h1>

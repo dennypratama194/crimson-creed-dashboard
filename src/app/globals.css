@@ -31,16 +31,16 @@
 
   --border: #eaecf0;
   --input: #d0d5dd;
-  --ring: #e04f16;
+  --ring: #a02b36;
 
-  /* --- Brand (restrained warm orange) --- */
-  --primary: #e04f16;
-  --primary-hover: #b93815;
+  /* --- Brand: Crimson Creed oxblood + antique-gold accent --- */
+  --primary: #a02b36;
+  --primary-hover: #82222c;
   --primary-foreground: #ffffff;
 
   --secondary: #f2f4f7;
   --secondary-foreground: #182230;
-  --accent: #f2f4f7;
+  --accent: #f4f0ee;
   --accent-foreground: #101828;
 
   --destructive: #d92d20;
@@ -52,9 +52,9 @@
   --tone-gray-fg: #344054;
   --tone-gray-border: #eaecf0;
 
-  --tone-brand-bg: #fef6ee;
-  --tone-brand-fg: #b93815;
-  --tone-brand-border: #f9dbaf;
+  --tone-brand-bg: #fbeede;
+  --tone-brand-fg: #9a4a22;
+  --tone-brand-border: #ecd2b0;
 
   --tone-success-bg: #ecfdf3;
   --tone-success-fg: #067647;
@@ -72,19 +72,19 @@
   --tone-info-fg: #175cd3;
   --tone-info-border: #b2ddff;
 
-  /* --- Sidebar --- */
-  --sidebar: #f9fafb;
+  /* --- Sidebar (faint warm tint to echo the emblem) --- */
+  --sidebar: #faf7f5;
   --sidebar-foreground: #344054;
-  --sidebar-border: #eaecf0;
-  --sidebar-accent: #f2f4f7;
+  --sidebar-border: #ede7e3;
+  --sidebar-accent: #f2ebe7;
   --sidebar-accent-foreground: #101828;
-  --sidebar-ring: #e04f16;
+  --sidebar-ring: #a02b36;
 
-  /* --- Charts (categorical, brand-neutral) --- */
-  --chart-1: #e04f16;
+  /* --- Charts (chart-1 = brand crimson, chart-4 = emblem rust) --- */
+  --chart-1: #a02b36;
   --chart-2: #2e90fa;
   --chart-3: #17b26a;
-  --chart-4: #f79009;
+  --chart-4: #c56a3e;
   --chart-5: #7a5af8;
 }
 
@@ -101,10 +101,10 @@
 
   --border: #1f242f;
   --input: #333741;
-  --ring: #ef6820;
+  --ring: #c4414e;
 
-  --primary: #e04f16;
-  --primary-hover: #f38744;
+  --primary: #b23440;
+  --primary-hover: #c85260;
   --primary-foreground: #ffffff;
 
   --secondary: #1f242f;
@@ -120,9 +120,9 @@
   --tone-gray-fg: #cecfd2;
   --tone-gray-border: rgba(255, 255, 255, 0.12);
 
-  --tone-brand-bg: rgba(239, 104, 32, 0.12);
-  --tone-brand-fg: #f7b27a;
-  --tone-brand-border: rgba(239, 104, 32, 0.3);
+  --tone-brand-bg: rgba(213, 138, 79, 0.14);
+  --tone-brand-fg: #e3a878;
+  --tone-brand-border: rgba(213, 138, 79, 0.32);
 
   --tone-success-bg: rgba(23, 178, 106, 0.12);
   --tone-success-fg: #75e0a7;
@@ -145,7 +145,7 @@
   --sidebar-border: #1f242f;
   --sidebar-accent: #1f242f;
   --sidebar-accent-foreground: #f5f6f7;
-  --sidebar-ring: #ef6820;
+  --sidebar-ring: #c4414e;
 }
 
 @theme inline {
