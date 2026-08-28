@@ -379,6 +379,10 @@ export interface Database {
       };
       archive_item: { Args: { p_item_id: string }; Returns: ItemRow };
       restore_item: { Args: { p_item_id: string }; Returns: ItemRow };
+      update_organization_settings: {
+        Args: { p_org_name: string; p_logo_url?: string | null };
+        Returns: OrganizationSettingsRow;
+      };
     };
     Enums: {
       app_role: AppRole;

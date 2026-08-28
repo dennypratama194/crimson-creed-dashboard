@@ -486,6 +486,29 @@ await expect("restore brings it back", async () => {
   );
 });
 
+// ── organization settings ──────────────────────────────────────────────
+console.log("\nSettings");
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot change org settings",
+  () => db.query(`select update_organization_settings('Hacked', null)`),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+await expect("admin updates org settings (audited)", async () => {
+  const row = await one(`select * from update_organization_settings($1, $2)`, [
+    "Crimson Creed HQ",
+    "https://example.test/logo.png",
+  ]);
+  assert(row.org_name === "Crimson Creed HQ", `name ${row.org_name}`);
+  await asRole(null);
+  const aud = await one(
+    `select count(*)::int n from audit_logs where action = 'SETTINGS_UPDATED'`,
+  );
+  assert(aud.n === 1, `expected 1 settings audit row, got ${aud.n}`);
+  await asRole("authenticated", admin.id);
+});
+
 // ── append-only enforcement ─────────────────────────────────────────────
 console.log("\nAppend-only");
 await asRole(null); // back to postgres/superuser — still must be blocked by trigger
