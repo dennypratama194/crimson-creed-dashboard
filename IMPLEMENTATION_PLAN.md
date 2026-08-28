@@ -81,7 +81,7 @@ ConfirmDialog, MoneyText) · `components/<feature>/*` · `components/layout/*` �
 | ---- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 0 ✅ | Scaffold + tooling + tokens + shared enums + CI                                                       | `npm run validate` + `build` green                               |
 | 1 ✅ | Supabase schema, RLS, RPC, hand-authored types, seed                                                  | 14 migrations + 48 PGlite RLS/RPC assertions pass                |
-| 2    | Auth: login/logout, proxy session, ACTIVE gate, password change, admin create/reset                   | inactive blocked; member can't reach `/admin/*`                  |
+| 2 ✅ | Auth: login/logout, proxy session gate, ACTIVE enforcement, password change, admin service client     | login flow + guards typecheck/build green; proxy wired           |
 | 3    | App shell: layout, sidebar/drawer, theme, nav, role gate, UI primitives                               | responsive; theme persists; focus states                         |
 | 4    | Items catalogue (admin CRUD, soft delete)                                                             | table + filters + pagination; no hard delete                     |
 | 5    | Orders (member): builder, server price preview, create RPC, own list/detail, cancel, timeline         | E2E: member create/view/cancel; totals server-authoritative      |
