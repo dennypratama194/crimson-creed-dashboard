@@ -15,6 +15,11 @@ const eslintConfig = defineConfig([
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
+  {
+    // CLI scripts (seed, schema smoke test) legitimately log to stdout.
+    files: ["supabase/**/*.{ts,mts,mjs}"],
+    rules: { "no-console": "off" },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

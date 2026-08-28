@@ -77,22 +77,22 @@ ConfirmDialog, MoneyText) · `components/<feature>/*` · `components/layout/*` �
 
 ## Phases
 
-| #   | Phase                                                                                                 | Exit criteria                                                    |
-| --- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 0   | Scaffold + tooling + tokens + shared enums + CI                                                       | `npm run validate` + `build` green                               |
-| 1   | Supabase schema, RLS, RPC, generated types, seed                                                      | migrations apply; RLS smoke tests pass                           |
-| 2   | Auth: login/logout, proxy session, ACTIVE gate, password change, admin create/reset                   | inactive blocked; member can't reach `/admin/*`                  |
-| 3   | App shell: layout, sidebar/drawer, theme, nav, role gate, UI primitives                               | responsive; theme persists; focus states                         |
-| 4   | Items catalogue (admin CRUD, soft delete)                                                             | table + filters + pagination; no hard delete                     |
-| 5   | Orders (member): builder, server price preview, create RPC, own list/detail, cancel, timeline         | E2E: member create/view/cancel; totals server-authoritative      |
-| 6   | Orders (admin): list + filters, 3-dimension detail, transition workflow, payment verify, distribution | illegal transitions rejected; transitions write timeline + audit |
-| 7   | Inventory: stock view, movements, adjustments, low-stock                                              | adjustment = movement + qty update, atomic                       |
-| 8   | Notifications: centre, unread count, read/unread, event triggers                                      | RLS-scoped; count accurate                                       |
-| 9   | Members management (admin CRUD, rank, order history)                                                  | no password data exposed                                         |
-| 10  | Activity + Audit feeds                                                                                | audit immutable to non-admin                                     |
-| 11  | Dashboards (admin + member)                                                                           | all numbers from live queries                                    |
-| 12  | Settings + profile                                                                                    | theme + org display; password change                             |
-| 13  | Hardening: empty/loading/error, a11y, responsive, indexes, PRD §38 E2E                                | acceptance workflow passes                                       |
+| #    | Phase                                                                                                 | Exit criteria                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 0 ✅ | Scaffold + tooling + tokens + shared enums + CI                                                       | `npm run validate` + `build` green                               |
+| 1 ✅ | Supabase schema, RLS, RPC, hand-authored types, seed                                                  | 14 migrations + 48 PGlite RLS/RPC assertions pass                |
+| 2    | Auth: login/logout, proxy session, ACTIVE gate, password change, admin create/reset                   | inactive blocked; member can't reach `/admin/*`                  |
+| 3    | App shell: layout, sidebar/drawer, theme, nav, role gate, UI primitives                               | responsive; theme persists; focus states                         |
+| 4    | Items catalogue (admin CRUD, soft delete)                                                             | table + filters + pagination; no hard delete                     |
+| 5    | Orders (member): builder, server price preview, create RPC, own list/detail, cancel, timeline         | E2E: member create/view/cancel; totals server-authoritative      |
+| 6    | Orders (admin): list + filters, 3-dimension detail, transition workflow, payment verify, distribution | illegal transitions rejected; transitions write timeline + audit |
+| 7    | Inventory: stock view, movements, adjustments, low-stock                                              | adjustment = movement + qty update, atomic                       |
+| 8    | Notifications: centre, unread count, read/unread, event triggers                                      | RLS-scoped; count accurate                                       |
+| 9    | Members management (admin CRUD, rank, order history)                                                  | no password data exposed                                         |
+| 10   | Activity + Audit feeds                                                                                | audit immutable to non-admin                                     |
+| 11   | Dashboards (admin + member)                                                                           | all numbers from live queries                                    |
+| 12   | Settings + profile                                                                                    | theme + org display; password change                             |
+| 13   | Hardening: empty/loading/error, a11y, responsive, indexes, PRD §38 E2E                                | acceptance workflow passes                                       |
 
 ## Known PRD/codebase conflicts
 

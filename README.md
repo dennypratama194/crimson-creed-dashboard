@@ -49,16 +49,21 @@ project.
 
 ## Scripts
 
-| Script              | Purpose                                      |
-| ------------------- | -------------------------------------------- |
-| `npm run dev`       | Dev server (Turbopack)                       |
-| `npm run build`     | Production build                             |
-| `npm run typecheck` | `tsc --noEmit`                               |
-| `npm run lint`      | ESLint                                       |
-| `npm run format`    | Prettier write                               |
-| `npm run test`      | Vitest unit tests                            |
-| `npm run test:e2e`  | Playwright E2E                               |
-| `npm run validate`  | typecheck + lint + test (run before commits) |
+| Script              | Purpose                                                |
+| ------------------- | ------------------------------------------------------ |
+| `npm run dev`       | Dev server (Turbopack)                                 |
+| `npm run build`     | Production build                                       |
+| `npm run typecheck` | `tsc --noEmit`                                         |
+| `npm run lint`      | ESLint                                                 |
+| `npm run format`    | Prettier write                                         |
+| `npm run test`      | Vitest unit tests                                      |
+| `npm run db:test`   | Apply migrations to in-process PGlite; RLS/RPC checks  |
+| `npm run test:e2e`  | Playwright E2E                                         |
+| `npm run validate`  | typecheck + lint + test + db:test (run before commits) |
+
+`db:test` needs no database or Docker — it runs every migration against an
+in-memory PostgreSQL (PGlite), stubs the Supabase `auth` schema, and exercises
+the roleplay workflow plus the RLS boundaries.
 
 ## Project layout
 
