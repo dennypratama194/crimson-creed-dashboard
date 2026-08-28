@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { DevQuickLogin } from "./dev-quick-login";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -38,6 +39,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       ) : null}
 
       <LoginForm next={next} />
+
+      {/* DEV ONLY — remove this block (and dev-quick-login.tsx) for production. */}
+      {process.env.NODE_ENV === "development" ? (
+        <DevQuickLogin next={next} />
+      ) : null}
     </div>
   );
 }
