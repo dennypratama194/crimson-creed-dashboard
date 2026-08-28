@@ -1,35 +1,40 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import Image from "next/image";
+import { Minus, Package, Plus, Search, X } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 
 import { ITEM_CATEGORIES } from "@/lib/constants/enums";
+import type { ItemCategory } from "@/lib/constants/enums";
 import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import type { OrderableItem } from "@/lib/db/orders";
 import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { ItemThumb } from "@/components/patterns/item-thumb";
 import { createOrderAction } from "@/app/(app)/orders/actions";
 
 type Line = { key: string; itemId: string; quantity: string };
+type CategoryFilter = ItemCategory | "ALL";
+
+const MAX_QTY = 9999;
+
+function qtyValue(quantity: string): number {
+  const n = Number.parseInt(quantity, 10);
+  return Number.isFinite(n) ? n : 0;
+}
 
 export function OrderBuilder({ items }: { items: OrderableItem[] }) {
   const router = useRouter();
   const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState("");
-  const [addValue, setAddValue] = useState<string | undefined>(undefined);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<CategoryFilter>("ALL");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -37,33 +42,63 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
     () => new Map(items.map((i) => [i.id, i])),
     [items],
   );
-  const usedIds = new Set(lines.map((l) => l.itemId));
-  const available = items.filter((i) => !usedIds.has(i.id));
+  const lineByItem = useMemo(
+    () => new Map(lines.map((l) => [l.itemId, l])),
+    [lines],
+  );
+
+  const activeCategories = useMemo(
+    () => ITEM_CATEGORIES.filter((c) => items.some((i) => i.category === c)),
+    [items],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((i) => {
+      if (category !== "ALL" && i.category !== category) return false;
+      if (!q) return true;
+      return (
+        i.name.toLowerCase().includes(q) ||
+        (i.description?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [items, search, category]);
 
   const estimatedTotal = lines.reduce((sum, line) => {
     const item = itemsById.get(line.itemId);
-    const qty = Number(line.quantity);
-    if (!item || !Number.isFinite(qty) || qty <= 0) return sum;
+    const qty = qtyValue(line.quantity);
+    if (!item || qty <= 0) return sum;
     return sum + item.price * qty;
   }, 0);
 
-  function addLine(itemId: string) {
+  function addItem(itemId: string) {
+    setError(null);
     setLines((prev) => [
       ...prev,
       { key: crypto.randomUUID(), itemId, quantity: "1" },
     ]);
-    setAddValue(undefined);
-    setError(null);
   }
 
-  function updateQuantity(key: string, value: string) {
+  function setQuantity(itemId: string, value: string) {
+    const clean = value.replace(/[^\d]/g, "").slice(0, 4);
     setLines((prev) =>
-      prev.map((l) => (l.key === key ? { ...l, quantity: value } : l)),
+      prev.map((l) => (l.itemId === itemId ? { ...l, quantity: clean } : l)),
     );
   }
 
-  function removeLine(key: string) {
-    setLines((prev) => prev.filter((l) => l.key !== key));
+  function stepQuantity(itemId: string, delta: number) {
+    setLines((prev) =>
+      prev.flatMap((l) => {
+        if (l.itemId !== itemId) return [l];
+        const next = qtyValue(l.quantity) + delta;
+        if (next < 1) return [];
+        return [{ ...l, quantity: String(Math.min(MAX_QTY, next)) }];
+      }),
+    );
+  }
+
+  function removeItem(itemId: string) {
+    setLines((prev) => prev.filter((l) => l.itemId !== itemId));
   }
 
   function submit() {
@@ -97,8 +132,10 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
     });
   }
 
+  const filters: CategoryFilter[] = ["ALL", ...activeCategories];
+
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       {error ? (
         <p
           role="alert"
@@ -108,177 +145,274 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
         </p>
       ) : null}
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="add-item">Add an item</Label>
-        <Select
-          value={addValue}
-          onValueChange={(v) => {
-            setAddValue(v);
-            addLine(v);
-          }}
-        >
-          <SelectTrigger
-            id="add-item"
-            className="sm:w-80"
-            disabled={available.length === 0}
-          >
-            <SelectValue
-              placeholder={
-                available.length === 0
-                  ? "Everything available is in the order"
-                  : "Choose an item…"
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {ITEM_CATEGORIES.map((category) => {
-              const inCategory = available.filter(
-                (i) => i.category === category,
-              );
-              if (inCategory.length === 0) return null;
-              return (
-                <SelectGroup key={category}>
-                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                    {ITEM_CATEGORY_LABEL[category]}
-                  </div>
-                  {inCategory.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      <span className="flex items-center gap-2">
-                        <ItemThumb
-                          src={item.image_url}
-                          name={item.name}
-                          size="sm"
-                        />
-                        {item.name} — {formatMoney(item.price)}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </div>
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        {/* Catalogue */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
+            <div className="relative sm:max-w-xs">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search items…"
+                aria-label="Search items"
+                className="pl-9"
+              />
+            </div>
 
-      {lines.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/60">
-              <tr className="text-left text-xs text-muted-foreground uppercase">
-                <th className="px-4 py-2 font-medium">Item</th>
-                <th className="px-4 py-2 text-right font-medium">Unit price</th>
-                <th className="px-4 py-2 font-medium">Quantity</th>
-                <th className="px-4 py-2 text-right font-medium">Line total</th>
-                <th className="px-4 py-2">
-                  <span className="sr-only">Remove</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+            <div
+              role="group"
+              aria-label="Filter by category"
+              className="flex flex-wrap gap-2"
+            >
+              {filters.map((c) => {
+                const active = category === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setCategory(c)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {c === "ALL" ? "All" : ITEM_CATEGORY_LABEL[c]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
+              No items match your search.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+              {filtered.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  line={lineByItem.get(item.id)}
+                  onAdd={() => addItem(item.id)}
+                  onStep={(delta) => stepQuantity(item.id, delta)}
+                  onSetQuantity={(v) => setQuantity(item.id, v)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Summary */}
+        <Card className="flex flex-col gap-4 p-5 lg:sticky lg:top-20">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-base font-semibold">Order summary</h2>
+            <span className="text-sm text-muted-foreground">
+              {lines.length} {lines.length === 1 ? "item" : "items"}
+            </span>
+          </div>
+
+          {lines.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No items yet. Pick something from the catalogue.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border">
               {lines.map((line) => {
                 const item = itemsById.get(line.itemId);
                 if (!item) return null;
-                const qty = Number(line.quantity);
-                const lineTotal =
-                  Number.isFinite(qty) && qty > 0 ? item.price * qty : 0;
+                const qty = qtyValue(line.quantity);
                 return (
-                  <tr key={line.key} className="border-t border-border">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-3">
-                        <ItemThumb
-                          src={item.image_url}
-                          name={item.name}
-                          size="sm"
-                        />
-                        <div>
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            per {ITEM_UNIT_LABEL[item.unit].toLowerCase()}
-                          </div>
-                        </div>
+                  <li key={line.key} className="flex gap-3 py-3 first:pt-0">
+                    <Thumb src={item.image_url} name={item.name} />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {item.name}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${item.name}`}
+                          onClick={() => removeItem(line.itemId)}
+                          className="-mr-1 shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="size-4" />
+                        </button>
                       </div>
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {formatMoney(item.price)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <Input
-                        type="number"
-                        min={1}
-                        step={1}
-                        inputMode="numeric"
-                        value={line.quantity}
-                        onChange={(e) =>
-                          updateQuantity(line.key, e.target.value)
-                        }
-                        aria-label={`Quantity for ${item.name}`}
-                        className="h-8 w-24"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium tabular-nums">
-                      {formatMoney(lineTotal)}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove ${item.name}`}
-                        onClick={() => removeLine(line.key)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </td>
-                  </tr>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {qty} × {formatMoney(item.price)}
+                      </span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {formatMoney(item.price * qty)}
+                      </span>
+                    </div>
+                  </li>
                 );
               })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-border bg-muted/40">
-                <td colSpan={3} className="px-4 py-3 font-medium">
-                  Estimated total
-                </td>
-                <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                  {formatMoney(estimatedTotal)}
-                </td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      ) : (
-        <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-          No items yet. Add one above.
-        </p>
-      )}
+            </ul>
+          )}
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="note">Note (optional)</Label>
-        <Textarea
-          id="note"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Anything the org should know about this request."
-          maxLength={500}
-        />
-      </div>
+          <Separator />
 
-      <p className="text-xs text-muted-foreground">
-        The total is confirmed by the server when you submit and is locked to
-        today&apos;s catalogue prices.
-      </p>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Estimated total</span>
+            <span className="text-lg font-semibold tabular-nums">
+              {formatMoney(estimatedTotal)}
+            </span>
+          </div>
 
-      <div className="flex items-center gap-3">
-        <Button onClick={submit} disabled={pending || lines.length === 0}>
-          {pending ? "Placing order…" : "Place order"}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/orders")}
-          disabled={pending}
-        >
-          Cancel
-        </Button>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="note">Note (optional)</Label>
+            <Textarea
+              id="note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything the org should know about this request."
+              maxLength={500}
+              rows={3}
+            />
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            The total is confirmed by the server when you submit and is locked
+            to today&apos;s catalogue prices.
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <Button onClick={submit} disabled={pending || lines.length === 0}>
+              {pending ? "Placing order…" : "Place order"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push("/orders")}
+              disabled={pending}
+            >
+              Cancel
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
+  );
+}
+
+function Thumb({ src, name }: { src: string | null; name: string }) {
+  if (!src) {
+    return (
+      <span
+        aria-hidden
+        className="flex size-12 shrink-0 items-center justify-center rounded-md bg-subtle text-muted-foreground"
+      >
+        <Package className="size-5" />
+      </span>
+    );
+  }
+  return (
+    <Image
+      src={src}
+      alt={name}
+      width={48}
+      height={48}
+      className="size-12 shrink-0 rounded-md bg-subtle object-cover"
+    />
+  );
+}
+
+function ItemCard({
+  item,
+  line,
+  onAdd,
+  onStep,
+  onSetQuantity,
+}: {
+  item: OrderableItem;
+  line: Line | undefined;
+  onAdd: () => void;
+  onStep: (delta: number) => void;
+  onSetQuantity: (value: string) => void;
+}) {
+  return (
+    <Card className="flex flex-col overflow-hidden">
+      <div className="relative aspect-[4/3] w-full bg-subtle">
+        {item.image_url ? (
+          <Image
+            src={item.image_url}
+            alt={item.name}
+            fill
+            sizes="(min-width: 1280px) 20vw, (min-width: 640px) 30vw, 45vw"
+            className="object-cover"
+          />
+        ) : (
+          <span
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center text-muted-foreground"
+          >
+            <Package className="size-8" />
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex flex-1 flex-col gap-1">
+          <h3 className="line-clamp-2 text-sm font-medium">{item.name}</h3>
+          <p className="text-xs text-muted-foreground">
+            per {ITEM_UNIT_LABEL[item.unit].toLowerCase()}
+          </p>
+          <p className="mt-1 text-sm font-semibold tabular-nums">
+            {formatMoney(item.price)}
+          </p>
+        </div>
+
+        {line ? (
+          <div className="flex items-center justify-between rounded-md border border-border">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label={`Decrease quantity of ${item.name}`}
+              onClick={() => onStep(-1)}
+            >
+              <Minus className="size-4" />
+            </Button>
+            <input
+              value={line.quantity}
+              onChange={(e) => onSetQuantity(e.target.value)}
+              onBlur={(e) => {
+                if (qtyValue(e.target.value) <= 0) onSetQuantity("1");
+              }}
+              inputMode="numeric"
+              aria-label={`Quantity of ${item.name}`}
+              className="w-full min-w-0 bg-transparent text-center text-sm tabular-nums focus:outline-none"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label={`Increase quantity of ${item.name}`}
+              onClick={() => onStep(1)}
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            onClick={onAdd}
+          >
+            <Plus className="size-4" />
+            Add
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }

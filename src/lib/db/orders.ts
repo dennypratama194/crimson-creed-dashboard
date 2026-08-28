@@ -174,14 +174,14 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
 
 export type OrderableItem = Pick<
   Tables<"items">,
-  "id" | "name" | "category" | "unit" | "price" | "image_url"
+  "id" | "name" | "category" | "unit" | "price" | "description" | "image_url"
 >;
 
 export async function getOrderableItems(): Promise<OrderableItem[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("items")
-    .select("id, name, category, unit, price, image_url")
+    .select("id, name, category, unit, price, description, image_url")
     .eq("active", true)
     .eq("orderable", true)
     .is("archived_at", null)
