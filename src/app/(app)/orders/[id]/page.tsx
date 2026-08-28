@@ -66,13 +66,13 @@ export default async function OrderDetailPage({
               <CardTitle>Status</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 pt-4 sm:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col items-start gap-1.5">
                 <span className="text-xs text-muted-foreground uppercase">
                   Order
                 </span>
                 <OrderStatusBadge status={order.status} />
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col items-start gap-1.5">
                 <span className="text-xs text-muted-foreground uppercase">
                   Payment
                 </span>
@@ -83,7 +83,7 @@ export default async function OrderDetailPage({
                   </span>
                 ) : null}
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col items-start gap-1.5">
                 <span className="text-xs text-muted-foreground uppercase">
                   Distribution
                 </span>

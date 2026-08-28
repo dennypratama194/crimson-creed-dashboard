@@ -3,11 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { AdminOrderRow } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
-import {
-  DistributionStatusBadge,
-  OrderStatusBadge,
-  PaymentStatusBadge,
-} from "@/components/patterns/status-badge";
+import { OrderStatusBadge } from "@/components/patterns/status-badge";
 import {
   Table,
   TableBody,
@@ -30,9 +26,7 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
               Total
             </span>
           </TableHead>
-          <TableHead>Order</TableHead>
-          <TableHead>Payment</TableHead>
-          <TableHead>Distribution</TableHead>
+          <TableHead>Status</TableHead>
           <TableHead>
             <span className="sr-only">Open</span>
           </TableHead>
@@ -58,12 +52,6 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
             </TableCell>
             <TableCell>
               <OrderStatusBadge status={order.status} />
-            </TableCell>
-            <TableCell>
-              <PaymentStatusBadge status={order.payment_status} />
-            </TableCell>
-            <TableCell>
-              <DistributionStatusBadge status={order.distribution_status} />
             </TableCell>
             <TableCell className="text-right">
               <Link

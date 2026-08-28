@@ -86,7 +86,7 @@ export function AdminOrderActions({
 
       {canVerifyPayment ? (
         <ActionDialog
-          trigger={<Button variant="secondary">Reject payment</Button>}
+          trigger={<Button variant="destructive">Reject payment</Button>}
           title="Reject this payment"
           description="The member will be asked to submit payment again."
           confirmLabel="Reject payment"
@@ -146,7 +146,7 @@ export function AdminOrderActions({
 
       {isOpen ? (
         <ActionDialog
-          trigger={<Button variant="secondary">Reject</Button>}
+          trigger={<Button variant="destructive">Reject</Button>}
           title="Reject this order?"
           description="Use this when the request should not be fulfilled at all."
           confirmLabel="Reject order"

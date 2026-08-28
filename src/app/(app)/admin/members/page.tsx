@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { MembersFilterBar } from "@/app/(app)/admin/members/members-filter-bar";
+import { MembersRowActions } from "@/app/(app)/admin/members/members-row-actions";
 
 export const metadata: Metadata = { title: "Members" };
 
@@ -102,6 +103,9 @@ export default async function AdminMembersPage({
                       Orders
                     </span>
                   </TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,6 +141,13 @@ export default async function AdminMembersPage({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {m.order_count}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MembersRowActions
+                        memberId={m.id}
+                        displayName={m.display_name}
+                        status={m.status}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

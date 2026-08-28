@@ -31,11 +31,12 @@
 
   --border: #eaecf0;
   --input: #d0d5dd;
-  --ring: #a02b36;
+  --ring: #a5502b;
 
-  /* --- Brand: Crimson Creed oxblood + antique-gold accent --- */
-  --primary: #a02b36;
-  --primary-hover: #82222c;
+  /* --- Brand: primary = emblem rust (brown). Oxblood is kept for charts/badges
+   * only, so it never sits next to the destructive red. --- */
+  --primary: #a5502b;
+  --primary-hover: #874020;
   --primary-foreground: #ffffff;
 
   --secondary: #f2f4f7;
@@ -78,7 +79,7 @@
   --sidebar-border: #ede7e3;
   --sidebar-accent: #f2ebe7;
   --sidebar-accent-foreground: #101828;
-  --sidebar-ring: #a02b36;
+  --sidebar-ring: #a5502b;
 
   /* --- Charts (chart-1 = brand crimson, chart-4 = emblem rust) --- */
   --chart-1: #a02b36;
@@ -101,10 +102,10 @@
 
   --border: #1f242f;
   --input: #333741;
-  --ring: #c4414e;
+  --ring: #c56a3e;
 
-  --primary: #b23440;
-  --primary-hover: #c85260;
+  --primary: #c56a3e;
+  --primary-hover: #d78a5c;
   --primary-foreground: #ffffff;
 
   --secondary: #1f242f;
@@ -145,7 +146,7 @@
   --sidebar-border: #1f242f;
   --sidebar-accent: #1f242f;
   --sidebar-accent-foreground: #f5f6f7;
-  --sidebar-ring: #c4414e;
+  --sidebar-ring: #c56a3e;
 }
 
 @theme inline {
