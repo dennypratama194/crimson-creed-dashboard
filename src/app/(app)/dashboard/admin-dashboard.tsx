@@ -111,7 +111,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="flex lg:col-span-2">
+        <div className="flex min-w-0 lg:col-span-2">
           <OrdersTrendChart data={orderTrend} className="flex-1" />
         </div>
 

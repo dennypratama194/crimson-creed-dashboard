@@ -5,7 +5,7 @@ import { PAYROLL_RUN_STATUS_LABEL } from "@/lib/constants/labels";
 import { PAYROLL_RUN_STATUS_TONE } from "@/lib/constants/status-config";
 import type { PayrollRun } from "@/lib/db/payroll";
 import { formatDate, formatMoney } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -14,7 +14,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
 
 export function PayrollRunsTable({ rows }: { rows: PayrollRun[] }) {
@@ -37,14 +36,11 @@ export function PayrollRunsTable({ rows }: { rows: PayrollRun[] }) {
       </TableHeader>
       <TableBody>
         {rows.map((run) => (
-          <TableRow key={run.id}>
+          <LinkedTableRow key={run.id} href={`/admin/payroll/${run.id}`}>
             <TableCell>
               <Link
                 href={`/admin/payroll/${run.id}`}
-                className={cn(
-                  "font-mono text-sm font-medium hover:underline",
-                  rowLinkOverlay,
-                )}
+                className="font-mono text-sm font-medium hover:underline"
               >
                 {run.run_number}
               </Link>
@@ -66,7 +62,7 @@ export function PayrollRunsTable({ rows }: { rows: PayrollRun[] }) {
                 className="inline size-4 text-muted-foreground"
               />
             </TableCell>
-          </TableRow>
+          </LinkedTableRow>
         ))}
       </TableBody>
     </Table>

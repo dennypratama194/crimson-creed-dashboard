@@ -14,6 +14,7 @@ import {
   type MemberListStatus,
 } from "@/lib/validation/member";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +26,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { MembersFilterBar } from "@/app/(app)/admin/members/members-filter-bar";
 import { MembersRowActions } from "@/app/(app)/admin/members/members-row-actions";
 
@@ -115,14 +114,11 @@ export default async function AdminMembersPage({
               </TableHeader>
               <TableBody>
                 {rows.map((m) => (
-                  <TableRow key={m.id}>
+                  <LinkedTableRow key={m.id} href={`/admin/members/${m.id}`}>
                     <TableCell>
                       <Link
                         href={`/admin/members/${m.id}`}
-                        className={cn(
-                          "font-medium hover:underline",
-                          rowLinkOverlay,
-                        )}
+                        className="font-medium hover:underline"
                       >
                         {m.display_name}
                       </Link>
@@ -143,7 +139,7 @@ export default async function AdminMembersPage({
                     <TableCell className="text-right tabular-nums">
                       {m.order_count}
                     </TableCell>
-                    <TableCell className="relative z-10 text-right">
+                    <TableCell className="text-right">
                       <MembersRowActions
                         memberId={m.id}
                         displayName={m.display_name}
@@ -156,7 +152,7 @@ export default async function AdminMembersPage({
                         className="inline size-4 text-muted-foreground"
                       />
                     </TableCell>
-                  </TableRow>
+                  </LinkedTableRow>
                 ))}
               </TableBody>
             </Table>

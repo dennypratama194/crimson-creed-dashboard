@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { AdminOrderRow } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { OrderStatusBadge } from "@/components/patterns/status-badge";
 import {
   Table,
@@ -12,7 +12,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
 
 export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
@@ -36,14 +35,11 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
       </TableHeader>
       <TableBody>
         {rows.map((order) => (
-          <TableRow key={order.id}>
+          <LinkedTableRow key={order.id} href={`/admin/orders/${order.id}`}>
             <TableCell>
               <Link
                 href={`/admin/orders/${order.id}`}
-                className={cn(
-                  "font-mono text-sm font-medium hover:underline",
-                  rowLinkOverlay,
-                )}
+                className="font-mono text-sm font-medium hover:underline"
               >
                 {order.order_number}
               </Link>
@@ -64,7 +60,7 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
                 className="inline size-4 text-muted-foreground"
               />
             </TableCell>
-          </TableRow>
+          </LinkedTableRow>
         ))}
       </TableBody>
     </Table>

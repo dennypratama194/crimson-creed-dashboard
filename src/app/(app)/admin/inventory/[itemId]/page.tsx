@@ -97,7 +97,7 @@ export default async function InventoryItemPage({
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Movement history</CardTitle>
           </CardHeader>

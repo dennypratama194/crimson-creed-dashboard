@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { Order } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { OrderStatusBadge } from "@/components/patterns/status-badge";
 import {
   Table,
@@ -13,7 +13,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
 
 export function OrdersTable({
@@ -43,14 +42,11 @@ export function OrdersTable({
       </TableHeader>
       <TableBody>
         {rows.map((order) => (
-          <TableRow key={order.id}>
+          <LinkedTableRow key={order.id} href={hrefFor(order.id)}>
             <TableCell>
               <Link
                 href={hrefFor(order.id)}
-                className={cn(
-                  "font-mono text-sm font-medium hover:underline",
-                  rowLinkOverlay,
-                )}
+                className="font-mono text-sm font-medium hover:underline"
               >
                 {order.order_number}
               </Link>
@@ -70,7 +66,7 @@ export function OrdersTable({
                 className="inline size-4 text-muted-foreground"
               />
             </TableCell>
-          </TableRow>
+          </LinkedTableRow>
         ))}
       </TableBody>
     </Table>

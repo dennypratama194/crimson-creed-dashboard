@@ -1,13 +1,59 @@
-import type { ComponentProps } from "react";
+"use client";
+
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 
 export function Table({ className, ...props }: ComponentProps<"table">) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const update = () => {
+      setEdges({
+        left: el.scrollLeft > 1,
+        right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
+      });
+    };
+
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-border">
-      <table
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
+    <div className="relative">
+      <div
+        ref={scrollerRef}
+        className="w-full overflow-x-auto rounded-xl border border-border"
+      >
+        <table
+          className={cn("w-full caption-bottom text-sm", className)}
+          {...props}
+        />
+      </div>
+      {/* Scroll affordance — shown only while more of the table sits off-screen */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-y-px left-px w-6 rounded-l-xl bg-gradient-to-r from-foreground/10 to-transparent transition-opacity duration-150",
+          edges.left ? "opacity-100" : "opacity-0",
+        )}
+      />
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-y-px right-px w-6 rounded-r-xl bg-gradient-to-l from-foreground/10 to-transparent transition-opacity duration-150",
+          edges.right ? "opacity-100" : "opacity-0",
+        )}
       />
     </div>
   );
@@ -47,20 +93,13 @@ export function TableRow({ className, ...props }: ComponentProps<"tr">) {
   return (
     <tr
       className={cn(
-        "relative border-b border-border transition-colors focus-within:bg-muted/40 hover:bg-muted/40",
+        "border-b border-border transition-colors focus-within:bg-muted/40 hover:bg-muted/40",
         className,
       )}
       {...props}
     />
   );
 }
-
-/**
- * Put this on a row's primary <Link> so the whole <TableRow> becomes its click
- * target (a "stretched link"). Other interactive controls in the row must sit in
- * a cell with `relative z-10` to stay clickable above the overlay.
- */
-export const rowLinkOverlay = "after:absolute after:inset-0 after:content-['']";
 
 export function TableHead({ className, ...props }: ComponentProps<"th">) {
   return (

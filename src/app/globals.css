@@ -241,6 +241,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.6;
+    /* Nothing should scroll the page sideways; wide content (tables) scrolls
+     * inside its own container. `clip` keeps the sticky header working. */
+    overflow-x: clip;
   }
 
   h1,

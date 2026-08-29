@@ -6,6 +6,7 @@ import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import { listInventory } from "@/lib/db/inventory";
 import { formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { StockBadge } from "@/components/patterns/stock-badge";
@@ -17,9 +18,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { InventoryFilterBar } from "@/app/(app)/admin/inventory/inventory-filter-bar";
 import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
 
@@ -95,14 +94,14 @@ export default async function AdminInventoryPage({
               </TableHeader>
               <TableBody>
                 {rows.map((line) => (
-                  <TableRow key={line.id}>
+                  <LinkedTableRow
+                    key={line.id}
+                    href={`/admin/inventory/${line.id}`}
+                  >
                     <TableCell>
                       <Link
                         href={`/admin/inventory/${line.id}`}
-                        className={cn(
-                          "font-medium hover:underline",
-                          rowLinkOverlay,
-                        )}
+                        className="font-medium hover:underline"
                       >
                         {line.name}
                       </Link>
@@ -125,7 +124,7 @@ export default async function AdminInventoryPage({
                     <TableCell>
                       <StockBadge state={line.stock_state} />
                     </TableCell>
-                    <TableCell className="relative z-10 text-right">
+                    <TableCell className="text-right">
                       <StockDialog
                         itemId={line.id}
                         itemName={line.name}
@@ -143,7 +142,7 @@ export default async function AdminInventoryPage({
                         className="inline size-4 text-muted-foreground"
                       />
                     </TableCell>
-                  </TableRow>
+                  </LinkedTableRow>
                 ))}
               </TableBody>
             </Table>

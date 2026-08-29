@@ -5,6 +5,7 @@ import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import type { Item } from "@/lib/db/items";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { ItemThumb } from "@/components/patterns/item-thumb";
+import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -13,9 +14,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  rowLinkOverlay,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { ItemRowActions } from "@/app/(app)/admin/items/item-row-actions";
 
 function statusBadge(item: Item) {
@@ -54,7 +53,10 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
       </TableHeader>
       <TableBody>
         {rows.map((item) => (
-          <TableRow key={item.id}>
+          <LinkedTableRow
+            key={item.id}
+            href={item.archived_at ? null : `/admin/items/${item.id}/edit`}
+          >
             <TableCell>
               <div className="flex items-center gap-3">
                 <ItemThumb src={item.image_url} name={item.name} size="sm" />
@@ -64,10 +66,7 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
                   ) : (
                     <Link
                       href={`/admin/items/${item.id}/edit`}
-                      className={cn(
-                        "font-medium hover:underline",
-                        rowLinkOverlay,
-                      )}
+                      className="font-medium hover:underline"
                     >
                       {item.name}
                     </Link>
@@ -99,7 +98,7 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
                 : "—"}
             </TableCell>
             <TableCell>{statusBadge(item)}</TableCell>
-            <TableCell className="relative z-10">
+            <TableCell>
               <ItemRowActions item={item} />
             </TableCell>
             <TableCell className="text-right">
@@ -110,7 +109,7 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
                 />
               )}
             </TableCell>
-          </TableRow>
+          </LinkedTableRow>
         ))}
       </TableBody>
     </Table>
