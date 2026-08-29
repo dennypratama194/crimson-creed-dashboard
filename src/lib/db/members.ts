@@ -52,10 +52,20 @@ export async function listMembers(options: {
   if (error) throw error;
 
   const rows = data ?? [];
-  const { data: orderRows } = await supabase.from("orders").select("member_id");
+
+  // Order counts only for the members on this page — not a whole-table scan.
   const counts = new Map<string, number>();
-  for (const row of orderRows ?? []) {
-    counts.set(row.member_id, (counts.get(row.member_id) ?? 0) + 1);
+  if (rows.length > 0) {
+    const { data: orderRows } = await supabase
+      .from("orders")
+      .select("member_id")
+      .in(
+        "member_id",
+        rows.map((m) => m.id),
+      );
+    for (const row of orderRows ?? []) {
+      counts.set(row.member_id, (counts.get(row.member_id) ?? 0) + 1);
+    }
   }
 
   return {

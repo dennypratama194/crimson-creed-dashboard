@@ -54,9 +54,13 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims() verifies the JWT locally (no round trip) when the project uses
+  // asymmetric signing keys, and falls back to a network check otherwise. It
+  // still refreshes an expired session. The real authorization gate is the
+  // (app) layout + server actions + RLS — here we only need the signed-in /
+  // signed-out boundary, so a local check is enough.
+  const { data: claims } = await supabase.auth.getClaims();
+  const user = claims?.claims ?? null;
 
   const { pathname } = request.nextUrl;
 

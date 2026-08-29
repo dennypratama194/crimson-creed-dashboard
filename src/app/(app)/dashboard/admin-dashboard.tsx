@@ -115,7 +115,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
           <OrdersTrendChart data={orderTrend} className="flex-1" />
         </div>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>Needs attention</CardTitle>
           </CardHeader>
@@ -155,7 +155,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
       </div>
 
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Recent activity</CardTitle>
             <SectionLink href="/admin/activity">View all</SectionLink>
@@ -193,7 +193,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Low stock</CardTitle>
             <SectionLink href="/admin/inventory">View all</SectionLink>

@@ -27,10 +27,11 @@ export default async function MemberDetailPage({
   params,
 }: PageProps<"/admin/members/[id]">) {
   const { id } = await params;
-  const member = await getMember(id);
+  const [member, { rows: orders }] = await Promise.all([
+    getMember(id),
+    listOrders({ page: 1, memberId: id }),
+  ]);
   if (!member) notFound();
-
-  const { rows: orders } = await listOrders({ page: 1, memberId: member.id });
 
   return (
     <>

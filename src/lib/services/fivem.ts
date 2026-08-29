@@ -79,6 +79,77 @@ async function getJson(url: string): Promise<unknown> {
   }
 }
 
+export type FivemProbe = {
+  endpoint: string;
+  timeoutMs: number;
+  startedAt: string;
+  results: {
+    name: string;
+    url: string;
+    ok: boolean;
+    status: number | null;
+    ms: number;
+    bytes: number | null;
+    error: Record<string, unknown> | null;
+  }[];
+};
+
+/**
+ * Diagnostic: hit each FiveM endpoint independently and report exactly what
+ * happened (status, timing, failure code). Unlike `getServerSnapshot` this does
+ * not fail fast, so a single blocked endpoint is visible next to the others.
+ */
+export async function probeServer(): Promise<FivemProbe> {
+  const endpoint = resolveEndpoint();
+  const targets = [
+    { name: "dynamic", url: `${endpoint}/dynamic.json` },
+    { name: "players", url: `${endpoint}/players.json` },
+    { name: "info", url: `${endpoint}/info.json` },
+  ];
+
+  const results = await Promise.all(
+    targets.map(async ({ name, url }) => {
+      const startedAt = Date.now();
+      try {
+        const res = await fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
+          headers: { accept: "application/json" },
+        });
+        const body = await res.text();
+        return {
+          name,
+          url,
+          ok: res.ok,
+          status: res.status,
+          ms: Date.now() - startedAt,
+          bytes: body.length,
+          error: res.ok
+            ? null
+            : { message: `HTTP ${res.status}`, body: body.slice(0, 200) },
+        };
+      } catch (err) {
+        return {
+          name,
+          url,
+          ok: false,
+          status: null,
+          ms: Date.now() - startedAt,
+          bytes: null,
+          error: describeError(err),
+        };
+      }
+    }),
+  );
+
+  return {
+    endpoint,
+    timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
+    startedAt: new Date().toISOString(),
+    results,
+  };
+}
+
 function offlineSnapshot(
   endpoint: string,
   error: string,

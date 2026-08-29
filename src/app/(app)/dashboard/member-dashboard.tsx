@@ -105,7 +105,7 @@ export function MemberDashboardView({
           </div>
         </div>
 
-        <Card className="h-fit">
+        <Card className="h-fit min-w-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Recent notifications</CardTitle>
             <Link

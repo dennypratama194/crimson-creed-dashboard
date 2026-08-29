@@ -6,8 +6,12 @@ import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const member = await requireActiveMember();
-  const unreadCount = await getUnreadNotificationCount();
+  // Both internally share one cached auth lookup; running them together saves a
+  // sequential DB round trip on every navigation.
+  const [member, unreadCount] = await Promise.all([
+    requireActiveMember(),
+    getUnreadNotificationCount(),
+  ]);
 
   return (
     <TooltipProvider delayDuration={200}>
