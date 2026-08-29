@@ -450,10 +450,12 @@ async function main() {
   );
   console.log(`  items   : ${items.length}`);
   console.log(`  orders  : ${orderIds.length}`);
-  console.log("\nSign-in credentials (development only):");
+  console.log(
+    "\nSign-in credentials (development only) — username / password:",
+  );
   for (const m of members) {
     console.log(
-      `  ${m.person.isAdmin ? "[admin] " : "        "}${m.person.username}@${DOMAIN}  ${password(m.person.username)}`,
+      `  ${m.person.isAdmin ? "[admin] " : "        "}${m.person.username}  ${password(m.person.username)}`,
     );
   }
 }

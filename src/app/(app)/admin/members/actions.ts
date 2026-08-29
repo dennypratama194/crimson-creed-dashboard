@@ -4,6 +4,7 @@ import type { Route } from "next";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { usernameToEmail } from "@/lib/auth/member-credentials";
 import { getCurrentMember, requireSuperAdmin } from "@/lib/auth/session";
 import type { MemberStatus } from "@/lib/constants/enums";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
@@ -24,10 +25,8 @@ export async function createMemberAction(
   const actor = await requireSuperAdmin();
 
   const parsed = createMemberSchema.safeParse({
-    email: formData.get("email"),
     password: formData.get("password"),
     username: formData.get("username"),
-    displayName: formData.get("displayName"),
     rank: formData.get("rank"),
     role: formData.get("role"),
   });
@@ -39,15 +38,20 @@ export async function createMemberAction(
 
   const { data: created, error: authError } = await admin.auth.admin.createUser(
     {
-      email: input.email,
+      email: usernameToEmail(input.username),
       password: input.password,
       email_confirm: true,
     },
   );
   if (authError || !created.user) {
+    const duplicate = /already|registered|exists/i.test(
+      authError?.message ?? "",
+    );
     return {
       ok: false,
-      error: rpcErrorMessage(authError, "Could not create the account."),
+      error: duplicate
+        ? "That username is already taken."
+        : rpcErrorMessage(authError, "Could not create the account."),
     };
   }
 
@@ -56,7 +60,9 @@ export async function createMemberAction(
     .insert({
       user_id: created.user.id,
       username: input.username,
-      display_name: input.displayName,
+      // No separate display-name field on creation; the member can set a
+      // friendly name later from their profile.
+      display_name: input.username,
       rank: input.rank,
       role: input.role,
       status: "ACTIVE",
@@ -78,7 +84,7 @@ export async function createMemberAction(
   await admin.from("activity_logs").insert({
     actor_id: actor.id,
     verb: "member.created",
-    summary: `Added member ${input.displayName}`,
+    summary: `Added member ${input.username}`,
     reference_type: "MEMBER",
     reference_id: member.id,
   });
@@ -89,7 +95,7 @@ export async function createMemberAction(
     entity_id: member.id,
     new_values: {
       username: input.username,
-      display_name: input.displayName,
+      display_name: input.username,
       rank: input.rank,
       role: input.role,
     },

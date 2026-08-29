@@ -3,19 +3,20 @@
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 
+import { usernameToEmail } from "@/lib/auth/member-credentials";
 import { getUser } from "@/lib/auth/session";
 import { fieldErrorsFrom, type FormState } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
 import { changePasswordSchema, signInSchema } from "@/lib/validation/auth";
 
-const GENERIC_SIGNIN_ERROR = "That email and password did not match.";
+const GENERIC_SIGNIN_ERROR = "That username and password did not match.";
 
 export async function signIn(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const parsed = signInSchema.safeParse({
-    email: formData.get("email"),
+    username: formData.get("username"),
     password: formData.get("password"),
     next: formData.get("next") || undefined,
   });
@@ -25,7 +26,7 @@ export async function signIn(
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
+    email: usernameToEmail(parsed.data.username),
     password: parsed.data.password,
   });
 

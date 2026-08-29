@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 type Account = {
   label: string;
   hint: string;
-  email: string;
+  username: string;
   password: string;
 };
 
@@ -25,34 +25,34 @@ const ACCOUNTS: Account[] = [
   {
     label: "Super Admin",
     hint: "vincent_crane · Boss",
-    email: "vincent_crane@crimson.local",
+    username: "vincent_crane",
     password: "Crimson#vincent1",
   },
   {
     label: "Member",
     hint: "sable_ruiz · Secretary",
-    email: "sable_ruiz@crimson.local",
+    username: "sable_ruiz",
     password: "Crimson#sable1",
   },
   {
     label: "Member · inactive",
     hint: "hugo_marsh · login is blocked",
-    email: "hugo_marsh@crimson.local",
+    username: "hugo_marsh",
     password: "Crimson#hugo1",
   },
 ];
 
 export function DevQuickLogin({ next }: { next?: string }) {
   const [pending, startTransition] = useTransition();
-  const [busyEmail, setBusyEmail] = useState<string | null>(null);
+  const [busyUsername, setBusyUsername] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function loginAs(account: Account) {
     setError(null);
-    setBusyEmail(account.email);
+    setBusyUsername(account.username);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("email", account.email);
+      formData.set("username", account.username);
       formData.set("password", account.password);
       if (next) formData.set("next", next);
 
@@ -60,7 +60,7 @@ export function DevQuickLogin({ next }: { next?: string }) {
       // On success signIn() redirects and never returns here.
       if (result && !result.ok) {
         setError(result.error ?? "Sign-in failed.");
-        setBusyEmail(null);
+        setBusyUsername(null);
       }
     });
   }
@@ -81,7 +81,7 @@ export function DevQuickLogin({ next }: { next?: string }) {
       <div className="flex flex-col gap-2">
         {ACCOUNTS.map((account) => (
           <Button
-            key={account.email}
+            key={account.username}
             type="button"
             variant="secondary"
             size="sm"
@@ -91,7 +91,7 @@ export function DevQuickLogin({ next }: { next?: string }) {
           >
             <span>{account.label}</span>
             <span className="text-xs font-normal text-muted-foreground">
-              {busyEmail === account.email ? "Signing in…" : account.hint}
+              {busyUsername === account.username ? "Signing in…" : account.hint}
             </span>
           </Button>
         ))}

@@ -12,17 +12,17 @@ import { confirmDialog, signIn, signOut } from "./helpers";
  */
 
 const MEMBER = {
-  email: "sable_ruiz@crimson.local",
+  username: "sable_ruiz",
   password: "Crimson#sable1",
 };
 const ADMIN = {
-  email: "vincent_crane@crimson.local",
+  username: "vincent_crane",
   password: "Crimson#vincent1",
 };
 
 test("full roleplay order lifecycle", async ({ page }) => {
   // ── member places an order ────────────────────────────────────────────
-  await signIn(page, MEMBER.email, MEMBER.password);
+  await signIn(page, MEMBER.username, MEMBER.password);
   await page.goto("/orders/new");
 
   await page.getByLabel("Add an item").click();
@@ -49,7 +49,7 @@ test("full roleplay order lifecycle", async ({ page }) => {
   await signOut(page);
 
   // ── admin drives the workflow ─────────────────────────────────────────
-  await signIn(page, ADMIN.email, ADMIN.password);
+  await signIn(page, ADMIN.username, ADMIN.password);
   await page.goto("/admin/orders");
   await page.getByRole("link", { name: orderNumber }).click();
   await page.waitForURL(/\/admin\/orders\/[0-9a-f-]+$/);
@@ -72,7 +72,7 @@ test("full roleplay order lifecycle", async ({ page }) => {
 
   // ── member sees the finished order ───────────────────────────────────
   await signOut(page);
-  await signIn(page, MEMBER.email, MEMBER.password);
+  await signIn(page, MEMBER.username, MEMBER.password);
   await page.goto(orderUrl);
   await expect(page.getByText("Completed")).toBeVisible();
   await expect(page.getByText("Paid")).toBeVisible();
@@ -80,7 +80,7 @@ test("full roleplay order lifecycle", async ({ page }) => {
 });
 
 test("a member cannot reach admin routes", async ({ page }) => {
-  await signIn(page, MEMBER.email, MEMBER.password);
+  await signIn(page, MEMBER.username, MEMBER.password);
   await page.goto("/admin/members");
   await expect(page).toHaveURL(/\/dashboard$/);
 });

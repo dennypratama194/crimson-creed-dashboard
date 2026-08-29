@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   Package,
+  Radio,
   ScrollText,
   Settings,
   ShoppingCart,
@@ -81,6 +82,10 @@ const ADMIN_SECTIONS: NavSection[] = [
       { label: "Activity", href: "/admin/activity", icon: ClipboardList },
       { label: "Audit log", href: "/admin/audit", icon: ScrollText },
     ],
+  },
+  {
+    heading: "Live",
+    items: [{ label: "FiveM server", href: "/admin/fivem", icon: Radio }],
   },
 ];
 

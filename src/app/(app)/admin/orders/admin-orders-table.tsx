@@ -15,19 +15,19 @@ import {
 
 export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
   return (
-    <Table>
+    <Table className="min-w-[760px] table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead>Order</TableHead>
+          <TableHead className="w-32">Order</TableHead>
           <TableHead>Member</TableHead>
-          <TableHead>Placed</TableHead>
-          <TableHead>
+          <TableHead className="w-36">Placed</TableHead>
+          <TableHead className="w-36">
             <span data-align="right" className="block">
               Total
             </span>
           </TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>
+          <TableHead className="w-36">Status</TableHead>
+          <TableHead className="w-12">
             <span className="sr-only">Open</span>
           </TableHead>
         </TableRow>
@@ -43,7 +43,7 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
                 {order.order_number}
               </Link>
             </TableCell>
-            <TableCell>{order.member_name}</TableCell>
+            <TableCell className="truncate">{order.member_name}</TableCell>
             <TableCell className="whitespace-nowrap text-muted-foreground">
               {formatDate(order.created_at)}
             </TableCell>

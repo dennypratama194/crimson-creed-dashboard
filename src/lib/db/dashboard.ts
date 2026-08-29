@@ -27,6 +27,32 @@ function startOfWeekIso(): string {
   return monday.toISOString();
 }
 
+const TREND_DAYS = 14;
+
+/** UTC midnight `n` days before today. */
+function utcDaysAgo(n: number): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - n),
+  );
+}
+
+export type TrendPoint = { date: string; count: number };
+
+/** Buckets order timestamps into one entry per day for the last TREND_DAYS. */
+function bucketByDay(rows: { created_at: string }[]): TrendPoint[] {
+  const buckets = new Map<string, number>();
+  for (let i = TREND_DAYS - 1; i >= 0; i--) {
+    buckets.set(utcDaysAgo(i).toISOString().slice(0, 10), 0);
+  }
+  for (const row of rows) {
+    const key = row.created_at.slice(0, 10);
+    const current = buckets.get(key);
+    if (current !== undefined) buckets.set(key, current + 1);
+  }
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
+}
+
 export type AdminDashboard = {
   kpis: {
     activeMembers: number;
@@ -39,6 +65,7 @@ export type AdminDashboard = {
     toProcess: number;
     toDistribute: number;
   };
+  orderTrend: TrendPoint[];
   recentActivity: ActivityEntry[];
   lowStockItems: InventoryLine[];
   recentOrders: AdminOrderRow[];
@@ -51,6 +78,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     activeMembers,
     ordersThisWeek,
     completedOrders,
+    trendRows,
     attention,
     recentActivity,
     inventory,
@@ -68,6 +96,11 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("status", "COMPLETED"),
+    supabase
+      .from("orders")
+      .select("created_at")
+      .gte("created_at", utcDaysAgo(TREND_DAYS - 1).toISOString())
+      .order("created_at", { ascending: true }),
     getOrdersNeedingAttention(),
     getRecentActivity(8),
     listInventory({ lowStockOnly: true, page: 1 }),
@@ -82,6 +115,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
       lowStock: inventory.lowStockCount,
     },
     attention,
+    orderTrend: bucketByDay(trendRows.data ?? []),
     recentActivity,
     lowStockItems: inventory.rows.slice(0, 6),
     recentOrders: recent.rows.slice(0, 6),

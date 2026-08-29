@@ -7,6 +7,19 @@ import type {
 /** Visual tone tokens (see globals.css --tone-* variables). */
 export type Tone = "gray" | "brand" | "success" | "warning" | "error" | "info";
 
+/**
+ * Solid dot colour for a tone — a quiet status accent on a text row where an
+ * icon or full <Badge> would be too loud.
+ */
+export const TONE_DOT: Record<Tone, string> = {
+  gray: "bg-tone-gray-fg",
+  brand: "bg-tone-brand-fg",
+  success: "bg-tone-success-fg",
+  warning: "bg-tone-warning-fg",
+  error: "bg-tone-error-fg",
+  info: "bg-tone-info-fg",
+};
+
 export const ORDER_STATUS_TONE: Record<OrderStatus, Tone> = {
   PENDING: "warning",
   PROCESSING: "info",

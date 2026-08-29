@@ -118,9 +118,6 @@ export default async function AdminMembersPage({
                       >
                         {m.display_name}
                       </Link>
-                      <div className="text-xs text-muted-foreground">
-                        @{m.username}
-                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {MEMBER_RANK_LABEL[m.rank]}

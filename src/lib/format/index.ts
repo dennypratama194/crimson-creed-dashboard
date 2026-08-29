@@ -35,6 +35,17 @@ export function formatDate(value: string | Date): string {
   return dateFmt.format(typeof value === "string" ? new Date(value) : value);
 }
 
+const dayShortFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+/** "2026-08-29" -> "Aug 29". Parsed as UTC so the day never shifts. */
+export function formatDayShort(isoDate: string): string {
+  return dayShortFmt.format(new Date(`${isoDate}T00:00:00Z`));
+}
+
 export function formatDateTime(value: string | Date): string {
   return dateTimeFmt.format(
     typeof value === "string" ? new Date(value) : value,

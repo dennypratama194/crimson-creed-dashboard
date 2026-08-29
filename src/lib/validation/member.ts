@@ -21,14 +21,8 @@ const displayName = z
   .max(80, "Display name is too long");
 
 export const createMemberSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .min(1, "Email is required")
-    .email("Enter a valid email"),
   password: passwordSchema,
   username,
-  displayName,
   rank: z.enum(MEMBER_RANKS),
   role: z.enum(APP_ROLES),
 });

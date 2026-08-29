@@ -57,8 +57,21 @@ export function MemberForm({ member }: { member?: Member }) {
 
       {!isEdit ? (
         <>
-          <Field label="Email" htmlFor="email" required error={errors.email}>
-            <Input id="email" name="email" type="email" autoComplete="off" />
+          <Field
+            label="Username"
+            htmlFor="username"
+            required
+            error={errors.username}
+            hint="Lowercase letters, numbers and underscores. This is what the member signs in with and cannot be changed later."
+          >
+            <Input
+              id="username"
+              name="username"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
           </Field>
           <Field
             label="Temporary password"
@@ -74,30 +87,23 @@ export function MemberForm({ member }: { member?: Member }) {
               autoComplete="off"
             />
           </Field>
-          <Field
-            label="Username"
-            htmlFor="username"
-            required
-            error={errors.username}
-            hint="Lowercase letters, numbers and underscores. Cannot be changed later."
-          >
-            <Input id="username" name="username" autoComplete="off" />
-          </Field>
         </>
       ) : null}
 
-      <Field
-        label="Display name"
-        htmlFor="displayName"
-        required
-        error={errors.displayName}
-      >
-        <Input
-          id="displayName"
-          name="displayName"
-          defaultValue={member?.display_name ?? ""}
-        />
-      </Field>
+      {isEdit ? (
+        <Field
+          label="Display name"
+          htmlFor="displayName"
+          required
+          error={errors.displayName}
+        >
+          <Input
+            id="displayName"
+            name="displayName"
+            defaultValue={member?.display_name ?? ""}
+          />
+        </Field>
+      ) : null}
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Field label="Rank" htmlFor="rank" error={errors.rank}>

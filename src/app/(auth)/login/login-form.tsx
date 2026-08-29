@@ -27,21 +27,24 @@ export function LoginForm({ next }: { next?: string }) {
       ) : null}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="username">Username</Label>
         <Input
-          id="email"
-          name="email"
-          type="email"
+          id="username"
+          name="username"
+          type="text"
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           autoFocus
-          aria-invalid={Boolean(state.fieldErrors?.email)}
+          aria-invalid={Boolean(state.fieldErrors?.username)}
           aria-describedby={
-            state.fieldErrors?.email ? "email-error" : undefined
+            state.fieldErrors?.username ? "username-error" : undefined
           }
         />
-        {state.fieldErrors?.email ? (
-          <p id="email-error" className="text-xs text-tone-error-fg">
-            {state.fieldErrors.email}
+        {state.fieldErrors?.username ? (
+          <p id="username-error" className="text-xs text-tone-error-fg">
+            {state.fieldErrors.username}
           </p>
         ) : null}
       </div>

@@ -15,12 +15,12 @@ export function KpiCard({
   hint?: string;
 }) {
   return (
-    <Card className="flex flex-col gap-1 p-5">
+    <Card className="flex flex-col gap-1.5 p-5">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         {Icon ? <Icon className="size-4" aria-hidden /> : null}
         {label}
       </div>
-      <div className="text-2xl font-semibold tracking-tight tabular-nums">
+      <div className="text-3xl font-semibold tracking-tight tabular-nums">
         {value}
       </div>
       {hint ? (
