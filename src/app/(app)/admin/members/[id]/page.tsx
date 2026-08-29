@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/patterns/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MemberDeleteDialog } from "@/app/(app)/admin/members/member-delete-dialog";
 import { MemberForm } from "@/app/(app)/admin/members/member-form";
 import { MemberStatusButton } from "@/app/(app)/admin/members/[id]/member-status-button";
 import { PasswordResetDialog } from "@/app/(app)/admin/members/[id]/password-reset-dialog";
@@ -53,6 +54,12 @@ export default async function MemberDetailPage({
             <MemberStatusButton
               memberId={member.id}
               currentStatus={member.status}
+            />
+            <MemberDeleteDialog
+              memberId={member.id}
+              displayName={member.display_name}
+              redirectTo="/admin/members"
+              trigger={<Button variant="destructive">Delete</Button>}
             />
           </div>
         }

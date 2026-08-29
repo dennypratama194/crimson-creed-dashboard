@@ -10,7 +10,7 @@ import {
 } from "@/lib/constants/notification-config";
 import type { Tone } from "@/lib/constants/status-config";
 import type { Notification } from "@/lib/db/notifications";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { markNotificationRead } from "@/app/(app)/notifications/actions";
 
@@ -97,13 +97,14 @@ export function NotificationList({
                     {n.body}
                   </span>
                 ) : null}
-                <time
-                  dateTime={n.created_at}
-                  className="text-xs text-muted-foreground tabular-nums"
-                >
-                  {formatDateTime(n.created_at)}
-                </time>
               </span>
+              <time
+                dateTime={n.created_at}
+                className="flex shrink-0 flex-col items-end gap-0.5 pt-0.5 text-xs text-muted-foreground tabular-nums"
+              >
+                <span>{formatDate(n.created_at)}</span>
+                <span>{formatTime(n.created_at)}</span>
+              </time>
             </button>
           </li>
         );

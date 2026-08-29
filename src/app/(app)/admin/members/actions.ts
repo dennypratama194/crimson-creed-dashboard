@@ -222,6 +222,109 @@ export async function setMemberStatusAction(
   return { ok: true };
 }
 
+// Historical references that must never lose their owner. A member with any of
+// these is deactivated, never deleted (PRD: "no hard deletes of referenced
+// members"). Hard delete is only for accounts created by mistake.
+async function memberReferenceCount(
+  admin: ReturnType<typeof createAdminClient>,
+  memberId: string,
+): Promise<number> {
+  const checks = await Promise.all([
+    admin
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("member_id", memberId),
+    admin
+      .from("production_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("member_id", memberId),
+    admin
+      .from("production_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("reviewed_by", memberId),
+    admin
+      .from("payroll_run_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("member_id", memberId),
+    admin
+      .from("payroll_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", memberId),
+    admin
+      .from("payroll_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("finalized_by", memberId),
+    admin
+      .from("payroll_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("paid_by", memberId),
+    admin
+      .from("audit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("actor_id", memberId),
+    admin
+      .from("activity_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("actor_id", memberId),
+  ]);
+  return checks.reduce((sum, r) => sum + (r.count ?? 0), 0);
+}
+
+export async function deleteMemberAction(id: string): Promise<ActionResult> {
+  const actor = await requireSuperAdmin();
+  const admin = createAdminClient();
+
+  const { data: existing } = await admin
+    .from("members")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: "Member not found." };
+  if (existing.user_id === actor.user_id) {
+    return { ok: false, error: "You can't delete your own account." };
+  }
+
+  if ((await memberReferenceCount(admin, id)) > 0) {
+    return {
+      ok: false,
+      error:
+        `${existing.display_name} has orders or production history and can't be deleted. ` +
+        "Deactivate them instead — their record stays intact.",
+    };
+  }
+
+  const { error } = await admin.from("members").delete().eq("id", id);
+  if (error) return { ok: false, error: "Could not delete the member." };
+
+  await admin.from("audit_logs").insert({
+    actor_id: actor.id,
+    action: "MEMBER_DELETED",
+    entity_type: "member",
+    entity_id: id,
+    old_values: {
+      username: existing.username,
+      display_name: existing.display_name,
+      rank: existing.rank,
+      role: existing.role,
+      status: existing.status,
+    },
+  });
+  await admin.from("activity_logs").insert({
+    actor_id: actor.id,
+    verb: "member.deleted",
+    summary: `Deleted member ${existing.display_name}`,
+    reference_type: "MEMBER",
+    reference_id: id,
+  });
+
+  // Best-effort: remove the orphaned auth login. Sign-in requires a matching
+  // members row, so a lingering auth user can't get in even if this fails.
+  await admin.auth.admin.deleteUser(existing.user_id).catch(() => undefined);
+
+  revalidatePath("/admin/members");
+  return { ok: true };
+}
+
 export async function resetMemberPasswordAction(
   id: string,
   newPassword: string,

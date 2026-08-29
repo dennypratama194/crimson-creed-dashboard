@@ -21,7 +21,7 @@ export function MemberStatusButton({
   return (
     <ConfirmDialog
       trigger={
-        <Button variant={deactivating ? "secondary" : "primary"}>
+        <Button variant={deactivating ? "destructive" : "primary"}>
           {deactivating ? "Deactivate" : "Reactivate"}
         </Button>
       }

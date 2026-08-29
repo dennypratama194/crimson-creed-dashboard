@@ -52,6 +52,16 @@ export function formatDateTime(value: string | Date): string {
   );
 }
 
+const timeFmt = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** "9:30 PM" — clock time only, for rows that show the date separately. */
+export function formatTime(value: string | Date): string {
+  return timeFmt.format(typeof value === "string" ? new Date(value) : value);
+}
+
 /** "ITEM_UPDATED" -> "Item updated" */
 export function humanizeToken(token: string): string {
   const lower = token.toLowerCase().replace(/_/g, " ");

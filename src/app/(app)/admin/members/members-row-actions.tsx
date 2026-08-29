@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { MoreHorizontal, Pencil, UserCheck, UserX } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX } from "lucide-react";
 
 import type { MemberStatus } from "@/lib/constants/enums";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { setMemberStatusAction } from "@/app/(app)/admin/members/actions";
+import { MemberDeleteDialog } from "@/app/(app)/admin/members/member-delete-dialog";
 
 export function MembersRowActions({
   memberId,
@@ -35,6 +37,7 @@ export function MembersRowActions({
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -70,8 +73,26 @@ export function MembersRowActions({
             {deactivating ? <UserX aria-hidden /> : <UserCheck aria-hidden />}
             {deactivating ? "Deactivate" : "Reactivate"}
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-tone-error-fg focus:text-tone-error-fg"
+            onSelect={(event) => {
+              event.preventDefault();
+              setDeleteOpen(true);
+            }}
+          >
+            <Trash2 aria-hidden />
+            Delete
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <MemberDeleteDialog
+        memberId={memberId}
+        displayName={displayName}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+      />
 
       <Dialog
         open={confirmOpen}
