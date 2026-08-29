@@ -824,6 +824,49 @@ await expect("payroll_run_lines are immutable", async () => {
   assert(blocked, "expected the append-only trigger to block the update");
 });
 
+// ── auth throttle (0022) ──────────────────────────────────────────────────
+await asRole(null);
+await expect(
+  "auth throttle blocks after the limit and clears on success",
+  async () => {
+    const k = "test:signin:198.51.100.7";
+    for (let i = 1; i <= 3; i += 1) {
+      const r = await one(`select hit_auth_throttle($1, 3, 900, 900) as wait`, [
+        k,
+      ]);
+      assert(Number(r.wait) === 0, `attempt ${i} should pass, got ${r.wait}`);
+    }
+    const blocked = await one(
+      `select hit_auth_throttle($1, 3, 900, 900) as wait`,
+      [k],
+    );
+    assert(
+      Number(blocked.wait) > 0,
+      `4th attempt should be blocked, got ${blocked.wait}`,
+    );
+    await db.query(`select clear_auth_throttle($1)`, [k]);
+    const after = await one(
+      `select hit_auth_throttle($1, 3, 900, 900) as wait`,
+      [k],
+    );
+    assert(
+      Number(after.wait) === 0,
+      `after clear should pass, got ${after.wait}`,
+    );
+  },
+);
+await expect("auth_throttle is not readable by authenticated", async () => {
+  await asRole("authenticated", admin.id);
+  let denied = false;
+  try {
+    await db.query(`select 1 from auth_throttle limit 1`);
+  } catch {
+    denied = true;
+  }
+  assert(denied, "authenticated must not read auth_throttle");
+  await asRole(null);
+});
+
 printSummaryAndExit();
 
 function printSummaryAndExit() {

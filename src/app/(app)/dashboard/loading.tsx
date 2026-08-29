@@ -5,9 +5,9 @@ export default function LoadingDashboard() {
   return (
     <>
       <PageHeader title="Dashboard" description="Loading…" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[104px] rounded-xl" />
+          <Skeleton key={i} className="h-[92px] rounded-xl sm:h-[104px]" />
         ))}
       </div>
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">

@@ -504,6 +504,16 @@ export interface Database {
         Args: { p_run_id: string };
         Returns: PayrollRunRow;
       };
+      hit_auth_throttle: {
+        Args: {
+          p_key: string;
+          p_limit: number;
+          p_window_seconds: number;
+          p_block_seconds: number;
+        };
+        Returns: number;
+      };
+      clear_auth_throttle: { Args: { p_key: string }; Returns: undefined };
     };
     Enums: {
       app_role: AppRole;

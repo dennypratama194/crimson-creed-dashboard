@@ -16,6 +16,33 @@ function stripColorCodes(value: string): string {
   return value.replace(/\^[0-9]/g, "").trim();
 }
 
+/**
+ * Flatten an error (and undici's nested `cause` chain) into a loggable object.
+ * `causeCode` is the useful bit — `ETIMEDOUT` / `UND_ERR_CONNECT_TIMEOUT` means
+ * the host blackholed us (IP block or server down); `ECONNREFUSED` means we
+ * reached it but the port is closed.
+ */
+function describeError(err: unknown): Record<string, unknown> {
+  if (!(err instanceof Error)) return { value: String(err) };
+  const out: Record<string, unknown> = { name: err.name, message: err.message };
+  const cause = err.cause;
+  if (cause instanceof Error) {
+    out.causeName = cause.name;
+    out.causeMessage = cause.message;
+    if ("code" in cause) out.causeCode = (cause as { code?: unknown }).code;
+    if (cause instanceof AggregateError) {
+      out.causeErrors = cause.errors.map((e) =>
+        e instanceof Error
+          ? { message: e.message, code: (e as { code?: unknown }).code }
+          : String(e),
+      );
+    }
+  } else if (cause !== undefined) {
+    out.cause = String(cause);
+  }
+  return out;
+}
+
 function resolveEndpoint(): string {
   const raw = process.env.FIVEM_SERVER_URL?.trim() || FIVEM_DEFAULT_ENDPOINT;
   return raw.replace(/\/+$/, "");
@@ -32,13 +59,24 @@ function hostFromEndpoint(endpoint: string): string {
 }
 
 async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${url} responded ${res.status}`);
-  return res.json();
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`${url} responded ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    // Diagnostic: per-endpoint timing + failure code.
+    console.error("[fivem] endpoint failed", {
+      url,
+      ms: Date.now() - startedAt,
+      ...describeError(err),
+    });
+    throw err;
+  }
 }
 
 function offlineSnapshot(
@@ -82,6 +120,13 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
     ]);
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
+    // Diagnostic: surface the real network failure in the Vercel function logs.
+    console.error("[fivem] snapshot fetch failed", {
+      endpoint,
+      latencyMs,
+      timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
+      ...describeError(err),
+    });
     const message =
       err instanceof Error && err.name === "TimeoutError"
         ? "Server did not respond in time."

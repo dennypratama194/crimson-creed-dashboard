@@ -15,7 +15,7 @@ export function KpiCard({
   hint?: string;
 }) {
   return (
-    <Card className="flex flex-col gap-1.5 p-5">
+    <Card className="flex flex-col gap-1.5 p-4 sm:p-5">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         {Icon ? <Icon className="size-4" aria-hidden /> : null}
         {label}
