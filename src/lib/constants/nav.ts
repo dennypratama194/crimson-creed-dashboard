@@ -1,5 +1,6 @@
 import type { Route } from "next";
 import {
+  Banknote,
   Boxes,
   ClipboardCheck,
   ClipboardList,
@@ -82,6 +83,17 @@ const ADMIN_SECTIONS: NavSection[] = [
         label: "Payroll",
         href: "/admin/payroll",
         icon: Wallet,
+        matchPrefix: true,
+      },
+    ],
+  },
+  {
+    heading: "Finance",
+    items: [
+      {
+        label: "Company cash",
+        href: "/admin/cash",
+        icon: Banknote,
         matchPrefix: true,
       },
     ],

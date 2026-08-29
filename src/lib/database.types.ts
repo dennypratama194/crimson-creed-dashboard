@@ -39,6 +39,17 @@ export type ProductionLogStatus =
   | "REJECTED"
   | "CANCELLED";
 export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
+export type CashDirection = "IN" | "OUT";
+export type CashEntrySource = "MANUAL" | "ADJUSTMENT" | "ORDER" | "PAYROLL_RUN";
+export type CashCategory =
+  | "SALES_REVENUE"
+  | "CAPITAL_INJECTION"
+  | "OTHER_INCOME"
+  | "PAYROLL"
+  | "INVENTORY_PURCHASE"
+  | "OPERATING_EXPENSE"
+  | "WITHDRAWAL"
+  | "OTHER_EXPENSE";
 export type MovementType =
   | "IN"
   | "OUT"
@@ -56,7 +67,8 @@ export type ReferenceType =
   | "INVENTORY_ADJUSTMENT"
   | "MANUAL"
   | "PRODUCTION_LOG"
-  | "PAYROLL_RUN";
+  | "PAYROLL_RUN"
+  | "CASH_ENTRY";
 export type NotificationType =
   | "ORDER_CREATED"
   | "ORDER_PROCESSING"
@@ -100,7 +112,9 @@ export type AuditAction =
   | "PRODUCTION_LOG_CANCELLED"
   | "PAYROLL_RUN_CREATED"
   | "PAYROLL_RUN_FINALIZED"
-  | "PAYROLL_RUN_PAID";
+  | "PAYROLL_RUN_PAID"
+  | "CASH_ENTRY_RECORDED"
+  | "CASH_ENTRY_REVERSED";
 
 // ── row shapes ──────────────────────────────────────────────────────────────
 type MemberRow = {
@@ -292,6 +306,29 @@ type PayrollRunLineRow = {
   created_at: string;
 }
 
+type CashAccountRow = {
+  id: boolean;
+  balance: number;
+  updated_at: string;
+}
+
+type CashEntryRow = {
+  id: string;
+  entry_number: string;
+  direction: CashDirection;
+  amount: number;
+  category: CashCategory;
+  source: CashEntrySource;
+  balance_after: number;
+  reference_type: ReferenceType | null;
+  reference_id: string | null;
+  reverses_entry_id: string | null;
+  note: string | null;
+  occurred_at: string;
+  created_by: string | null;
+  created_at: string;
+}
+
 type TableShape<Row, Insert, Update> = {
   Row: Row;
   Insert: Insert;
@@ -381,6 +418,8 @@ export interface Database {
       production_logs: TableShape<ProductionLogRow, never, never>;
       payroll_runs: TableShape<PayrollRunRow, never, never>;
       payroll_run_lines: TableShape<PayrollRunLineRow, never, never>;
+      cash_account: TableShape<CashAccountRow, never, never>;
+      cash_entries: TableShape<CashEntryRow, never, never>;
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -505,6 +544,21 @@ export interface Database {
         Args: { p_run_id: string };
         Returns: PayrollRunRow;
       };
+      record_cash_entry: {
+        Args: {
+          p_direction: CashDirection;
+          p_amount: number;
+          p_category: CashCategory;
+          p_occurred_at?: string | null;
+          p_note?: string | null;
+          p_allow_negative?: boolean;
+        };
+        Returns: CashEntryRow;
+      };
+      reverse_cash_entry: {
+        Args: { p_entry_id: string; p_reason: string };
+        Returns: CashEntryRow;
+      };
       hit_auth_throttle: {
         Args: {
           p_key: string;
@@ -527,6 +581,9 @@ export interface Database {
       distribution_status: DistributionStatus;
       production_log_status: ProductionLogStatus;
       payroll_run_status: PayrollRunStatus;
+      cash_direction: CashDirection;
+      cash_entry_source: CashEntrySource;
+      cash_category: CashCategory;
       movement_type: MovementType;
       reference_type: ReferenceType;
       notification_type: NotificationType;

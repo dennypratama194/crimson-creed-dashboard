@@ -1,4 +1,5 @@
 import type {
+  CashDirection,
   DistributionStatus,
   OrderStatus,
   PayrollRunStatus,
@@ -53,6 +54,11 @@ export const PAYROLL_RUN_STATUS_TONE: Record<PayrollRunStatus, Tone> = {
   DRAFT: "gray",
   FINALIZED: "info",
   PAID: "success",
+};
+
+export const CASH_DIRECTION_TONE: Record<CashDirection, Tone> = {
+  IN: "success",
+  OUT: "error",
 };
 
 /**

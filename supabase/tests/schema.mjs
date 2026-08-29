@@ -824,6 +824,134 @@ await expect("payroll_run_lines are immutable", async () => {
   assert(blocked, "expected the append-only trigger to block the update");
 });
 
+// ── company cash (0024-0027) ─────────────────────────────────────────────
+console.log("\nCompany cash");
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot record a cash entry",
+  () =>
+    db.query(
+      `select record_cash_entry('IN', 500, 'SALES_REVENUE', null, null, false)`,
+    ),
+  "Super Admin",
+);
+
+await asRole("authenticated", admin.id);
+await expect("balance starts at zero", async () => {
+  const r = await one(`select balance from cash_account where id = true`);
+  assert(Number(r.balance) === 0, `balance ${r.balance}`);
+});
+
+let cashIncome;
+await expect(
+  "admin records income; balance + snapshot move server-side",
+  async () => {
+    cashIncome = await one(
+      `select * from record_cash_entry('IN', 500, 'SALES_REVENUE', null, 'first sale', false)`,
+    );
+    assert(cashIncome.direction === "IN", cashIncome.direction);
+    assert(Number(cashIncome.amount) === 500, `amount ${cashIncome.amount}`);
+    assert(
+      Number(cashIncome.balance_after) === 500,
+      `balance_after ${cashIncome.balance_after}`,
+    );
+    assert(cashIncome.source === "MANUAL", cashIncome.source);
+    assert(/^CE-\d{6}$/.test(cashIncome.entry_number), cashIncome.entry_number);
+    const acct = await one(`select balance from cash_account where id = true`);
+    assert(Number(acct.balance) === 500, `account balance ${acct.balance}`);
+  },
+);
+
+let cashExpense;
+await expect("admin records an expense; balance decreases", async () => {
+  cashExpense = await one(
+    `select * from record_cash_entry('OUT', 200, 'PAYROLL', null, null, false)`,
+  );
+  assert(Number(cashExpense.balance_after) === 300, cashExpense.balance_after);
+});
+
+await expectThrows(
+  "category must match the direction",
+  () =>
+    db.query(
+      `select record_cash_entry('IN', 10, 'PAYROLL', null, null, false)`,
+    ),
+  "does not belong",
+);
+await expectThrows(
+  "an expense beyond the balance is blocked",
+  () =>
+    db.query(
+      `select record_cash_entry('OUT', 5000, 'OTHER_EXPENSE', null, null, false)`,
+    ),
+  "more than",
+);
+await expect("balance unchanged after the rejected writes", async () => {
+  const r = await one(`select balance from cash_account where id = true`);
+  assert(Number(r.balance) === 300, `balance ${r.balance}`);
+});
+
+await expect("p_allow_negative lets the balance go below zero", async () => {
+  const e = await one(
+    `select * from record_cash_entry('OUT', 800, 'OPERATING_EXPENSE', null, null, true)`,
+  );
+  assert(Number(e.balance_after) === -500, `balance_after ${e.balance_after}`);
+});
+
+let cashReversal;
+await expect(
+  "reversing an entry posts the opposite and restores the balance",
+  async () => {
+    cashReversal = await one(`select * from reverse_cash_entry($1, $2)`, [
+      cashExpense.id,
+      "logged twice",
+    ]);
+    assert(cashReversal.direction === "IN", cashReversal.direction);
+    assert(Number(cashReversal.amount) === 200, cashReversal.amount);
+    assert(cashReversal.source === "ADJUSTMENT", cashReversal.source);
+    assert(
+      cashReversal.reverses_entry_id === cashExpense.id,
+      "reverses_entry_id not linked",
+    );
+    const r = await one(`select balance from cash_account where id = true`);
+    assert(Number(r.balance) === -300, `balance ${r.balance}`);
+  },
+);
+await expectThrows(
+  "an entry cannot be reversed twice",
+  () => db.query(`select reverse_cash_entry($1, 'again')`, [cashExpense.id]),
+  "already been reversed",
+);
+await expectThrows(
+  "a reversal entry cannot itself be reversed",
+  () => db.query(`select reverse_cash_entry($1, 'no')`, [cashReversal.id]),
+  "cannot itself be reversed",
+);
+await asRole("authenticated", m1.id);
+await expect("member cannot see the cash ledger or balance", async () => {
+  const e = await one(`select count(*)::int n from cash_entries`);
+  const a = await one(`select count(*)::int n from cash_account`);
+  assert(e.n === 0 && a.n === 0, `expected 0 visible rows, got ${e.n}/${a.n}`);
+});
+await asRole("authenticated", admin.id);
+await expect("recording leaves an audit row", async () => {
+  await asRole(null);
+  const r = await one(
+    `select count(*)::int n from audit_logs where action = 'CASH_ENTRY_RECORDED' and entity_id = $1`,
+    [cashIncome.id],
+  );
+  assert(r.n === 1, `expected 1 audit row, got ${r.n}`);
+});
+await expect("cash_entries is append-only", async () => {
+  let blocked = false;
+  try {
+    await db.query(`update cash_entries set amount = 0`);
+  } catch {
+    blocked = true;
+  }
+  assert(blocked, "expected the append-only trigger to block the update");
+});
+
 // ── auth throttle (0022) ──────────────────────────────────────────────────
 await asRole(null);
 await expect(

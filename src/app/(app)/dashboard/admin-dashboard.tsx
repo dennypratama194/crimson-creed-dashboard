@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import {
+  Banknote,
   CheckCircle2,
   ClipboardList,
   TriangleAlert,
@@ -10,7 +11,7 @@ import {
 import { ACTIVITY_TONE } from "@/lib/constants/activity-config";
 import { TONE_DOT } from "@/lib/constants/status-config";
 import type { AdminDashboard } from "@/lib/db/dashboard";
-import { formatDateTime, formatQuantity } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
@@ -84,7 +85,16 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
         description="What needs your attention right now."
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+        <KpiCard
+          label="Company cash"
+          value={
+            <span className={cn(kpis.companyCash < 0 && "text-tone-error-fg")}>
+              {formatMoney(kpis.companyCash)}
+            </span>
+          }
+          icon={Banknote}
+        />
         <KpiCard
           label="Active members"
           value={kpis.activeMembers}

@@ -47,7 +47,7 @@ export default async function MemberDetailPage({
 
       <PageHeader
         title={member.display_name}
-        description={`@${member.username} · joined ${formatDate(member.created_at)}`}
+        description={`Joined ${formatDate(member.created_at)}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <PasswordResetDialog memberId={member.id} />

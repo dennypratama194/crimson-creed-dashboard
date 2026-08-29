@@ -75,6 +75,35 @@ export type ProductionLogStatus = (typeof PRODUCTION_LOG_STATUSES)[number];
 export const PAYROLL_RUN_STATUSES = ["DRAFT", "FINALIZED", "PAID"] as const;
 export type PayrollRunStatus = (typeof PAYROLL_RUN_STATUSES)[number];
 
+export const CASH_DIRECTIONS = ["IN", "OUT"] as const;
+export type CashDirection = (typeof CASH_DIRECTIONS)[number];
+
+export const CASH_ENTRY_SOURCES = [
+  "MANUAL",
+  "ADJUSTMENT",
+  "ORDER",
+  "PAYROLL_RUN",
+] as const;
+export type CashEntrySource = (typeof CASH_ENTRY_SOURCES)[number];
+
+export const CASH_INCOME_CATEGORIES = [
+  "SALES_REVENUE",
+  "CAPITAL_INJECTION",
+  "OTHER_INCOME",
+] as const;
+export const CASH_EXPENSE_CATEGORIES = [
+  "PAYROLL",
+  "INVENTORY_PURCHASE",
+  "OPERATING_EXPENSE",
+  "WITHDRAWAL",
+  "OTHER_EXPENSE",
+] as const;
+export const CASH_CATEGORIES = [
+  ...CASH_INCOME_CATEGORIES,
+  ...CASH_EXPENSE_CATEGORIES,
+] as const;
+export type CashCategory = (typeof CASH_CATEGORIES)[number];
+
 export const MOVEMENT_TYPES = [
   "IN",
   "OUT",
@@ -97,6 +126,7 @@ export const REFERENCE_TYPES = [
   "MANUAL",
   "PRODUCTION_LOG",
   "PAYROLL_RUN",
+  "CASH_ENTRY",
 ] as const;
 export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
@@ -147,6 +177,8 @@ export const AUDIT_ACTIONS = [
   "PAYROLL_RUN_CREATED",
   "PAYROLL_RUN_FINALIZED",
   "PAYROLL_RUN_PAID",
+  "CASH_ENTRY_RECORDED",
+  "CASH_ENTRY_REVERSED",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

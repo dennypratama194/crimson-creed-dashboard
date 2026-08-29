@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getRecentActivity, type ActivityEntry } from "@/lib/db/activity";
+import { getCashBalance } from "@/lib/db/cash";
 import { listInventory, type InventoryLine } from "@/lib/db/inventory";
 import { getPayrollAttention } from "@/lib/db/payroll";
 import {
@@ -67,6 +68,7 @@ export type AdminDashboard = {
     ordersThisWeek: number;
     completedOrders: number;
     lowStock: number;
+    companyCash: number;
   };
   attention: {
     paymentsToVerify: number;
@@ -96,6 +98,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     recent,
     productionToReview,
     payrollAttention,
+    companyCash,
   ] = await Promise.all([
     supabase
       .from("members")
@@ -120,6 +123,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     listAdminOrders({ page: 1 }),
     getPendingProductionCount(),
     getPayrollAttention(),
+    getCashBalance(),
   ]);
 
   return {
@@ -128,6 +132,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
       ordersThisWeek: ordersThisWeek.count ?? 0,
       completedOrders: completedOrders.count ?? 0,
       lowStock: inventory.lowStockCount,
+      companyCash,
     },
     attention: {
       ...attention,

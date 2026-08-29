@@ -1,5 +1,8 @@
 import type {
   AppRole,
+  CashCategory,
+  CashDirection,
+  CashEntrySource,
   DistributionStatus,
   ItemCategory,
   ItemUnit,
@@ -80,6 +83,29 @@ export const PAYROLL_RUN_STATUS_LABEL: Record<PayrollRunStatus, string> = {
   DRAFT: "Draft",
   FINALIZED: "Finalized",
   PAID: "Paid",
+};
+
+export const CASH_DIRECTION_LABEL: Record<CashDirection, string> = {
+  IN: "Income",
+  OUT: "Expense",
+};
+
+export const CASH_CATEGORY_LABEL: Record<CashCategory, string> = {
+  SALES_REVENUE: "Sales revenue",
+  CAPITAL_INJECTION: "Capital injection",
+  OTHER_INCOME: "Other income",
+  PAYROLL: "Payroll",
+  INVENTORY_PURCHASE: "Inventory purchase",
+  OPERATING_EXPENSE: "Operating expense",
+  WITHDRAWAL: "Withdrawal",
+  OTHER_EXPENSE: "Other expense",
+};
+
+export const CASH_ENTRY_SOURCE_LABEL: Record<CashEntrySource, string> = {
+  MANUAL: "Manual",
+  ADJUSTMENT: "Reversal",
+  ORDER: "Order",
+  PAYROLL_RUN: "Payroll run",
 };
 
 export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
