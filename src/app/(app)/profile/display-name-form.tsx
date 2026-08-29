@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { IDLE_FORM_STATE } from "@/lib/forms";
+import { useActionToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ export function DisplayNameForm({ current }: { current: string }) {
     updateOwnDisplayNameAction,
     IDLE_FORM_STATE,
   );
+  useActionToast(state, { success: "Display name updated." });
 
   return (
     <form

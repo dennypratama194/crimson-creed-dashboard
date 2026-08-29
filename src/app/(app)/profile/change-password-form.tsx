@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import { changePassword } from "@/lib/auth/actions";
 import { IDLE_FORM_STATE } from "@/lib/forms";
+import { useActionToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ export function ChangePasswordForm() {
     changePassword,
     IDLE_FORM_STATE,
   );
+  useActionToast(state, { success: "Password changed." });
 
   return (
     <form

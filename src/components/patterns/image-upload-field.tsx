@@ -4,6 +4,7 @@ import { ImagePlus, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ItemThumb } from "@/components/patterns/item-thumb";
@@ -49,8 +50,11 @@ export function ImageUploadField({
 
       const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
       setUrl(data.publicUrl);
+      toast.success("Image uploaded.");
     } catch {
-      setError("Upload failed. Try again, or paste an image URL below.");
+      const message = "Upload failed. Try again, or paste an image URL below.";
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }

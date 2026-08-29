@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import type { OrganizationSettings } from "@/lib/db/settings";
 import { IDLE_FORM_STATE } from "@/lib/forms";
+import { useActionToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ export function SettingsForm({ settings }: { settings: OrganizationSettings }) {
     updateSettingsAction,
     IDLE_FORM_STATE,
   );
+  useActionToast(state, { success: "Settings saved." });
   const errors = state.fieldErrors ?? {};
 
   return (

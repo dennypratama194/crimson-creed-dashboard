@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +23,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirm",
   destructive = false,
+  successMessage,
   onConfirm,
 }: {
   trigger: ReactNode;
@@ -29,6 +31,8 @@ export function ConfirmDialog({
   description?: ReactNode;
   confirmLabel?: string;
   destructive?: boolean;
+  /** Toast shown when onConfirm resolves ok. */
+  successMessage?: string;
   onConfirm: () => Promise<Result>;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,9 +75,12 @@ export function ConfirmDialog({
               startTransition(async () => {
                 const result = await onConfirm();
                 if (result && !result.ok) {
-                  setError(result.error ?? "Something went wrong.");
+                  const message = result.error ?? "Something went wrong.";
+                  setError(message);
+                  toast.error(message);
                 } else {
                   setOpen(false);
+                  if (successMessage) toast.success(successMessage);
                 }
               })
             }

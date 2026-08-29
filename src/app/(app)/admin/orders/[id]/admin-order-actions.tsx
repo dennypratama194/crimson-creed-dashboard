@@ -64,6 +64,7 @@ export function AdminOrderActions({
           title="Start processing this order?"
           warning="Once processing starts, the member can no longer cancel this order."
           confirmLabel="Start processing"
+          successMessage="Order moved to processing."
           onConfirm={async () => after(await startProcessingAction(orderId))}
         />
       ) : null}
@@ -74,6 +75,7 @@ export function AdminOrderActions({
           title="Verify the in-game payment"
           description="Confirm you have received the fictional in-game payment for this order."
           confirmLabel="Mark as paid"
+          successMessage="Payment verified."
           field={{
             label: "Confirmation note",
             placeholder: "e.g. Confirmed in-game",
@@ -91,6 +93,7 @@ export function AdminOrderActions({
           description="The member will be asked to submit payment again."
           confirmLabel="Reject payment"
           destructive
+          successMessage="Payment rejected — the member has been notified."
           field={{
             label: "Reason",
             placeholder: "Why is the payment being rejected?",
@@ -108,6 +111,7 @@ export function AdminOrderActions({
           title="Record hand-over"
           description="Confirm the items have been physically handed over in-game. This draws the quantities out of official stock."
           confirmLabel="Mark distributed"
+          successMessage="Distribution recorded and stock updated."
           field={{
             label: "Note",
             placeholder: "e.g. Handed over at the lock-up",
@@ -124,6 +128,7 @@ export function AdminOrderActions({
           title="Complete this order?"
           description="Marks the order finished. It is paid and distributed."
           confirmLabel="Complete order"
+          successMessage="Order completed."
           onConfirm={async () => after(await completeOrderAction(orderId))}
         />
       ) : null}
@@ -134,6 +139,7 @@ export function AdminOrderActions({
           title="Cancel this order?"
           confirmLabel="Cancel order"
           destructive
+          successMessage="Order cancelled — the member has been notified."
           field={{
             label: "Reason",
             placeholder: "Optional note for the member",
@@ -151,6 +157,7 @@ export function AdminOrderActions({
           description="Use this when the request should not be fulfilled at all."
           confirmLabel="Reject order"
           destructive
+          successMessage="Order rejected — the member has been notified."
           field={{
             label: "Reason",
             placeholder: "Why is this order being rejected?",

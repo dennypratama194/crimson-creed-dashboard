@@ -36,6 +36,7 @@ export function ItemRowActions({ item }: { item: Item }) {
           title={`Restore "${item.name}"?`}
           description="It becomes active again and members can see it."
           confirmLabel="Restore"
+          successMessage={`"${item.name}" restored.`}
           onConfirm={() => restoreItemAction(item.id)}
         />
       ) : (
@@ -50,6 +51,7 @@ export function ItemRowActions({ item }: { item: Item }) {
           description="It is hidden from the catalogue and cannot be ordered. Past orders keep their snapshots. You can restore it later."
           confirmLabel="Archive"
           destructive
+          successMessage={`"${item.name}" archived.`}
           onConfirm={() => archiveItemAction(item.id)}
         />
       )}

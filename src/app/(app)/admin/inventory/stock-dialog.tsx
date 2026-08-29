@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { applyStockAction } from "@/app/(app)/admin/inventory/actions";
 
@@ -72,10 +73,13 @@ export function StockDialog({
     startTransition(async () => {
       const result = await applyStockAction(itemId, input);
       if (!result.ok) {
-        setError(result.error ?? "Could not update stock.");
+        const message = result.error ?? "Could not update stock.";
+        setError(message);
+        toast.error(message);
         return;
       }
       setOpen(false);
+      toast.success(`Stock updated for ${itemName}.`);
       router.refresh();
     });
   }

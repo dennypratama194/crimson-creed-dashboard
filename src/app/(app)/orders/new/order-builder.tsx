@@ -10,6 +10,7 @@ import type { ItemCategory } from "@/lib/constants/enums";
 import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import type { OrderableItem } from "@/lib/db/orders";
 import { formatMoney } from "@/lib/format";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -125,9 +126,12 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
         note: note.trim() || null,
       });
       if (!result.ok || !result.data) {
-        setError(result.error ?? "Could not place the order.");
+        const message = result.error ?? "Could not place the order.";
+        setError(message);
+        toast.error(message);
         return;
       }
+      toast.success("Order placed.");
       router.push(`/orders/${result.data.orderId}`);
     });
   }

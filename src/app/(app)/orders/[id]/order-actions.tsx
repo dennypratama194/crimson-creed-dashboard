@@ -38,6 +38,7 @@ export function OrderActions({
           title="Confirm the in-game payment"
           description="Only do this once you have actually sent the payment in-game. A Super Admin will verify it."
           confirmLabel="Yes, I've paid"
+          successMessage="Payment reported — a Super Admin will verify it."
           onConfirm={async () => {
             const result = await submitPaymentAction(orderId);
             if (result.ok) router.refresh();
@@ -53,6 +54,7 @@ export function OrderActions({
           description="You can only cancel while it is still pending. This cannot be undone."
           confirmLabel="Cancel order"
           destructive
+          successMessage="Order cancelled."
           onConfirm={async () => {
             const result = await cancelOrderAction(orderId);
             if (result.ok) router.refresh();

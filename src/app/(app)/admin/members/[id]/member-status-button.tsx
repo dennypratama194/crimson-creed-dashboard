@@ -35,6 +35,9 @@ export function MemberStatusButton({
       }
       confirmLabel={deactivating ? "Deactivate" : "Reactivate"}
       destructive={deactivating}
+      successMessage={
+        deactivating ? "Member deactivated." : "Member reactivated."
+      }
       onConfirm={async () => {
         const result = await setMemberStatusAction(memberId, next);
         if (result.ok) router.refresh();

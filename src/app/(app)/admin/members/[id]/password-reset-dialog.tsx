@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { toast } from "@/lib/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { resetMemberPasswordAction } from "@/app/(app)/admin/members/actions";
@@ -105,11 +106,11 @@ export function PasswordResetDialog({ memberId }: { memberId: string }) {
                   setMessage({ kind: "success", text: "Password updated." });
                   setPw("");
                   setConfirm("");
+                  toast.success("Member password reset.");
                 } else {
-                  setMessage({
-                    kind: "error",
-                    text: result.error ?? "Could not reset the password.",
-                  });
+                  const text = result.error ?? "Could not reset the password.";
+                  setMessage({ kind: "error", text });
+                  toast.error(text);
                 }
               })
             }

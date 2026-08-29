@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 
 import {
@@ -12,6 +13,7 @@ import {
 import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import type { Item } from "@/lib/db/items";
 import { IDLE_FORM_STATE } from "@/lib/forms";
+import { useActionToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
@@ -31,11 +33,16 @@ import {
 } from "@/app/(app)/admin/items/actions";
 
 export function ItemForm({ item }: { item?: Item }) {
+  const router = useRouter();
   const isEdit = Boolean(item);
   const [state, formAction, pending] = useActionState(
     isEdit ? updateItemAction : createItemAction,
     IDLE_FORM_STATE,
   );
+  useActionToast(state, {
+    success: isEdit ? "Item saved." : "Item created.",
+    onSuccess: () => router.push("/admin/items"),
+  });
   const errors = state.fieldErrors ?? {};
 
   return (

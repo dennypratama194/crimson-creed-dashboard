@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
@@ -42,7 +41,7 @@ export async function createItemAction(
   }
 
   revalidatePath("/admin/items");
-  redirect("/admin/items");
+  return { ok: true };
 }
 
 export async function updateItemAction(
@@ -85,7 +84,7 @@ export async function updateItemAction(
   }
 
   revalidatePath("/admin/items");
-  redirect("/admin/items");
+  return { ok: true };
 }
 
 export async function archiveItemAction(
