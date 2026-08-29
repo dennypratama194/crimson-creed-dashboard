@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { signIn } from "@/lib/auth/actions";
 import type { FormState } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -50,7 +52,15 @@ export function LoginForm({ next }: { next?: string }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            href="/forgot-password"
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"
@@ -66,6 +76,13 @@ export function LoginForm({ next }: { next?: string }) {
             {state.fieldErrors.password}
           </p>
         ) : null}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Checkbox id="remember" name="remember" value="on" />
+        <Label htmlFor="remember" className="text-sm font-normal">
+          Keep me signed in on this device
+        </Label>
       </div>
 
       <Button

@@ -1,12 +1,17 @@
 "use server";
 
 import type { Route } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { usernameToEmail } from "@/lib/auth/member-credentials";
 import { getUser } from "@/lib/auth/session";
 import { fieldErrorsFrom, type FormState } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
+import {
+  REMEMBER_COOKIE,
+  REMEMBER_MAX_AGE,
+} from "@/lib/supabase/session-cookies";
 import { changePasswordSchema, signInSchema } from "@/lib/validation/auth";
 
 const GENERIC_SIGNIN_ERROR = "That username and password did not match.";
@@ -19,10 +24,22 @@ export async function signIn(
     username: formData.get("username"),
     password: formData.get("password"),
     next: formData.get("next") || undefined,
+    remember: formData.get("remember"),
   });
   if (!parsed.success) {
     return { ok: false, fieldErrors: fieldErrorsFrom(parsed.error.issues) };
   }
+
+  // Persist the choice before the client is created — the Supabase cookie
+  // handlers read it while writing the fresh session cookies below.
+  const cookieStore = await cookies();
+  cookieStore.set(REMEMBER_COOKIE, parsed.data.remember ? "1" : "0", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: REMEMBER_MAX_AGE,
+  });
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({

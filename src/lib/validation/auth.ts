@@ -9,6 +9,8 @@ export const signInSchema = z.object({
     .transform((v) => v.toLowerCase()),
   password: z.string().min(1, "Enter your password"),
   next: z.string().optional(),
+  // Unchecked checkboxes are absent from the form payload ("on" when ticked).
+  remember: z.unknown().transform((v) => v === "on" || v === "true"),
 });
 export type SignInInput = z.infer<typeof signInSchema>;
 

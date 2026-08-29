@@ -5,6 +5,11 @@ import { cookies } from "next/headers";
 
 import type { Database } from "@/lib/database.types";
 import { publicEnv } from "@/lib/env";
+import {
+  REMEMBER_COOKIE,
+  readRememberPreference,
+  withRememberPreference,
+} from "@/lib/supabase/session-cookies";
 
 /**
  * Request-scoped Supabase client for Server Components, Server Actions and
@@ -24,7 +29,13 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
-            for (const { name, value, options } of cookiesToSet) {
+            const remember = readRememberPreference(
+              cookieStore.get(REMEMBER_COOKIE)?.value,
+            );
+            for (const { name, value, options } of withRememberPreference(
+              cookiesToSet,
+              remember,
+            )) {
               cookieStore.set(name, value, options);
             }
           } catch {

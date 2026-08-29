@@ -54,6 +54,7 @@ export function DevQuickLogin({ next }: { next?: string }) {
       const formData = new FormData();
       formData.set("username", account.username);
       formData.set("password", account.password);
+      formData.set("remember", "on");
       if (next) formData.set("next", next);
 
       const result = await signIn(IDLE_FORM_STATE, formData);

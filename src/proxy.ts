@@ -2,6 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { publicEnv } from "@/lib/env";
+import {
+  REMEMBER_COOKIE,
+  readRememberPreference,
+  withRememberPreference,
+} from "@/lib/supabase/session-cookies";
 
 /**
  * Runs before every matched request (Next 16 `proxy`, nodejs runtime):
@@ -13,7 +18,7 @@ import { publicEnv } from "@/lib/env";
  * actions / RLS — this file only handles the signed-in/out boundary.
  */
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/forgot-password"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
@@ -33,11 +38,15 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          for (const { name, value } of cookiesToSet) {
+          const remember = readRememberPreference(
+            request.cookies.get(REMEMBER_COOKIE)?.value,
+          );
+          const adjusted = withRememberPreference(cookiesToSet, remember);
+          for (const { name, value } of adjusted) {
             request.cookies.set(name, value);
           }
           response = NextResponse.next({ request });
-          for (const { name, value, options } of cookiesToSet) {
+          for (const { name, value, options } of adjusted) {
             response.cookies.set(name, value, options);
           }
         },
