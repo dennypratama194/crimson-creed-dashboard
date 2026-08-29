@@ -25,7 +25,9 @@ export const publicEnv = publicSchema.parse({
   NEXT_PUBLIC_SUPABASE_URL:
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.NEXT_PUBLIC_STORAGE_NEXT_PUBLIC_SUPABASE_URL_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY:
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_STORAGE_NEXT_PUBLIC_SUPABASE_URL_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 });
 
@@ -37,7 +39,10 @@ export function serverEnv() {
     cachedServerEnv = z
       .object({ SUPABASE_SERVICE_ROLE_KEY: z.string().min(1) })
       .parse({
-        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        SUPABASE_SERVICE_ROLE_KEY:
+          process.env.SUPABASE_SERVICE_ROLE_KEY ||
+          process.env
+            .STORAGE_NEXT_PUBLIC_SUPABASE_URL_SUPABASE_SERVICE_ROLE_KEY,
       });
   }
   return cachedServerEnv;
