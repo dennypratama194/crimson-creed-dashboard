@@ -20,7 +20,11 @@ const publicSchema = z.object({
 });
 
 export const publicEnv = publicSchema.parse({
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  // Fall back to the name Vercel's Supabase integration generated (prefixed) when
+  // the canonical var is unset/empty. `||` (not `??`) so an empty string falls through.
+  NEXT_PUBLIC_SUPABASE_URL:
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_STORAGE_NEXT_PUBLIC_SUPABASE_URL_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 });
