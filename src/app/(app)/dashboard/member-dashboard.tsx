@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Bell, CheckCircle2, Package, Plus } from "lucide-react";
+import { Bell, CheckCircle2, Package, Plus, Wallet } from "lucide-react";
 
 import {
   NOTIFICATION_CONFIG,
   NOTIFICATION_FALLBACK,
 } from "@/lib/constants/notification-config";
 import type { MemberDashboard } from "@/lib/db/dashboard";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatMoney } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -21,7 +21,9 @@ export function MemberDashboardView({
   data: MemberDashboard;
   name: string;
 }) {
-  const { counts, activeOrders, recentOrders, recentNotifications } = data;
+  const { counts, earnings, activeOrders, recentOrders, recentNotifications } =
+    data;
+  const awaitingPayout = earnings.pendingAmount + earnings.approvedUnpaidAmount;
 
   return (
     <>
@@ -38,12 +40,18 @@ export function MemberDashboardView({
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Active orders" value={counts.open} icon={Package} />
         <KpiCard
           label="Completed orders"
           value={counts.completed}
           icon={CheckCircle2}
+        />
+        <KpiCard
+          label="Production pay pending"
+          value={formatMoney(awaitingPayout)}
+          icon={Wallet}
+          hint="Awaiting review or payout"
         />
         <KpiCard
           label="Unread notifications"

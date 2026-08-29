@@ -244,6 +244,18 @@ async function wipe() {
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
   await admin
+    .from("production_logs")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("payroll_runs")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("production_rates")
+    .delete()
+    .neq("item_id", "00000000-0000-0000-0000-000000000000");
+  await admin
     .from("inventory_movements")
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
@@ -444,12 +456,88 @@ async function main() {
     p_notes: "Physical count correction",
   });
 
+  // ── production pay rates, logs, and a payroll run ────────────────────────
+  console.log("Setting production pay rates…");
+  const products = items.filter((i) =>
+    ["Refined Product", "Packaged Product"].includes(i.name),
+  );
+  for (const p of products) {
+    const rate = p.name === "Refined Product" ? 14 : 320;
+    const { error } = await adminClient.rpc("set_production_rate", {
+      p_item_id: p.id,
+      p_unit_rate: rate,
+    });
+    if (error) throw error;
+  }
+
+  const logIds: string[] = [];
+  if (products.length > 0) {
+    console.log("Logging production…");
+    for (const m of activeMembers) {
+      const client = await clientFor(m.person.username);
+      const n = 2 + Math.floor(Math.random() * 4); // 2–5 logs each
+      for (let k = 0; k < n; k += 1) {
+        const product = rand(products);
+        const daysAgo = 3 + Math.floor(Math.random() * 40);
+        const occurred = new Date(Date.now() - daysAgo * 86_400_000)
+          .toISOString()
+          .slice(0, 10);
+        const qty =
+          product.name === "Refined Product"
+            ? 20 + Math.floor(Math.random() * 180)
+            : 1 + Math.floor(Math.random() * 6);
+        const { data, error } = await client.rpc("submit_production_log", {
+          p_item_id: product.id,
+          p_quantity: qty,
+          p_occurred_at: `${occurred}T12:00:00Z`,
+          p_note: chance(0.25) ? "West lab batch" : null,
+        });
+        if (error) throw error;
+        if (data) logIds.push(data.id);
+      }
+    }
+
+    console.log("Reviewing production…");
+    for (const logId of logIds) {
+      const roll = Math.random();
+      if (roll < 0.15) continue; // leave pending
+      const approve = roll >= 0.28;
+      await adminClient.rpc("review_production_log", {
+        p_log_id: logId,
+        p_approve: approve,
+        p_note: approve ? null : "Could not verify on the logs",
+      });
+    }
+
+    console.log("Running payroll…");
+    const now = new Date();
+    const firstThis = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+    const lastPrev = new Date(firstThis.getTime() - 86_400_000);
+    const firstPrev = new Date(
+      Date.UTC(lastPrev.getUTCFullYear(), lastPrev.getUTCMonth(), 1),
+    );
+    const { data: run, error: runErr } = await adminClient.rpc(
+      "create_payroll_run",
+      {
+        p_period_start: firstPrev.toISOString().slice(0, 10),
+        p_period_end: lastPrev.toISOString().slice(0, 10),
+        p_note: "Monthly drug-lab wages",
+      },
+    );
+    if (runErr) throw runErr;
+    if (run)
+      await adminClient.rpc("finalize_payroll_run", { p_run_id: run.id });
+  }
+
   console.log("\nSeed complete.");
   console.log(
     `  members : ${members.length} (${admins.length} admin, 1 inactive)`,
   );
   console.log(`  items   : ${items.length}`);
   console.log(`  orders  : ${orderIds.length}`);
+  console.log(`  prod.   : ${logIds.length} logs`);
   console.log(
     "\nSign-in credentials (development only) — username / password:",
   );

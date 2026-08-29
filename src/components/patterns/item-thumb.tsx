@@ -39,7 +39,10 @@ export function ItemThumb({
       alt={name}
       width={px}
       height={px}
-      className={cn("shrink-0 rounded-md bg-subtle object-cover", className)}
+      className={cn(
+        "shrink-0 rounded-md bg-subtle object-contain p-1",
+        className,
+      )}
       style={{ width: px, height: px }}
     />
   );

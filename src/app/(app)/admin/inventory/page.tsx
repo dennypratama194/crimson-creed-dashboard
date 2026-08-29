@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Boxes } from "lucide-react";
+import { Boxes, ChevronRight } from "lucide-react";
 
 import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import { listInventory } from "@/lib/db/inventory";
@@ -17,7 +17,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  rowLinkOverlay,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { InventoryFilterBar } from "@/app/(app)/admin/inventory/inventory-filter-bar";
 import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
 
@@ -86,6 +88,9 @@ export default async function AdminInventoryPage({
                   <TableHead>
                     <span className="sr-only">Actions</span>
                   </TableHead>
+                  <TableHead className="w-8">
+                    <span className="sr-only">Open</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -94,7 +99,10 @@ export default async function AdminInventoryPage({
                     <TableCell>
                       <Link
                         href={`/admin/inventory/${line.id}`}
-                        className="font-medium hover:underline"
+                        className={cn(
+                          "font-medium hover:underline",
+                          rowLinkOverlay,
+                        )}
                       >
                         {line.name}
                       </Link>
@@ -117,7 +125,7 @@ export default async function AdminInventoryPage({
                     <TableCell>
                       <StockBadge state={line.stock_state} />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="relative z-10 text-right">
                       <StockDialog
                         itemId={line.id}
                         itemName={line.name}
@@ -127,6 +135,12 @@ export default async function AdminInventoryPage({
                             Adjust
                           </Button>
                         }
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ChevronRight
+                        aria-hidden
+                        className="inline size-4 text-muted-foreground"
                       />
                     </TableCell>
                   </TableRow>

@@ -1,12 +1,15 @@
 import {
   Ban,
   BellRing,
+  Banknote,
   CheckCircle2,
   CircleDollarSign,
+  FlaskConical,
   PackageCheck,
   PackageX,
   TriangleAlert,
   Truck,
+  Wallet,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -29,6 +32,11 @@ export const NOTIFICATION_CONFIG: Record<
   DISTRIBUTION_READY: { icon: PackageCheck, tone: "info" },
   DISTRIBUTION_COMPLETED: { icon: Truck, tone: "success" },
   LOW_STOCK: { icon: TriangleAlert, tone: "warning" },
+  PRODUCTION_LOG_SUBMITTED: { icon: FlaskConical, tone: "info" },
+  PRODUCTION_LOG_APPROVED: { icon: CheckCircle2, tone: "success" },
+  PRODUCTION_LOG_REJECTED: { icon: XCircle, tone: "error" },
+  PAYROLL_FINALIZED: { icon: Wallet, tone: "info" },
+  PAYROLL_PAID: { icon: Banknote, tone: "success" },
 };
 
 export const NOTIFICATION_FALLBACK = { icon: PackageX, tone: "gray" as Tone };

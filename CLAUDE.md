@@ -17,6 +17,13 @@ The PRD (`Crimson_Creed_Operations_System_PRD.pdf`) is the source of truth.
 - Authorization is enforced in the proxy + server actions + RLS. The UI only
   hides controls; hiding is not a security boundary.
 - Members can cancel only their own `PENDING` orders.
+- Production pay is **piece-rate**. The per-unit rate, product name, and unit are
+  **snapshotted** onto `production_logs` at submission; changing a rate never
+  rewrites historical pay. Payout is computed **server-side**
+  (`quantity × snapshot rate`) — never trusted from the browser.
+- Member production logs require Super Admin approval (`PENDING → APPROVED /
+REJECTED`) before they count. A finalized `payroll_run` locks its approved
+  logs (`payroll_run_id`) so they cannot be re-reviewed or paid twice.
 - Soft-delete / inactive flags for anything referenced historically. No hard
   deletes of referenced items or members.
 - Audit log is append-only for non-service roles.
@@ -32,8 +39,13 @@ The PRD (`Crimson_Creed_Operations_System_PRD.pdf`) is the source of truth.
   `src/lib/services/*`; Zod schemas in `src/lib/validation/*`.
 - Every list has an intentional empty state; every async view has skeletons;
   errors are non-technical. Dangerous actions use a confirm dialog.
-- Do not build future modules (production, wages, FiveM, member inventory
-  requests) — the schema leaves room for them; the app does not implement them.
+- Production & piece-rate wages ARE implemented (Phase 14) — `production_rates`,
+  `production_logs`, `payroll_runs`, `payroll_run_lines`, under `/production` and
+  `/admin/production/*` + `/admin/payroll/*`. Approved production does **not** yet
+  touch inventory (deferred to 14f); do not wire that without agreeing it first.
+- Do not build the remaining future modules (member inventory requests, the
+  production→inventory movement hookup) — the schema leaves room; the app does
+  not implement them.
 - Run `npm run validate` before committing. Implement one phase at a time.
 
 ## Typography note (deviation from global standard)

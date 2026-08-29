@@ -30,6 +30,11 @@ functions + RLS (atomic writes, final authorization).
 | Supabase                  | Hosted project (no local Docker here); `.env.local` + `db:push`  |
 | Layout width              | Fluid shell, content max-width 1536px, tables full-bleed         |
 | Self-serve password reset | Not in V1 — admin reset only                                     |
+| Production pay model      | Piece-rate only. Per-product rate; no fixed job salary in V1     |
+| Production approval       | Member logs need Super Admin approval before they count          |
+| Production ↔ inventory    | Decoupled in V1 (deferred to 14f); logs are a pay ledger only    |
+| Payroll disbursement      | Formal runs: DRAFT → FINALIZED (locks logs) → PAID               |
+| Rate snapshot             | Rate + name + unit copied onto `production_logs` at submit       |
 
 These enum sets live in one place: `src/lib/constants/enums.ts` +
 `supabase/migrations/0001_enums.sql`.
@@ -43,6 +48,14 @@ These enum sets live in one place: `src/lib/constants/enums.ts` +
 mark_distributed, complete_order, cancel_order, reject_order, adjust_inventory) ·
 `0012_rls` (+ `is_super_admin()`, `current_member_id()` SECURITY DEFINER helpers)
 · `0013_seed_support` (dev only).
+
+Phase 14 adds: `0018_production_enums` (production_log_status, payroll_run_status
+
+- new notification/audit/reference values) · `0019_production`
+  (production_rates, production_logs, payroll_runs, payroll_run_lines) ·
+  `0020_production_rpc` (set_production_rate, submit_production_log,
+  review_production_log, cancel_production_log, create_payroll_run,
+  finalize_payroll_run, mark_payroll_run_paid) · `0021_production_rls`.
 
 Data rules: server-side totals; price + item-name snapshots on `order_items`;
 inventory mutated only by functions via movements; append-only audit;
@@ -64,6 +77,10 @@ soft-delete/inactive for referenced records.
 (app)/admin/activity
 (app)/admin/audit
 (app)/admin/settings
+(app)/production                    (member: own logs, earnings, payslips)
+(app)/admin/production/rates        per-product piece rates
+(app)/admin/production/logs         review queue (approve / reject)
+(app)/admin/payroll                 /admin/payroll/new /admin/payroll/[id]
 ```
 
 Auth enforced in `proxy.ts` + server actions + RLS.
@@ -77,22 +94,24 @@ ConfirmDialog, MoneyText) · `components/<feature>/*` · `components/layout/*` �
 
 ## Phases
 
-| #     | Phase                                                                                                                                                                                         | Exit criteria                                                |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 0 ✅  | Scaffold + tooling + tokens + shared enums + CI                                                                                                                                               | `npm run validate` + `build` green                           |
-| 1 ✅  | Supabase schema, RLS, RPC, hand-authored types, seed                                                                                                                                          | 14 migrations + 48 PGlite RLS/RPC assertions pass            |
-| 2 ✅  | Auth: login/logout, proxy session gate, ACTIVE enforcement, password change, admin service client                                                                                             | login flow + guards typecheck/build green; proxy wired       |
-| 3 ✅  | App shell: sidebar + mobile drawer, theme toggle, role-aware nav, admin gate, primitives + patterns                                                                                           | responsive shell; all routes stubbed; validate + build green |
-| 4 ✅  | Items catalogue: admin CRUD via RPC (audited), soft-delete/restore, filter + sort + server pagination                                                                                         | 55 DB assertions; validate + build green                     |
-| 5 ✅  | Orders (member): multi-item builder + estimate, create via RPC, list (scope tabs), detail + timeline, cancel, "I've paid"                                                                     | validate + build green; RPC path covered by DB tests         |
-| 6 ✅  | Orders (admin): list + 3 status filters + search, 3-dimension detail, full workflow (process / verify / reject / distribute / complete / cancel), member card                                 | validate + build green; transitions guarded in DB            |
-| 7 ✅  | Inventory: stock list (search + low-stock filter), item detail + movement history, add / remove / set-count dialog via RPC                                                                    | validate + build green                                       |
-| 8 ✅  | Notifications: centre (all / unread tabs), toned rows, mark read / mark all read, top-bar bell with live unread badge                                                                         | validate + build green                                       |
-| 9 ✅  | Members: list (search + status/role filter, order counts), create (service-role auth user + profile), edit, deactivate/reactivate, admin password reset, recent orders — self-lockout guarded | validate + build green                                       |
-| 10 ✅ | Activity feed + Audit log (action filter, before/after JSON dialog) — both admin-only, append-only in DB                                                                                      | validate + build green                                       |
-| 11 ✅ | Dashboards: admin (KPIs, attention queue, recent activity, low stock, recent orders) + member (counts, active/recent orders, recent notifications) — all live queries                         | validate + build green                                       |
-| 12    | Settings + profile                                                                                                                                                                            | theme + org display; password change                         |
-| 13    | Hardening: empty/loading/error, a11y, responsive, indexes, PRD §38 E2E                                                                                                                        | acceptance workflow passes                                   |
+| #     | Phase                                                                                                                                                                                                                  | Exit criteria                                                |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 0 ✅  | Scaffold + tooling + tokens + shared enums + CI                                                                                                                                                                        | `npm run validate` + `build` green                           |
+| 1 ✅  | Supabase schema, RLS, RPC, hand-authored types, seed                                                                                                                                                                   | 14 migrations + 48 PGlite RLS/RPC assertions pass            |
+| 2 ✅  | Auth: login/logout, proxy session gate, ACTIVE enforcement, password change, admin service client                                                                                                                      | login flow + guards typecheck/build green; proxy wired       |
+| 3 ✅  | App shell: sidebar + mobile drawer, theme toggle, role-aware nav, admin gate, primitives + patterns                                                                                                                    | responsive shell; all routes stubbed; validate + build green |
+| 4 ✅  | Items catalogue: admin CRUD via RPC (audited), soft-delete/restore, filter + sort + server pagination                                                                                                                  | 55 DB assertions; validate + build green                     |
+| 5 ✅  | Orders (member): multi-item builder + estimate, create via RPC, list (scope tabs), detail + timeline, cancel, "I've paid"                                                                                              | validate + build green; RPC path covered by DB tests         |
+| 6 ✅  | Orders (admin): list + 3 status filters + search, 3-dimension detail, full workflow (process / verify / reject / distribute / complete / cancel), member card                                                          | validate + build green; transitions guarded in DB            |
+| 7 ✅  | Inventory: stock list (search + low-stock filter), item detail + movement history, add / remove / set-count dialog via RPC                                                                                             | validate + build green                                       |
+| 8 ✅  | Notifications: centre (all / unread tabs), toned rows, mark read / mark all read, top-bar bell with live unread badge                                                                                                  | validate + build green                                       |
+| 9 ✅  | Members: list (search + status/role filter, order counts), create (service-role auth user + profile), edit, deactivate/reactivate, admin password reset, recent orders — self-lockout guarded                          | validate + build green                                       |
+| 10 ✅ | Activity feed + Audit log (action filter, before/after JSON dialog) — both admin-only, append-only in DB                                                                                                               | validate + build green                                       |
+| 11 ✅ | Dashboards: admin (KPIs, attention queue, recent activity, low stock, recent orders) + member (counts, active/recent orders, recent notifications) — all live queries                                                  | validate + build green                                       |
+| 12    | Settings + profile                                                                                                                                                                                                     | theme + org display; password change                         |
+| 13    | Hardening: empty/loading/error, a11y, responsive, indexes, PRD §38 E2E                                                                                                                                                 | acceptance workflow passes                                   |
+| 14 ✅ | Production & piece-rate wages: schema/RPC/RLS (14a), member `/production` log + earnings + payslips (14b), admin pay rates + review queue (14c), payroll runs DRAFT→FINALIZED→PAID (14d), dashboard tiles + seed (14e) | validate + build green; +21 PGlite assertions (84 total)     |
+| 14f   | **Deferred** — approved production log → `PRODUCTION` inventory movement (type already exists). Not built; agree scope first.                                                                                          | —                                                            |
 
 ## Known PRD/codebase conflicts
 
@@ -108,3 +127,7 @@ ConfirmDialog, MoneyText) · `components/<feature>/*` · `components/layout/*` �
    Auth has no native disable-login).
 5. Local content width standard (1440px) relaxed to 1536px + full-bleed tables
    for admin density.
+6. PRD/original `CLAUDE.md` deferred "production" and "wages" out of V1. Both are
+   now in scope by the owner's direction (Phase 14), same as the earlier
+   `/admin/fivem` monitor decision. `CLAUDE.md` updated; the inventory hookup
+   (14f) and member inventory requests remain out of scope.

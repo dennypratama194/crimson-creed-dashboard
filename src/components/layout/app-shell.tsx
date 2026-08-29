@@ -34,12 +34,12 @@ export function AppShell({
 
   return (
     <div className="flex min-h-svh">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <div className="flex h-14 items-center px-5">
+      {/* Desktop sidebar — pinned while the main column scrolls */}
+      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col self-start border-r border-sidebar-border bg-sidebar lg:flex">
+        <div className="flex h-14 shrink-0 items-center px-5">
           <Brand />
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           <SidebarNav sections={sections} />
         </div>
       </aside>

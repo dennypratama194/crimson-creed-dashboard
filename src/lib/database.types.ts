@@ -33,6 +33,12 @@ export type PaymentStatus =
   | "PAID"
   | "PAYMENT_REJECTED";
 export type DistributionStatus = "NOT_DISTRIBUTED" | "DISTRIBUTED";
+export type ProductionLogStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED";
+export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
 export type MovementType =
   | "IN"
   | "OUT"
@@ -48,7 +54,9 @@ export type ReferenceType =
   | "ITEM"
   | "MEMBER"
   | "INVENTORY_ADJUSTMENT"
-  | "MANUAL";
+  | "MANUAL"
+  | "PRODUCTION_LOG"
+  | "PAYROLL_RUN";
 export type NotificationType =
   | "ORDER_CREATED"
   | "ORDER_PROCESSING"
@@ -60,7 +68,12 @@ export type NotificationType =
   | "PAYMENT_REJECTED"
   | "DISTRIBUTION_READY"
   | "DISTRIBUTION_COMPLETED"
-  | "LOW_STOCK";
+  | "LOW_STOCK"
+  | "PRODUCTION_LOG_SUBMITTED"
+  | "PRODUCTION_LOG_APPROVED"
+  | "PRODUCTION_LOG_REJECTED"
+  | "PAYROLL_FINALIZED"
+  | "PAYROLL_PAID";
 export type AuditAction =
   | "MEMBER_CREATED"
   | "MEMBER_UPDATED"
@@ -79,7 +92,14 @@ export type AuditAction =
   | "PAYMENT_REJECTED"
   | "DISTRIBUTION_RECORDED"
   | "INVENTORY_ADJUSTED"
-  | "SETTINGS_UPDATED";
+  | "SETTINGS_UPDATED"
+  | "PRODUCTION_RATE_SET"
+  | "PRODUCTION_LOG_SUBMITTED"
+  | "PRODUCTION_LOG_REVIEWED"
+  | "PRODUCTION_LOG_CANCELLED"
+  | "PAYROLL_RUN_CREATED"
+  | "PAYROLL_RUN_FINALIZED"
+  | "PAYROLL_RUN_PAID";
 
 // ── row shapes ──────────────────────────────────────────────────────────────
 type MemberRow = {
@@ -215,6 +235,62 @@ type OrganizationSettingsRow = {
   updated_by: string | null;
 }
 
+type ProductionRateRow = {
+  item_id: string;
+  unit_rate: number;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type ProductionLogRow = {
+  id: string;
+  member_id: string;
+  item_id: string;
+  item_name_snapshot: string;
+  item_unit_snapshot: ItemUnit;
+  quantity: number;
+  unit_rate_snapshot: number;
+  payout_amount: number;
+  status: ProductionLogStatus;
+  note: string | null;
+  occurred_at: string;
+  submitted_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  payroll_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type PayrollRunRow = {
+  id: string;
+  run_number: string;
+  period_start: string;
+  period_end: string;
+  status: PayrollRunStatus;
+  total_amount: number;
+  note: string | null;
+  created_by: string | null;
+  finalized_by: string | null;
+  finalized_at: string | null;
+  paid_by: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type PayrollRunLineRow = {
+  id: string;
+  payroll_run_id: string;
+  member_id: string;
+  member_name_snapshot: string;
+  log_count: number;
+  gross_amount: number;
+  created_at: string;
+}
+
 type TableShape<Row, Insert, Update> = {
   Row: Row;
   Insert: Insert;
@@ -300,6 +376,10 @@ export interface Database {
         never,
         { org_name?: string; logo_url?: string | null; updated_by?: string | null }
       >;
+      production_rates: TableShape<ProductionRateRow, never, never>;
+      production_logs: TableShape<ProductionLogRow, never, never>;
+      payroll_runs: TableShape<PayrollRunRow, never, never>;
+      payroll_run_lines: TableShape<PayrollRunLineRow, never, never>;
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -387,6 +467,43 @@ export interface Database {
         Args: { p_org_name: string; p_logo_url?: string | null };
         Returns: OrganizationSettingsRow;
       };
+      set_production_rate: {
+        Args: { p_item_id: string; p_unit_rate: number };
+        Returns: ProductionRateRow;
+      };
+      submit_production_log: {
+        Args: {
+          p_item_id: string;
+          p_quantity: number;
+          p_occurred_at?: string | null;
+          p_note?: string | null;
+        };
+        Returns: ProductionLogRow;
+      };
+      review_production_log: {
+        Args: { p_log_id: string; p_approve: boolean; p_note?: string | null };
+        Returns: ProductionLogRow;
+      };
+      cancel_production_log: {
+        Args: { p_log_id: string };
+        Returns: ProductionLogRow;
+      };
+      create_payroll_run: {
+        Args: {
+          p_period_start: string;
+          p_period_end: string;
+          p_note?: string | null;
+        };
+        Returns: PayrollRunRow;
+      };
+      finalize_payroll_run: {
+        Args: { p_run_id: string };
+        Returns: PayrollRunRow;
+      };
+      mark_payroll_run_paid: {
+        Args: { p_run_id: string };
+        Returns: PayrollRunRow;
+      };
     };
     Enums: {
       app_role: AppRole;
@@ -397,6 +514,8 @@ export interface Database {
       order_status: OrderStatus;
       payment_status: PaymentStatus;
       distribution_status: DistributionStatus;
+      production_log_status: ProductionLogStatus;
+      payroll_run_status: PayrollRunStatus;
       movement_type: MovementType;
       reference_type: ReferenceType;
       notification_type: NotificationType;

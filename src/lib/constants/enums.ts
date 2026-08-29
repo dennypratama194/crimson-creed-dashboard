@@ -64,6 +64,17 @@ export const DISTRIBUTION_STATUSES = [
 ] as const;
 export type DistributionStatus = (typeof DISTRIBUTION_STATUSES)[number];
 
+export const PRODUCTION_LOG_STATUSES = [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "CANCELLED",
+] as const;
+export type ProductionLogStatus = (typeof PRODUCTION_LOG_STATUSES)[number];
+
+export const PAYROLL_RUN_STATUSES = ["DRAFT", "FINALIZED", "PAID"] as const;
+export type PayrollRunStatus = (typeof PAYROLL_RUN_STATUSES)[number];
+
 export const MOVEMENT_TYPES = [
   "IN",
   "OUT",
@@ -84,6 +95,8 @@ export const REFERENCE_TYPES = [
   "MEMBER",
   "INVENTORY_ADJUSTMENT",
   "MANUAL",
+  "PRODUCTION_LOG",
+  "PAYROLL_RUN",
 ] as const;
 export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
@@ -99,6 +112,11 @@ export const NOTIFICATION_TYPES = [
   "DISTRIBUTION_READY",
   "DISTRIBUTION_COMPLETED",
   "LOW_STOCK",
+  "PRODUCTION_LOG_SUBMITTED",
+  "PRODUCTION_LOG_APPROVED",
+  "PRODUCTION_LOG_REJECTED",
+  "PAYROLL_FINALIZED",
+  "PAYROLL_PAID",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -121,6 +139,13 @@ export const AUDIT_ACTIONS = [
   "DISTRIBUTION_RECORDED",
   "INVENTORY_ADJUSTED",
   "SETTINGS_UPDATED",
+  "PRODUCTION_RATE_SET",
+  "PRODUCTION_LOG_SUBMITTED",
+  "PRODUCTION_LOG_REVIEWED",
+  "PRODUCTION_LOG_CANCELLED",
+  "PAYROLL_RUN_CREATED",
+  "PAYROLL_RUN_FINALIZED",
+  "PAYROLL_RUN_PAID",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

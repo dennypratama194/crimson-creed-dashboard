@@ -1,7 +1,9 @@
 import type {
   DistributionStatus,
   OrderStatus,
+  PayrollRunStatus,
   PaymentStatus,
+  ProductionLogStatus,
 } from "@/lib/constants/enums";
 
 /** Visual tone tokens (see globals.css --tone-* variables). */
@@ -38,6 +40,19 @@ export const PAYMENT_STATUS_TONE: Record<PaymentStatus, Tone> = {
 export const DISTRIBUTION_STATUS_TONE: Record<DistributionStatus, Tone> = {
   NOT_DISTRIBUTED: "gray",
   DISTRIBUTED: "success",
+};
+
+export const PRODUCTION_LOG_STATUS_TONE: Record<ProductionLogStatus, Tone> = {
+  PENDING: "warning",
+  APPROVED: "success",
+  REJECTED: "error",
+  CANCELLED: "gray",
+};
+
+export const PAYROLL_RUN_STATUS_TONE: Record<PayrollRunStatus, Tone> = {
+  DRAFT: "gray",
+  FINALIZED: "info",
+  PAID: "success",
 };
 
 /**

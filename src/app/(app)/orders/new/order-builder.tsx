@@ -321,7 +321,7 @@ function Thumb({ src, name }: { src: string | null; name: string }) {
       alt={name}
       width={48}
       height={48}
-      className="size-12 shrink-0 rounded-md bg-subtle object-cover"
+      className="size-12 shrink-0 rounded-md bg-subtle object-contain p-1"
     />
   );
 }
@@ -348,7 +348,7 @@ function ItemCard({
             alt={item.name}
             fill
             sizes="(min-width: 1280px) 20vw, (min-width: 640px) 30vw, 45vw"
-            className="object-cover"
+            className="object-contain p-4"
           />
         ) : (
           <span

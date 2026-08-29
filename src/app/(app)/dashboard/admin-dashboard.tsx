@@ -110,9 +110,9 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
         />
       </div>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <OrdersTrendChart data={orderTrend} />
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <div className="flex lg:col-span-2">
+          <OrdersTrendChart data={orderTrend} className="flex-1" />
         </div>
 
         <Card>
@@ -137,6 +137,18 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
               description="Paid orders waiting on handover"
               count={attention.toDistribute}
               href="/admin/orders?status=PROCESSING&payment=PAID"
+            />
+            <AttentionRow
+              label="Production to review"
+              description="Member-logged production awaiting approval"
+              count={attention.productionToReview}
+              href="/admin/production/logs?status=PENDING"
+            />
+            <AttentionRow
+              label="Payroll runs to finalize"
+              description="Draft runs not yet finalized or paid"
+              count={attention.draftPayrollRuns}
+              href="/admin/payroll"
             />
           </CardContent>
         </Card>

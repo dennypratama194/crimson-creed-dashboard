@@ -1,15 +1,16 @@
 import type { Route } from "next";
 import {
-  Bell,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
+  FlaskConical,
   LayoutDashboard,
   Package,
   Radio,
   ScrollText,
-  Settings,
   ShoppingCart,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,7 +36,12 @@ const MEMBER_SECTIONS: NavSection[] = [
         icon: ShoppingCart,
         matchPrefix: true,
       },
-      { label: "Notifications", href: "/notifications", icon: Bell },
+      {
+        label: "Production",
+        href: "/production",
+        icon: FlaskConical,
+        matchPrefix: true,
+      },
     ],
   },
 ];
@@ -59,6 +65,28 @@ const ADMIN_SECTIONS: NavSection[] = [
     ],
   },
   {
+    heading: "Production",
+    items: [
+      {
+        label: "Review queue",
+        href: "/admin/production/logs",
+        icon: ClipboardCheck,
+        matchPrefix: true,
+      },
+      {
+        label: "Pay rates",
+        href: "/admin/production/rates",
+        icon: FlaskConical,
+      },
+      {
+        label: "Payroll",
+        href: "/admin/payroll",
+        icon: Wallet,
+        matchPrefix: true,
+      },
+    ],
+  },
+  {
     heading: "Manage",
     items: [
       {
@@ -73,7 +101,6 @@ const ADMIN_SECTIONS: NavSection[] = [
         icon: Package,
         matchPrefix: true,
       },
-      { label: "Settings", href: "/admin/settings", icon: Settings },
     ],
   },
   {

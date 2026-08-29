@@ -2,6 +2,12 @@ import "server-only";
 
 import { getRecentActivity, type ActivityEntry } from "@/lib/db/activity";
 import { listInventory, type InventoryLine } from "@/lib/db/inventory";
+import { getPayrollAttention } from "@/lib/db/payroll";
+import {
+  getMyEarningsSummary,
+  getPendingProductionCount,
+  type EarningsSummary,
+} from "@/lib/db/production";
 import {
   getRecentNotifications,
   getUnreadNotificationCount,
@@ -27,7 +33,9 @@ function startOfWeekIso(): string {
   return monday.toISOString();
 }
 
-const TREND_DAYS = 14;
+// Widest window the dashboard chart can show. The client-side range toggle
+// (7 / 14 / 30 / 90 days) slices this down, so one query covers every option.
+const TREND_DAYS = 90;
 
 /** UTC midnight `n` days before today. */
 function utcDaysAgo(n: number): Date {
@@ -64,6 +72,9 @@ export type AdminDashboard = {
     paymentsToVerify: number;
     toProcess: number;
     toDistribute: number;
+    productionToReview: number;
+    draftPayrollRuns: number;
+    unpaidPayrollTotal: number;
   };
   orderTrend: TrendPoint[];
   recentActivity: ActivityEntry[];
@@ -83,6 +94,8 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     recentActivity,
     inventory,
     recent,
+    productionToReview,
+    payrollAttention,
   ] = await Promise.all([
     supabase
       .from("members")
@@ -105,6 +118,8 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
     getRecentActivity(8),
     listInventory({ lowStockOnly: true, page: 1 }),
     listAdminOrders({ page: 1 }),
+    getPendingProductionCount(),
+    getPayrollAttention(),
   ]);
 
   return {
@@ -114,7 +129,12 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
       completedOrders: completedOrders.count ?? 0,
       lowStock: inventory.lowStockCount,
     },
-    attention,
+    attention: {
+      ...attention,
+      productionToReview,
+      draftPayrollRuns: payrollAttention.draftRuns,
+      unpaidPayrollTotal: payrollAttention.unpaidFinalizedTotal,
+    },
     orderTrend: bucketByDay(trendRows.data ?? []),
     recentActivity,
     lowStockItems: inventory.rows.slice(0, 6),
@@ -124,19 +144,22 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
 
 export type MemberDashboard = {
   counts: { open: number; completed: number; unread: number };
+  earnings: EarningsSummary;
   activeOrders: Order[];
   recentOrders: Order[];
   recentNotifications: Notification[];
 };
 
 export async function getMemberDashboard(): Promise<MemberDashboard> {
-  const [summary, unread, active, recent, notifications] = await Promise.all([
-    getMemberOrderSummary(),
-    getUnreadNotificationCount(),
-    listOrders({ scope: "open", page: 1 }),
-    listOrders({ page: 1 }),
-    getRecentNotifications(5),
-  ]);
+  const [summary, unread, active, recent, notifications, earnings] =
+    await Promise.all([
+      getMemberOrderSummary(),
+      getUnreadNotificationCount(),
+      listOrders({ scope: "open", page: 1 }),
+      listOrders({ page: 1 }),
+      getRecentNotifications(5),
+      getMyEarningsSummary(),
+    ]);
 
   return {
     counts: {
@@ -144,6 +167,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
       completed: summary.completed,
       unread,
     },
+    earnings,
     activeOrders: active.rows.slice(0, 6),
     recentOrders: recent.rows.slice(0, 6),
     recentNotifications: notifications,

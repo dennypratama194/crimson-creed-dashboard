@@ -4,11 +4,8 @@ import { ChevronRight } from "lucide-react";
 
 import type { Order } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
-import {
-  DistributionStatusBadge,
-  OrderStatusBadge,
-  PaymentStatusBadge,
-} from "@/components/patterns/status-badge";
+import { cn } from "@/lib/utils";
+import { OrderStatusBadge } from "@/components/patterns/status-badge";
 import {
   Table,
   TableBody,
@@ -16,6 +13,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  rowLinkOverlay,
 } from "@/components/ui/table";
 
 export function OrdersTable({
@@ -37,9 +35,7 @@ export function OrdersTable({
               Total
             </span>
           </TableHead>
-          <TableHead>Order status</TableHead>
-          <TableHead>Payment</TableHead>
-          <TableHead>Distribution</TableHead>
+          <TableHead>Status</TableHead>
           <TableHead>
             <span className="sr-only">View</span>
           </TableHead>
@@ -51,7 +47,10 @@ export function OrdersTable({
             <TableCell>
               <Link
                 href={hrefFor(order.id)}
-                className="font-mono text-sm font-medium hover:underline"
+                className={cn(
+                  "font-mono text-sm font-medium hover:underline",
+                  rowLinkOverlay,
+                )}
               >
                 {order.order_number}
               </Link>
@@ -65,20 +64,11 @@ export function OrdersTable({
             <TableCell>
               <OrderStatusBadge status={order.status} />
             </TableCell>
-            <TableCell>
-              <PaymentStatusBadge status={order.payment_status} />
-            </TableCell>
-            <TableCell>
-              <DistributionStatusBadge status={order.distribution_status} />
-            </TableCell>
             <TableCell className="text-right">
-              <Link
-                href={hrefFor(order.id)}
-                aria-label={`View order ${order.order_number}`}
-                className="inline-flex text-muted-foreground hover:text-foreground"
-              >
-                <ChevronRight className="size-4" />
-              </Link>
+              <ChevronRight
+                aria-hidden
+                className="inline size-4 text-muted-foreground"
+              />
             </TableCell>
           </TableRow>
         ))}

@@ -69,7 +69,9 @@ export default async function MemberDetailPage({
               </Badge>
             </Row>
             <Row label="Role">
-              <span>{APP_ROLE_LABEL[member.role]}</span>
+              <Badge tone={member.role === "SUPER_ADMIN" ? "brand" : "gray"}>
+                {APP_ROLE_LABEL[member.role]}
+              </Badge>
             </Row>
             <Row label="Rank">
               <span>{MEMBER_RANK_LABEL[member.rank]}</span>

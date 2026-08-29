@@ -7,7 +7,9 @@ import type {
   MemberStatus,
   MovementType,
   OrderStatus,
+  PayrollRunStatus,
   PaymentStatus,
+  ProductionLogStatus,
 } from "@/lib/constants/enums";
 
 /** Human-readable labels. UI must render these, never the raw enum token. */
@@ -64,6 +66,20 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 export const DISTRIBUTION_STATUS_LABEL: Record<DistributionStatus, string> = {
   NOT_DISTRIBUTED: "Not distributed",
   DISTRIBUTED: "Distributed",
+};
+
+export const PRODUCTION_LOG_STATUS_LABEL: Record<ProductionLogStatus, string> =
+  {
+    PENDING: "Pending review",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    CANCELLED: "Cancelled",
+  };
+
+export const PAYROLL_RUN_STATUS_LABEL: Record<PayrollRunStatus, string> = {
+  DRAFT: "Draft",
+  FINALIZED: "Finalized",
+  PAID: "Paid",
 };
 
 export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {

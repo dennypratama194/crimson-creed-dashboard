@@ -31,17 +31,36 @@ export function TableBody({ className, ...props }: ComponentProps<"tbody">) {
   );
 }
 
-export function TableRow({ className, ...props }: ComponentProps<"tr">) {
+export function TableFooter({ className, ...props }: ComponentProps<"tfoot">) {
   return (
-    <tr
+    <tfoot
       className={cn(
-        "border-b border-border transition-colors hover:bg-muted/40",
+        "border-t border-border bg-muted/60 font-medium [&_tr]:border-0",
         className,
       )}
       {...props}
     />
   );
 }
+
+export function TableRow({ className, ...props }: ComponentProps<"tr">) {
+  return (
+    <tr
+      className={cn(
+        "relative border-b border-border transition-colors focus-within:bg-muted/40 hover:bg-muted/40",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/**
+ * Put this on a row's primary <Link> so the whole <TableRow> becomes its click
+ * target (a "stretched link"). Other interactive controls in the row must sit in
+ * a cell with `relative z-10` to stay clickable above the overlay.
+ */
+export const rowLinkOverlay = "after:absolute after:inset-0 after:content-['']";
 
 export function TableHead({ className, ...props }: ComponentProps<"th">) {
   return (

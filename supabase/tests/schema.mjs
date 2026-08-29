@@ -586,6 +586,244 @@ await expect("member cannot update another member's row (RLS)", async () => {
   );
 });
 
+// ── production & payroll ───────────────────────────────────────────────
+console.log("\nProduction & payroll");
+await asRole(null);
+const weed = await one(
+  `insert into items (name, category, unit, price) values ('Processed Weed','PRODUCT','GRAM',0) returning id`,
+);
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot set a production rate",
+  () => db.query(`select set_production_rate($1, 5)`, [weed.id]),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "rate rejected for a non-PRODUCT item",
+  () => db.query(`select set_production_rate($1, 5)`, [item.id]),
+  "PRODUCT",
+);
+await expect("admin sets a production pay rate", async () => {
+  const r = await one(`select * from set_production_rate($1, $2)`, [
+    weed.id,
+    12.5,
+  ]);
+  assert(Number(r.unit_rate) === 12.5, `rate ${r.unit_rate}`);
+});
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "log rejected when quantity <= 0",
+  () => db.query(`select submit_production_log($1, 0, null, null)`, [weed.id]),
+  "greater than zero",
+);
+let plog;
+await expect(
+  "member logs production; payout computed server-side from the rate",
+  async () => {
+    plog = await one(`select * from submit_production_log($1, $2, $3, $4)`, [
+      weed.id,
+      40,
+      "2026-08-20T12:00:00Z",
+      "night shift",
+    ]);
+    assert(plog.status === "PENDING", `status ${plog.status}`);
+    assert(Number(plog.quantity) === 40, `qty ${plog.quantity}`);
+    assert(
+      Number(plog.unit_rate_snapshot) === 12.5,
+      `rate snap ${plog.unit_rate_snapshot}`,
+    );
+    assert(
+      Number(plog.payout_amount) === 500,
+      `payout ${plog.payout_amount} (expected 40 * 12.5)`,
+    );
+    assert(
+      plog.item_name_snapshot === "Processed Weed",
+      "name not snapshotted",
+    );
+  },
+);
+
+// rate change must not rewrite an existing log
+await asRole("authenticated", admin.id);
+await db.query(`select set_production_rate($1, 99)`, [weed.id]);
+await asRole(null);
+await expect(
+  "historical log payout unchanged after a rate change",
+  async () => {
+    const r = await one(
+      `select unit_rate_snapshot, payout_amount from production_logs where id = $1`,
+      [plog.id],
+    );
+    assert(
+      Number(r.unit_rate_snapshot) === 12.5 && Number(r.payout_amount) === 500,
+      `snapshot drifted: ${r.unit_rate_snapshot} / ${r.payout_amount}`,
+    );
+  },
+);
+await asRole("authenticated", admin.id);
+await db.query(`select set_production_rate($1, 12.5)`, [weed.id]);
+
+// a second member logs some production too
+await asRole("authenticated", m2.id);
+const plog2 = await one(
+  `select * from submit_production_log($1, $2, $3, null)`,
+  [weed.id, 10, "2026-08-21T09:00:00Z"],
+);
+
+// RLS: members only see their own logs
+await expect("member_two cannot see member_one's production logs", async () => {
+  const r = await one(
+    `select count(*)::int n from production_logs where id = $1`,
+    [plog.id],
+  );
+  assert(r.n === 0, `expected 0, got ${r.n}`);
+});
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot review a production log",
+  () => db.query(`select review_production_log($1, true, null)`, [plog.id]),
+  "Super Admin",
+);
+
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "rejecting a log requires a reason",
+  () => db.query(`select review_production_log($1, false, null)`, [plog2.id]),
+  "reason is required",
+);
+await expect("admin approves a production log (member notified)", async () => {
+  const r = await one(`select * from review_production_log($1, true, $2)`, [
+    plog.id,
+    "verified on stream",
+  ]);
+  assert(r.status === "APPROVED", `status ${r.status}`);
+  await asRole(null);
+  const notif = await one(
+    `select count(*)::int n from notifications where recipient_id = $1 and type = 'PRODUCTION_LOG_APPROVED'`,
+    [memberId.m1],
+  );
+  assert(notif.n === 1, `expected 1 approval notification, got ${notif.n}`);
+  await asRole("authenticated", admin.id);
+});
+await expect("admin approves the second log", async () => {
+  const r = await one(`select * from review_production_log($1, true, null)`, [
+    plog2.id,
+  ]);
+  assert(r.status === "APPROVED", `status ${r.status}`);
+});
+await expectThrows(
+  "a reviewed log cannot be reviewed again",
+  () => db.query(`select review_production_log($1, false, 'nope')`, [plog.id]),
+  "already",
+);
+
+// a pending log that a member cancels
+await asRole("authenticated", m1.id);
+const plog3 = await one(
+  `select * from submit_production_log($1, $2, $3, null)`,
+  [weed.id, 5, "2026-08-22T09:00:00Z"],
+);
+await expect("member cancels their own pending log", async () => {
+  const r = await one(`select * from cancel_production_log($1)`, [plog3.id]);
+  assert(r.status === "CANCELLED", `status ${r.status}`);
+});
+
+// payroll run: finalize rolls approved in-range logs into per-member lines
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot open a payroll run",
+  () => db.query(`select create_payroll_run('2026-08-01','2026-08-31',null)`),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+let run;
+await expect("admin opens a draft payroll run", async () => {
+  run = await one(
+    `select * from create_payroll_run('2026-08-01','2026-08-31','August')`,
+  );
+  assert(run.status === "DRAFT", `status ${run.status}`);
+  assert(/^PR-\d{6}$/.test(run.run_number), `run_number ${run.run_number}`);
+});
+await expect(
+  "finalize rolls approved logs into member lines and totals server-side",
+  async () => {
+    const r = await one(`select * from finalize_payroll_run($1)`, [run.id]);
+    assert(r.status === "FINALIZED", `status ${r.status}`);
+    // m1: 40 * 12.5 = 500 ; m2: 10 * 12.5 = 125 ; total 625
+    assert(Number(r.total_amount) === 625, `total ${r.total_amount}`);
+    await asRole(null);
+    const lines = await db.query(
+      `select member_id, log_count, gross_amount from payroll_run_lines where payroll_run_id = $1 order by gross_amount desc`,
+      [run.id],
+    );
+    assert(
+      lines.rows.length === 2,
+      `expected 2 lines, got ${lines.rows.length}`,
+    );
+    assert(
+      Number(lines.rows[0].gross_amount) === 500 &&
+        Number(lines.rows[1].gross_amount) === 125,
+      `line amounts wrong: ${JSON.stringify(lines.rows)}`,
+    );
+    const stamped = await one(
+      `select count(*)::int n from production_logs where payroll_run_id = $1`,
+      [run.id],
+    );
+    assert(stamped.n === 2, `expected 2 stamped logs, got ${stamped.n}`);
+    await asRole("authenticated", admin.id);
+  },
+);
+await expectThrows(
+  "a finalized run cannot be finalized again",
+  () => db.query(`select finalize_payroll_run($1)`, [run.id]),
+  "draft",
+);
+
+// member sees their own payroll line + gets paid
+await asRole("authenticated", m1.id);
+await expect("member sees their own payroll run + line", async () => {
+  const runs = await one(`select count(*)::int n from payroll_runs`);
+  assert(runs.n === 1, `expected 1 visible run, got ${runs.n}`);
+  const line = await one(
+    `select gross_amount from payroll_run_lines where payroll_run_id = $1`,
+    [run.id],
+  );
+  assert(Number(line.gross_amount) === 500, `line ${line?.gross_amount}`);
+});
+await asRole("authenticated", m2.id);
+await expect("member_two cannot see member_one's payroll line", async () => {
+  const r = await one(
+    `select count(*)::int n from payroll_run_lines where member_id = $1`,
+    [memberId.m1],
+  );
+  assert(r.n === 0, `expected 0, got ${r.n}`);
+});
+await asRole("authenticated", admin.id);
+await expect("admin marks the run paid (members notified)", async () => {
+  const r = await one(`select * from mark_payroll_run_paid($1)`, [run.id]);
+  assert(r.status === "PAID", `status ${r.status}`);
+  await asRole(null);
+  const notif = await one(
+    `select count(*)::int n from notifications where type = 'PAYROLL_PAID'`,
+  );
+  assert(notif.n === 2, `expected 2 paid notifications, got ${notif.n}`);
+  await asRole("authenticated", admin.id);
+});
+await expect("payroll_run_lines are immutable", async () => {
+  await asRole(null);
+  let blocked = false;
+  try {
+    await db.query(`update payroll_run_lines set gross_amount = 0`);
+  } catch {
+    blocked = true;
+  }
+  assert(blocked, "expected the append-only trigger to block the update");
+});
+
 printSummaryAndExit();
 
 function printSummaryAndExit() {

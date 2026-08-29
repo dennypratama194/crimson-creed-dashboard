@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Users } from "lucide-react";
+import { ChevronRight, Plus, Users } from "lucide-react";
 
 import { APP_ROLES, type AppRole } from "@/lib/constants/enums";
 import {
@@ -25,7 +25,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  rowLinkOverlay,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { MembersFilterBar } from "@/app/(app)/admin/members/members-filter-bar";
 import { MembersRowActions } from "@/app/(app)/admin/members/members-row-actions";
 
@@ -106,6 +108,9 @@ export default async function AdminMembersPage({
                   <TableHead>
                     <span className="sr-only">Actions</span>
                   </TableHead>
+                  <TableHead className="w-8">
+                    <span className="sr-only">Open</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -114,7 +119,10 @@ export default async function AdminMembersPage({
                     <TableCell>
                       <Link
                         href={`/admin/members/${m.id}`}
-                        className="font-medium hover:underline"
+                        className={cn(
+                          "font-medium hover:underline",
+                          rowLinkOverlay,
+                        )}
                       >
                         {m.display_name}
                       </Link>
@@ -123,13 +131,9 @@ export default async function AdminMembersPage({
                       {MEMBER_RANK_LABEL[m.rank]}
                     </TableCell>
                     <TableCell>
-                      {m.role === "SUPER_ADMIN" ? (
-                        <Badge tone="brand">{APP_ROLE_LABEL[m.role]}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {APP_ROLE_LABEL[m.role]}
-                        </span>
-                      )}
+                      <Badge tone={m.role === "SUPER_ADMIN" ? "brand" : "gray"}>
+                        {APP_ROLE_LABEL[m.role]}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge tone={m.status === "ACTIVE" ? "success" : "gray"}>
@@ -139,11 +143,17 @@ export default async function AdminMembersPage({
                     <TableCell className="text-right tabular-nums">
                       {m.order_count}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="relative z-10 text-right">
                       <MembersRowActions
                         memberId={m.id}
                         displayName={m.display_name}
                         status={m.status}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ChevronRight
+                        aria-hidden
+                        className="inline size-4 text-muted-foreground"
                       />
                     </TableCell>
                   </TableRow>

@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { AdminOrderRow } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/patterns/status-badge";
 import {
   Table,
@@ -11,6 +12,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  rowLinkOverlay,
 } from "@/components/ui/table";
 
 export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
@@ -38,7 +40,10 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
             <TableCell>
               <Link
                 href={`/admin/orders/${order.id}`}
-                className="font-mono text-sm font-medium hover:underline"
+                className={cn(
+                  "font-mono text-sm font-medium hover:underline",
+                  rowLinkOverlay,
+                )}
               >
                 {order.order_number}
               </Link>
@@ -54,13 +59,10 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
               <OrderStatusBadge status={order.status} />
             </TableCell>
             <TableCell className="text-right">
-              <Link
-                href={`/admin/orders/${order.id}`}
-                aria-label={`Open order ${order.order_number}`}
-                className="inline-flex text-muted-foreground hover:text-foreground"
-              >
-                <ChevronRight className="size-4" />
-              </Link>
+              <ChevronRight
+                aria-hidden
+                className="inline size-4 text-muted-foreground"
+              />
             </TableCell>
           </TableRow>
         ))}

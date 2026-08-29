@@ -16,4 +16,12 @@ export const ACTIVITY_TONE: Record<string, Tone> = {
   "payment.verified": "success",
   "payment.rejected": "error",
   "inventory.moved": "gray",
+  "production.rate_set": "gray",
+  "production.logged": "info",
+  "production.approved": "success",
+  "production.rejected": "error",
+  "production.cancelled": "gray",
+  "payroll.created": "gray",
+  "payroll.finalized": "info",
+  "payroll.paid": "success",
 };
