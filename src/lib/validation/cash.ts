@@ -14,6 +14,7 @@ export const recordCashEntrySchema = z
       .positive("Must be greater than zero")
       .max(999_999_999_999, "That amount is too large"),
     category: z.enum(CASH_CATEGORIES),
+    handledBy: z.uuid("Choose who handled this"),
     occurredAt: isoDate.nullish(),
     note: z
       .string()

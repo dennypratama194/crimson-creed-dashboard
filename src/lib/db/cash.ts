@@ -58,7 +58,10 @@ export async function getCashSummary(range?: {
   return summary;
 }
 
-export type CashEntryRow = CashEntry & { created_by_name: string | null };
+export type CashEntryRow = CashEntry & {
+  created_by_name: string | null;
+  handled_by_name: string | null;
+};
 
 export async function listCashEntries(options: {
   page?: number;
@@ -94,13 +97,16 @@ export async function listCashEntries(options: {
 
   const rows = data ?? [];
   const names = await getMemberNames(
-    rows.map((r) => r.created_by).filter((v): v is string => v !== null),
+    rows
+      .flatMap((r) => [r.created_by, r.handled_by])
+      .filter((v): v is string => v !== null),
   );
 
   return {
     rows: rows.map((r) => ({
       ...r,
       created_by_name: r.created_by ? (names.get(r.created_by) ?? null) : null,
+      handled_by_name: r.handled_by ? (names.get(r.handled_by) ?? null) : null,
     })),
     total: count ?? 0,
     page,
@@ -111,6 +117,7 @@ export async function listCashEntries(options: {
 export type CashEntryDetail = {
   entry: CashEntry;
   createdByName: string | null;
+  handledByName: string | null;
   /** The reversal entry that cancels this one, if any. */
   reversedBy: CashEntry | null;
   /** The original entry this one reverses, if this is itself a reversal. */
@@ -144,13 +151,18 @@ export async function getCashEntryDetail(
       : Promise.resolve({ data: null }),
   ]);
 
-  const createdByName = entry.created_by
-    ? ((await getMemberNames([entry.created_by])).get(entry.created_by) ?? null)
-    : null;
+  const names = await getMemberNames(
+    [entry.created_by, entry.handled_by].filter((v): v is string => v !== null),
+  );
 
   return {
     entry,
-    createdByName,
+    createdByName: entry.created_by
+      ? (names.get(entry.created_by) ?? null)
+      : null,
+    handledByName: entry.handled_by
+      ? (names.get(entry.handled_by) ?? null)
+      : null,
     reversedBy: reversedBy ?? null,
     reverses: reverses ?? null,
   };

@@ -67,6 +67,7 @@ create table cash_entries (
   reverses_entry_id uuid references cash_entries (id) on delete restrict,
   note            text,
   occurred_at     timestamptz not null default now(),
+  handled_by      uuid references members (id) on delete set null,
   created_by      uuid references members (id) on delete set null,
   created_at      timestamptz not null default now()
 );
@@ -74,6 +75,7 @@ create table cash_entries (
 comment on table cash_entries is 'Append-only. A correction is a new reversing entry (source ADJUSTMENT), never an edit.';
 comment on column cash_entries.balance_after is 'Treasury balance immediately after this entry was posted. Computed server-side.';
 comment on column cash_entries.reverses_entry_id is 'Set on a reversal entry; points at the entry it cancels out.';
+comment on column cash_entries.handled_by is 'The Super Admin this entry is attributed to (who handled the money). Set by the recorder; null on auto-posted entries.';
 
 -- One reversal per entry, at most.
 create unique index cash_entries_one_reversal
@@ -85,6 +87,7 @@ create index cash_entries_created_at_idx on cash_entries (created_at desc);
 create index cash_entries_direction_idx on cash_entries (direction);
 create index cash_entries_category_idx on cash_entries (category);
 create index cash_entries_source_idx on cash_entries (source);
+create index cash_entries_handled_by_idx on cash_entries (handled_by);
 create index cash_entries_reference_idx on cash_entries (reference_type, reference_id);
 
 create trigger cash_entries_no_change

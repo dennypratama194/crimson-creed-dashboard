@@ -18,6 +18,16 @@ export function formatQuantity(value: number | string): string {
   return Number.isFinite(n) ? integer.format(n) : "0";
 }
 
+const percent = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+
+/** `15.5` -> `"15.5%"`. Caller decides whether to strip the sign. */
+export function formatPercent(value: number): string {
+  return Number.isFinite(value) ? `${percent.format(value)}%` : "—";
+}
+
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
@@ -44,6 +54,18 @@ const dayShortFmt = new Intl.DateTimeFormat("en-US", {
 /** "2026-08-29" -> "Aug 29". Parsed as UTC so the day never shifts. */
 export function formatDayShort(isoDate: string): string {
   return dayShortFmt.format(new Date(`${isoDate}T00:00:00Z`));
+}
+
+const monthFmt = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "2026-08" (or a full ISO string) -> "August 2026". */
+export function formatMonth(value: string): string {
+  const iso = value.length === 7 ? `${value}-01T00:00:00Z` : value;
+  return monthFmt.format(new Date(iso));
 }
 
 export function formatDateTime(value: string | Date): string {

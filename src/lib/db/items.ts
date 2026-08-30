@@ -36,7 +36,12 @@ export async function listItems(options: ListItemsOptions): Promise<{
   const pageSize = ITEM_PAGE_SIZE;
   const offset = (page - 1) * pageSize;
 
-  let query = supabase.from("items").select("*", { count: "exact" });
+  // The catalogue screen is member-facing goods only; raw materials, tools and
+  // seized stock live in the company stash (`/admin/inventory`).
+  let query = supabase
+    .from("items")
+    .select("*", { count: "exact" })
+    .eq("stock_type", "CATALOGUE");
 
   const status = options.status ?? "all";
   if (status === "archived") {

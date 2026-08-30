@@ -1,12 +1,19 @@
 import "server-only";
 
+import type { StockType } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
 import { createClient } from "@/lib/supabase/server";
 
 export type InventoryLine = Pick<
   Tables<"items">,
-  "id" | "name" | "category" | "unit" | "low_stock_threshold"
+  | "id"
+  | "name"
+  | "category"
+  | "unit"
+  | "low_stock_threshold"
+  | "image_url"
+  | "stock_type"
 > & {
   current_quantity: number;
   stock_state: "ok" | "low" | "out";
@@ -32,6 +39,7 @@ export async function listInventory(options: {
   page?: number;
   search?: string;
   lowStockOnly?: boolean;
+  stockType?: StockType | "all";
 }): Promise<{
   rows: InventoryLine[];
   total: number;
@@ -44,7 +52,9 @@ export async function listInventory(options: {
   const [{ data: items }, { data: inventory }] = await Promise.all([
     supabase
       .from("items")
-      .select("id, name, category, unit, low_stock_threshold")
+      .select(
+        "id, name, category, unit, low_stock_threshold, image_url, stock_type",
+      )
       .is("archived_at", null)
       .order("name", { ascending: true }),
     supabase.from("inventory").select("item_id, current_quantity"),
@@ -68,6 +78,8 @@ export async function listInventory(options: {
   const search = options.search?.trim().toLowerCase();
   if (search)
     lines = lines.filter((l) => l.name.toLowerCase().includes(search));
+  if (options.stockType && options.stockType !== "all")
+    lines = lines.filter((l) => l.stock_type === options.stockType);
   if (options.lowStockOnly) lines = lines.filter((l) => l.stock_state !== "ok");
 
   const total = lines.length;

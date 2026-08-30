@@ -3,9 +3,10 @@
 
 /*
  * Crimson Creed Operations System — design tokens
- * Untitled UI-inspired: neutral grays, restrained warm-orange brand accent,
- * semantic status tones. Light and dark are each defined intentionally
- * (dark is not an inversion of light).
+ * Linear-inspired: a cool near-neutral gray scale (no navy tint), a true
+ * near-black dark base, and a single warm brand accent (emblem rust) that is
+ * the only real colour on screen outside semantic status tones. Light and dark
+ * are each defined intentionally (dark is not an inversion of light).
  *
  * App code MUST consume the semantic tokens below (--background, --primary,
  * --tone-success-*, etc.), never raw palette hexes. See lib/constants for the
@@ -18,19 +19,19 @@
   /* Radius scale */
   --radius: 0.625rem; /* 10px base; inputs/buttons derive -2px, cards +2px */
 
-  /* --- Neutral surfaces (light) --- */
+  /* --- Neutral surfaces (light) — cool near-neutral gray, no blue cast --- */
   --background: #ffffff;
-  --foreground: #101828;
+  --foreground: #141517;
   --card: #ffffff;
-  --card-foreground: #101828;
+  --card-foreground: #141517;
   --popover: #ffffff;
-  --popover-foreground: #101828;
-  --muted: #f9fafb;
-  --muted-foreground: #667085;
-  --subtle: #f2f4f7;
+  --popover-foreground: #141517;
+  --muted: #f7f8f9;
+  --muted-foreground: #6a6e78;
+  --subtle: #f1f2f4;
 
-  --border: #eaecf0;
-  --input: #d0d5dd;
+  --border: #e6e7e9;
+  --input: #d5d7db;
   --ring: #a5502b;
 
   /* --- Brand: primary = emblem rust (brown). Oxblood is kept for charts/badges
@@ -39,19 +40,19 @@
   --primary-hover: #874020;
   --primary-foreground: #ffffff;
 
-  --secondary: #f2f4f7;
-  --secondary-foreground: #182230;
-  --accent: #f4f0ee;
-  --accent-foreground: #101828;
+  --secondary: #f1f2f4;
+  --secondary-foreground: #1f2126;
+  --accent: #f1f2f4;
+  --accent-foreground: #141517;
 
   --destructive: #d92d20;
   --destructive-hover: #b42318;
   --destructive-foreground: #ffffff;
 
   /* --- Semantic status tones: bg / fg / border --- */
-  --tone-gray-bg: #f9fafb;
-  --tone-gray-fg: #344054;
-  --tone-gray-border: #eaecf0;
+  --tone-gray-bg: #f7f8f9;
+  --tone-gray-fg: #3f434b;
+  --tone-gray-border: #e6e7e9;
 
   --tone-brand-bg: #fbeede;
   --tone-brand-fg: #9a4a22;
@@ -73,12 +74,12 @@
   --tone-info-fg: #175cd3;
   --tone-info-border: #b2ddff;
 
-  /* --- Sidebar (faint warm tint to echo the emblem) --- */
-  --sidebar: #faf7f5;
-  --sidebar-foreground: #344054;
-  --sidebar-border: #ede7e3;
-  --sidebar-accent: #f2ebe7;
-  --sidebar-accent-foreground: #101828;
+  /* --- Sidebar — flush with the page; only a hairline border separates it --- */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #4a4e57;
+  --sidebar-border: #e6e7e9;
+  --sidebar-accent: #f1f2f4;
+  --sidebar-accent-foreground: #141517;
   --sidebar-ring: #a5502b;
 
   /* --- Charts (chart-1 = brand crimson, chart-4 = emblem rust) --- */
@@ -90,36 +91,37 @@
 }
 
 .dark {
-  --background: #0c111d;
-  --foreground: #f5f6f7;
-  --card: #101828;
-  --card-foreground: #f5f6f7;
-  --popover: #101828;
-  --popover-foreground: #f5f6f7;
-  --muted: #182230;
-  --muted-foreground: #98a2b3;
-  --subtle: #1f242f;
+  /* Cool near-black base — neutral gray, no navy tint */
+  --background: #08090a;
+  --foreground: #f7f8f8;
+  --card: #0f1011;
+  --card-foreground: #f7f8f8;
+  --popover: #101113;
+  --popover-foreground: #f7f8f8;
+  --muted: #151719;
+  --muted-foreground: #8a8f98;
+  --subtle: #1a1c1f;
 
-  --border: #1f242f;
-  --input: #333741;
+  --border: #23252a;
+  --input: #2b2e34;
   --ring: #c56a3e;
 
   --primary: #c56a3e;
   --primary-hover: #d78a5c;
   --primary-foreground: #ffffff;
 
-  --secondary: #1f242f;
+  --secondary: #1a1c1f;
   --secondary-foreground: #f2f4f7;
-  --accent: #1f242f;
-  --accent-foreground: #f5f6f7;
+  --accent: #1c1e22;
+  --accent-foreground: #f7f8f8;
 
   --destructive: #f04438;
   --destructive-hover: #f97066;
   --destructive-foreground: #ffffff;
 
-  --tone-gray-bg: rgba(255, 255, 255, 0.06);
-  --tone-gray-fg: #cecfd2;
-  --tone-gray-border: rgba(255, 255, 255, 0.12);
+  --tone-gray-bg: rgba(255, 255, 255, 0.055);
+  --tone-gray-fg: #c8cace;
+  --tone-gray-border: rgba(255, 255, 255, 0.11);
 
   --tone-brand-bg: rgba(213, 138, 79, 0.14);
   --tone-brand-fg: #e3a878;
@@ -141,11 +143,11 @@
   --tone-info-fg: #84caff;
   --tone-info-border: rgba(46, 144, 250, 0.3);
 
-  --sidebar: #0c111d;
-  --sidebar-foreground: #cecfd2;
-  --sidebar-border: #1f242f;
-  --sidebar-accent: #1f242f;
-  --sidebar-accent-foreground: #f5f6f7;
+  --sidebar: #08090a;
+  --sidebar-foreground: #8a8f98;
+  --sidebar-border: #23252a;
+  --sidebar-accent: #1a1c1f;
+  --sidebar-accent-foreground: #f7f8f8;
   --sidebar-ring: #c56a3e;
 }
 
@@ -232,11 +234,39 @@
     text-size-adjust: 100%;
   }
 
+  /* Thin, self-effacing scrollbars (Linear/Vercel style). Firefox uses the
+   * two-value `scrollbar-*`; Chromium/Safari use the ::-webkit pseudo-elements.
+   * The transparent border + padding-box clip insets the thumb so it reads as
+   * ~6px with breathing room instead of a chunky OS bar. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 20%, transparent)
+      transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--foreground) 20%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 34%, transparent);
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-feature-settings: "cv11", "ss01";
+    font-feature-settings: "ss01";
     font-variation-settings: "opsz" 32;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

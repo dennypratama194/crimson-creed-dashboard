@@ -1,16 +1,23 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import {
   ITEM_CATEGORIES,
   ITEM_UNITS,
+  STOCK_TYPES,
   type ItemCategory,
   type ItemUnit,
+  type StockType,
 } from "@/lib/constants/enums";
-import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
+import {
+  ITEM_CATEGORY_LABEL,
+  ITEM_UNIT_LABEL,
+  STOCK_TYPE_LABEL,
+} from "@/lib/constants/labels";
 import type { Item } from "@/lib/db/items";
 import { IDLE_FORM_STATE } from "@/lib/forms";
 import { useActionToast } from "@/lib/toast";
@@ -32,16 +39,28 @@ import {
   updateItemAction,
 } from "@/app/(app)/admin/items/actions";
 
-export function ItemForm({ item }: { item?: Item }) {
+export function ItemForm({
+  item,
+  defaultStockType = "CATALOGUE",
+  returnTo = "/admin/items" as Route,
+}: {
+  item?: Item;
+  defaultStockType?: StockType;
+  returnTo?: Route;
+}) {
   const router = useRouter();
   const isEdit = Boolean(item);
+  const [stockType, setStockType] = useState<StockType>(
+    (item?.stock_type as StockType | undefined) ?? defaultStockType,
+  );
+  const isCatalogue = stockType === "CATALOGUE";
   const [state, formAction, pending] = useActionState(
     isEdit ? updateItemAction : createItemAction,
     IDLE_FORM_STATE,
   );
   useActionToast(state, {
     success: isEdit ? "Item saved." : "Item created.",
-    onSuccess: () => router.push("/admin/items"),
+    onSuccess: () => router.push(returnTo),
   });
   const errors = state.fieldErrors ?? {};
 
@@ -52,6 +71,7 @@ export function ItemForm({ item }: { item?: Item }) {
       noValidate
     >
       {item ? <input type="hidden" name="id" value={item.id} /> : null}
+      <input type="hidden" name="stockType" value={stockType} />
 
       {state.error ? (
         <p
@@ -71,6 +91,34 @@ export function ItemForm({ item }: { item?: Item }) {
         />
       </Field>
 
+      <Field
+        label="Type"
+        htmlFor="stockType"
+        required
+        error={errors.stockType}
+        hint={
+          isCatalogue
+            ? "Members can see and order catalogue items."
+            : "Stash only — never shown to members or the order page."
+        }
+      >
+        <Select
+          value={stockType}
+          onValueChange={(v) => setStockType(v as StockType)}
+        >
+          <SelectTrigger id="stockType">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STOCK_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {STOCK_TYPE_LABEL[t]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
       <ImageUploadField defaultUrl={item?.image_url ?? ""} />
       {errors.imageUrl ? (
         <p className="-mt-4 text-xs text-tone-error-fg">{errors.imageUrl}</p>
@@ -86,7 +134,8 @@ export function ItemForm({ item }: { item?: Item }) {
           <Select
             name="category"
             defaultValue={
-              (item?.category as ItemCategory | undefined) ?? "OTHER"
+              (item?.category as ItemCategory | undefined) ??
+              (isCatalogue ? "OTHER" : "TOOL")
             }
           >
             <SelectTrigger id="category">
@@ -122,24 +171,26 @@ export function ItemForm({ item }: { item?: Item }) {
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <Field
-          label="Price"
-          htmlFor="price"
-          required
-          error={errors.price}
-          hint="In-game currency."
-        >
-          <Input
-            id="price"
-            name="price"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            defaultValue={item ? String(item.price) : ""}
-            aria-invalid={Boolean(errors.price)}
-          />
-        </Field>
+        {isCatalogue ? (
+          <Field
+            label="Price"
+            htmlFor="price"
+            required
+            error={errors.price}
+            hint="In-game currency."
+          >
+            <Input
+              id="price"
+              name="price"
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              defaultValue={item ? String(item.price) : ""}
+              aria-invalid={Boolean(errors.price)}
+            />
+          </Field>
+        ) : null}
 
         <Field
           label="Low-stock threshold"
@@ -160,14 +211,16 @@ export function ItemForm({ item }: { item?: Item }) {
         </Field>
       </div>
 
-      <Field
-        label="Code / SKU"
-        htmlFor="sku"
-        error={errors.sku}
-        hint="Optional reference used in-game."
-      >
-        <Input id="sku" name="sku" defaultValue={item?.sku ?? ""} />
-      </Field>
+      {isCatalogue ? (
+        <Field
+          label="Code / SKU"
+          htmlFor="sku"
+          error={errors.sku}
+          hint="Optional reference used in-game."
+        >
+          <Input id="sku" name="sku" defaultValue={item?.sku ?? ""} />
+        </Field>
+      ) : null}
 
       <Field
         label="Description"
@@ -196,19 +249,21 @@ export function ItemForm({ item }: { item?: Item }) {
             </span>
           </span>
         </label>
-        <label className="flex items-center gap-3 text-sm">
-          <Checkbox
-            name="orderable"
-            defaultChecked={item ? item.orderable : true}
-            value="on"
-          />
-          <span>
-            <span className="font-medium">Orderable</span>
-            <span className="block text-xs text-muted-foreground">
-              Members can add this to an order.
+        {isCatalogue ? (
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              name="orderable"
+              defaultChecked={item ? item.orderable : true}
+              value="on"
+            />
+            <span>
+              <span className="font-medium">Orderable</span>
+              <span className="block text-xs text-muted-foreground">
+                Members can add this to an order.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        ) : null}
       </fieldset>
 
       <div className="flex items-center gap-3">
@@ -216,7 +271,7 @@ export function ItemForm({ item }: { item?: Item }) {
           {pending ? "Saving…" : isEdit ? "Save changes" : "Create item"}
         </Button>
         <Button variant="ghost" asChild>
-          <Link href="/admin/items">Cancel</Link>
+          <Link href={returnTo}>Cancel</Link>
         </Button>
       </div>
     </form>

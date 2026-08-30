@@ -19,8 +19,21 @@ export type Json =
 export type AppRole = "SUPER_ADMIN" | "MEMBER";
 export type MemberRank = "BOSS" | "UNDER_BOSS" | "SECRETARY" | "B" | "SOLDIER";
 export type MemberStatus = "ACTIVE" | "INACTIVE";
-export type ItemCategory = "WEAPON" | "AMMO" | "VEST" | "PRODUCT" | "OTHER";
-export type ItemUnit = "UNIT" | "ROUND" | "GRAM" | "KILOGRAM" | "PACK";
+export type ItemCategory =
+  | "WEAPON"
+  | "AMMO"
+  | "VEST"
+  | "PRODUCT"
+  | "ATTACHMENT"
+  | "TOOL"
+  | "OTHER";
+export type ItemUnit = "UNIT" | "ROUND" | "BOX" | "GRAM" | "KILOGRAM" | "PACK";
+export type StockType =
+  | "CATALOGUE"
+  | "RAW_MATERIAL"
+  | "TOOL"
+  | "SEIZED"
+  | "OTHER";
 export type OrderStatus =
   | "PENDING"
   | "PROCESSING"
@@ -39,6 +52,7 @@ export type ProductionLogStatus =
   | "REJECTED"
   | "CANCELLED";
 export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
+export type MemberSubmissionStatus = "PENDING" | "CONFIRMED" | "REJECTED";
 export type CashDirection = "IN" | "OUT";
 export type CashEntrySource = "MANUAL" | "ADJUSTMENT" | "ORDER" | "PAYROLL_RUN";
 export type CashCategory =
@@ -58,7 +72,8 @@ export type MovementType =
   | "ORDER"
   | "DISTRIBUTION"
   | "DEPOSIT"
-  | "WITHDRAWAL";
+  | "WITHDRAWAL"
+  | "SUBMISSION";
 export type ReferenceType =
   | "ORDER"
   | "ORDER_ITEM"
@@ -68,7 +83,9 @@ export type ReferenceType =
   | "MANUAL"
   | "PRODUCTION_LOG"
   | "PAYROLL_RUN"
-  | "CASH_ENTRY";
+  | "CASH_ENTRY"
+  | "SUPPLIER"
+  | "SUBMISSION";
 export type NotificationType =
   | "ORDER_CREATED"
   | "ORDER_PROCESSING"
@@ -85,7 +102,10 @@ export type NotificationType =
   | "PRODUCTION_LOG_APPROVED"
   | "PRODUCTION_LOG_REJECTED"
   | "PAYROLL_FINALIZED"
-  | "PAYROLL_PAID";
+  | "PAYROLL_PAID"
+  | "SUBMISSION_SUBMITTED"
+  | "SUBMISSION_CONFIRMED"
+  | "SUBMISSION_REJECTED";
 export type AuditAction =
   | "MEMBER_CREATED"
   | "MEMBER_UPDATED"
@@ -114,7 +134,16 @@ export type AuditAction =
   | "PAYROLL_RUN_FINALIZED"
   | "PAYROLL_RUN_PAID"
   | "CASH_ENTRY_RECORDED"
-  | "CASH_ENTRY_REVERSED";
+  | "CASH_ENTRY_REVERSED"
+  | "SUPPLIER_CREATED"
+  | "SUPPLIER_UPDATED"
+  | "SUPPLIER_ARCHIVED"
+  | "SUPPLIER_ITEM_SET"
+  | "SUPPLIER_ITEM_REMOVED"
+  | "SUBMISSION_SUBMITTED"
+  | "SUBMISSION_CONFIRMED"
+  | "SUBMISSION_REJECTED"
+  | "SUBMISSION_TARGETS_SET";
 
 // ── row shapes ──────────────────────────────────────────────────────────────
 type MemberRow = {
@@ -141,6 +170,7 @@ type ItemRow = {
   orderable: boolean;
   low_stock_threshold: number;
   image_url: string | null;
+  stock_type: StockType;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -325,8 +355,87 @@ type CashEntryRow = {
   reverses_entry_id: string | null;
   note: string | null;
   occurred_at: string;
+  handled_by: string | null;
   created_by: string | null;
   created_at: string;
+}
+
+type SupplierRow = {
+  id: string;
+  name: string;
+  code: string;
+  contact: string | null;
+  notes: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+type SupplierItemRow = {
+  id: string;
+  supplier_id: string;
+  item_id: string;
+  buy_price: number;
+  sell_price: number | null;
+  max_quantity: number | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+type SubmissionMaterialTypeRow = {
+  id: string;
+  code: string;
+  name: string;
+  unit: ItemUnit;
+  inventory_item_id: string;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+type SubmissionPeriodRow = {
+  id: string;
+  period_month: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type SubmissionPeriodTargetRow = {
+  period_id: string;
+  material_type_id: string;
+  target_quantity: number;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+type MemberSubmissionRow = {
+  id: string;
+  period_id: string;
+  member_id: string;
+  status: MemberSubmissionStatus;
+  note: string | null;
+  submitted_at: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type MemberSubmissionLineRow = {
+  id: string;
+  member_submission_id: string;
+  material_type_id: string;
+  name_snapshot: string;
+  unit_snapshot: ItemUnit;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
 }
 
 type TableShape<Row, Insert, Update> = {
@@ -368,6 +477,7 @@ export interface Database {
           orderable?: boolean;
           low_stock_threshold?: number;
           image_url?: string | null;
+          stock_type?: StockType;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -420,6 +530,49 @@ export interface Database {
       payroll_run_lines: TableShape<PayrollRunLineRow, never, never>;
       cash_account: TableShape<CashAccountRow, never, never>;
       cash_entries: TableShape<CashEntryRow, never, never>;
+      suppliers: TableShape<
+        SupplierRow,
+        {
+          id?: string;
+          name: string;
+          code: string;
+          contact?: string | null;
+          notes?: string | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+        },
+        Partial<SupplierRow>
+      >;
+      supplier_items: TableShape<
+        SupplierItemRow,
+        {
+          id?: string;
+          supplier_id: string;
+          item_id: string;
+          buy_price?: number;
+          sell_price?: number | null;
+          max_quantity?: number | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<SupplierItemRow>
+      >;
+      submission_material_types: TableShape<
+        SubmissionMaterialTypeRow,
+        never,
+        never
+      >;
+      submission_periods: TableShape<SubmissionPeriodRow, never, never>;
+      submission_period_targets: TableShape<
+        SubmissionPeriodTargetRow,
+        never,
+        never
+      >;
+      member_submissions: TableShape<MemberSubmissionRow, never, never>;
+      member_submission_lines: TableShape<MemberSubmissionLineRow, never, never>;
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -482,6 +635,7 @@ export interface Database {
           p_orderable?: boolean;
           p_active?: boolean;
           p_image_url?: string | null;
+          p_stock_type?: StockType;
         };
         Returns: ItemRow;
       };
@@ -498,11 +652,56 @@ export interface Database {
           p_orderable?: boolean;
           p_active?: boolean;
           p_image_url?: string | null;
+          p_stock_type?: StockType;
         };
         Returns: ItemRow;
       };
       archive_item: { Args: { p_item_id: string }; Returns: ItemRow };
       restore_item: { Args: { p_item_id: string }; Returns: ItemRow };
+      create_supplier: {
+        Args: {
+          p_name: string;
+          p_code: string;
+          p_contact?: string | null;
+          p_notes?: string | null;
+          p_active?: boolean;
+        };
+        Returns: SupplierRow;
+      };
+      update_supplier: {
+        Args: {
+          p_supplier_id: string;
+          p_name: string;
+          p_code: string;
+          p_contact?: string | null;
+          p_notes?: string | null;
+          p_active?: boolean;
+        };
+        Returns: SupplierRow;
+      };
+      archive_supplier: {
+        Args: { p_supplier_id: string };
+        Returns: SupplierRow;
+      };
+      restore_supplier: {
+        Args: { p_supplier_id: string };
+        Returns: SupplierRow;
+      };
+      set_supplier_item: {
+        Args: {
+          p_supplier_id: string;
+          p_item_id: string;
+          p_buy_price?: number;
+          p_sell_price?: number | null;
+          p_max_quantity?: number | null;
+          p_active?: boolean;
+        };
+        Returns: SupplierItemRow;
+      };
+      remove_supplier_item: {
+        Args: { p_supplier_item_id: string };
+        Returns: undefined;
+      };
       update_organization_settings: {
         Args: { p_org_name: string; p_logo_url?: string | null };
         Returns: OrganizationSettingsRow;
@@ -552,12 +751,33 @@ export interface Database {
           p_occurred_at?: string | null;
           p_note?: string | null;
           p_allow_negative?: boolean;
+          p_handled_by?: string | null;
         };
         Returns: CashEntryRow;
       };
       reverse_cash_entry: {
         Args: { p_entry_id: string; p_reason: string };
         Returns: CashEntryRow;
+      };
+      set_submission_targets: {
+        Args: { p_period_month: string; p_targets: Json };
+        Returns: SubmissionPeriodRow;
+      };
+      submit_material_submission: {
+        Args: { p_lines: Json; p_note?: string | null };
+        Returns: MemberSubmissionRow;
+      };
+      confirm_member_submission: {
+        Args: {
+          p_submission_id: string;
+          p_lines?: Json | null;
+          p_note?: string | null;
+        };
+        Returns: MemberSubmissionRow;
+      };
+      reject_member_submission: {
+        Args: { p_submission_id: string; p_reason: string };
+        Returns: MemberSubmissionRow;
       };
       hit_auth_throttle: {
         Args: {
@@ -576,11 +796,13 @@ export interface Database {
       member_status: MemberStatus;
       item_category: ItemCategory;
       item_unit: ItemUnit;
+      stock_type: StockType;
       order_status: OrderStatus;
       payment_status: PaymentStatus;
       distribution_status: DistributionStatus;
       production_log_status: ProductionLogStatus;
       payroll_run_status: PayrollRunStatus;
+      member_submission_status: MemberSubmissionStatus;
       cash_direction: CashDirection;
       cash_entry_source: CashEntrySource;
       cash_category: CashCategory;

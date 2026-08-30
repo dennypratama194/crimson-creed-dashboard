@@ -1,12 +1,26 @@
 import Link from "next/link";
-import { Bell, CheckCircle2, Package, Plus, Wallet } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  ChevronRight,
+  Package,
+  Plus,
+  Recycle,
+  Wallet,
+} from "lucide-react";
 
 import {
   NOTIFICATION_CONFIG,
   NOTIFICATION_FALLBACK,
 } from "@/lib/constants/notification-config";
 import type { MemberDashboard } from "@/lib/db/dashboard";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import {
+  formatDateTime,
+  formatMonth,
+  formatMoney,
+  formatQuantity,
+} from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -21,15 +35,42 @@ export function MemberDashboardView({
   data: MemberDashboard;
   name: string;
 }) {
-  const { counts, earnings, activeOrders, recentOrders, recentNotifications } =
-    data;
+  const {
+    counts,
+    trends,
+    earnings,
+    submissionAlert,
+    activeOrders,
+    recentOrders,
+    recentNotifications,
+  } = data;
   const awaitingPayout = earnings.pendingAmount + earnings.approvedUnpaidAmount;
+
+  const submissionMonth = formatMonth(submissionAlert.periodMonth);
+  const submissionNag =
+    submissionAlert.state === "MISSING"
+      ? {
+          tone: "warning" as const,
+          text: `Your material submission for ${submissionMonth} is due.`,
+        }
+      : submissionAlert.state === "PENDING"
+        ? {
+            tone: "info" as const,
+            text: `Your ${submissionMonth} material submission is awaiting review.`,
+          }
+        : submissionAlert.state === "REJECTED"
+          ? {
+              tone: "error" as const,
+              text: `Your ${submissionMonth} material submission was rejected — please resubmit.`,
+            }
+          : null;
 
   return (
     <>
       <PageHeader
         title={`Welcome, ${name}`}
         description="Your orders at a glance."
+        className="pb-4"
         actions={
           <Button asChild>
             <Link href="/orders/new">
@@ -40,12 +81,39 @@ export function MemberDashboardView({
         }
       />
 
+      {submissionNag ? (
+        <Link
+          href="/submissions"
+          className={cn(
+            "mb-4 flex items-center gap-3 rounded-lg border border-l-4 px-4 py-3 text-sm transition-colors",
+            submissionNag.tone === "warning" &&
+              "border-l-tone-warning-fg bg-tone-warning-bg/40 hover:bg-tone-warning-bg/60",
+            submissionNag.tone === "info" &&
+              "border-l-tone-info-fg bg-tone-info-bg/40 hover:bg-tone-info-bg/60",
+            submissionNag.tone === "error" &&
+              "border-l-tone-error-fg bg-tone-error-bg/40 hover:bg-tone-error-bg/60",
+          )}
+        >
+          <Recycle
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+          <span className="flex-1 font-medium">{submissionNag.text}</span>
+          <ChevronRight
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        </Link>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Active orders" value={counts.open} icon={Package} />
         <KpiCard
           label="Completed orders"
           value={counts.completed}
           icon={CheckCircle2}
+          delta={trends.completedOrders.delta}
+          comparison={`vs. ${formatQuantity(trends.completedOrders.previous)} last period`}
         />
         <KpiCard
           label="Production pay pending"
@@ -60,10 +128,10 @@ export function MemberDashboardView({
         />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           <div>
-            <div className="flex items-center justify-between pb-3">
+            <div className="flex items-center justify-between pb-2">
               <h2 className="text-lg font-semibold tracking-tight">
                 Active orders
               </h2>
@@ -86,7 +154,7 @@ export function MemberDashboardView({
           </div>
 
           <div>
-            <div className="flex items-center justify-between pb-3">
+            <div className="flex items-center justify-between pb-2">
               <h2 className="text-lg font-semibold tracking-tight">
                 Recent orders
               </h2>
@@ -106,7 +174,7 @@ export function MemberDashboardView({
         </div>
 
         <Card className="h-fit min-w-0">
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-row items-center justify-between p-4 pb-0">
             <CardTitle>Recent notifications</CardTitle>
             <Link
               href="/notifications"
@@ -115,7 +183,7 @@ export function MemberDashboardView({
               All
             </Link>
           </CardHeader>
-          <CardContent className="pt-3">
+          <CardContent className="p-4 pt-2">
             {recentNotifications.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet.</p>
             ) : (
@@ -127,7 +195,7 @@ export function MemberDashboardView({
                   return (
                     <li
                       key={n.id}
-                      className="flex items-start gap-2.5 py-2.5 first:pt-0 last:pb-0"
+                      className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0"
                     >
                       <Icon
                         className="mt-0.5 size-4 shrink-0 text-muted-foreground"

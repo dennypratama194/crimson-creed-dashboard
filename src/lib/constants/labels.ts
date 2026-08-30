@@ -8,11 +8,13 @@ import type {
   ItemUnit,
   MemberRank,
   MemberStatus,
+  MemberSubmissionStatus,
   MovementType,
   OrderStatus,
   PayrollRunStatus,
   PaymentStatus,
   ProductionLogStatus,
+  StockType,
 } from "@/lib/constants/enums";
 
 /** Human-readable labels. UI must render these, never the raw enum token. */
@@ -40,15 +42,26 @@ export const ITEM_CATEGORY_LABEL: Record<ItemCategory, string> = {
   AMMO: "Ammo",
   VEST: "Vest",
   PRODUCT: "Product",
+  ATTACHMENT: "Attachment",
+  TOOL: "Tool",
   OTHER: "Other",
 };
 
 export const ITEM_UNIT_LABEL: Record<ItemUnit, string> = {
   UNIT: "Unit",
   ROUND: "Round",
+  BOX: "Box",
   GRAM: "Gram",
   KILOGRAM: "Kilogram",
   PACK: "Pack",
+};
+
+export const STOCK_TYPE_LABEL: Record<StockType, string> = {
+  CATALOGUE: "Catalogue",
+  RAW_MATERIAL: "Raw material",
+  TOOL: "Tool",
+  SEIZED: "Seized",
+  OTHER: "Other",
 };
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
@@ -117,4 +130,14 @@ export const MOVEMENT_TYPE_LABEL: Record<MovementType, string> = {
   DISTRIBUTION: "Distribution",
   DEPOSIT: "Deposit",
   WITHDRAWAL: "Withdrawal",
+  SUBMISSION: "Monthly submission",
+};
+
+export const MEMBER_SUBMISSION_STATUS_LABEL: Record<
+  MemberSubmissionStatus,
+  string
+> = {
+  PENDING: "Awaiting review",
+  CONFIRMED: "Confirmed",
+  REJECTED: "Rejected",
 };

@@ -24,12 +24,14 @@ export function signedMoney(direction: "IN" | "OUT", amount: number): string {
 
 export function LedgerTable({ rows }: { rows: CashEntryRow[] }) {
   return (
-    <Table className="min-w-[820px] table-fixed">
+    <Table className="min-w-[1100px] table-fixed">
       <TableHeader>
         <TableRow>
           <TableHead className="w-28">Date</TableHead>
           <TableHead className="w-32">Entry</TableHead>
-          <TableHead>Category</TableHead>
+          <TableHead className="w-40">Category</TableHead>
+          <TableHead className="w-40">Handled by</TableHead>
+          <TableHead>Note</TableHead>
           <TableHead className="w-36">
             <span data-align="right" className="block">
               Amount
@@ -66,11 +68,16 @@ export function LedgerTable({ rows }: { rows: CashEntryRow[] }) {
             </TableCell>
             <TableCell className="truncate">
               {CASH_CATEGORY_LABEL[entry.category]}
+            </TableCell>
+            <TableCell className="truncate text-muted-foreground">
+              {entry.handled_by_name ?? <span aria-hidden>—</span>}
+            </TableCell>
+            <TableCell className="truncate text-muted-foreground">
               {entry.note ? (
-                <span className="block truncate text-xs text-muted-foreground">
-                  {entry.note}
-                </span>
-              ) : null}
+                <span title={entry.note}>{entry.note}</span>
+              ) : (
+                <span aria-hidden>—</span>
+              )}
             </TableCell>
             <TableCell
               className={cn(

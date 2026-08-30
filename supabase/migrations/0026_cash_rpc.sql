@@ -23,7 +23,8 @@ create or replace function app.post_cash_entry(
   p_reference_type   reference_type default null,
   p_reference_id     uuid default null,
   p_reverses_entry_id uuid default null,
-  p_allow_negative   boolean default false
+  p_allow_negative   boolean default false,
+  p_handled_by       uuid default null
 )
 returns cash_entries
 language plpgsql
@@ -47,19 +48,23 @@ begin
   select balance into v_balance from cash_account where id = true for update;
   v_balance := v_balance + v_delta;
 
-  if v_balance < 0 and not coalesce(p_allow_negative, false) then
+  -- Only an entry that *reduces* the balance below zero needs the override;
+  -- income that merely fails to clear an existing deficit is always fine.
+  if v_delta < 0 and v_balance < 0 and not coalesce(p_allow_negative, false) then
     raise exception 'That expense is more than the % on hand', to_char(v_balance - v_delta, 'FM999999999999.00')
       using errcode = 'check_violation';
   end if;
 
   insert into cash_entries (
     direction, amount, category, source, balance_after,
-    reference_type, reference_id, reverses_entry_id, note, occurred_at, created_by
+    reference_type, reference_id, reverses_entry_id, note, occurred_at,
+    handled_by, created_by
   )
   values (
     p_direction, p_amount, p_category, p_source, v_balance,
     p_reference_type, p_reference_id, p_reverses_entry_id,
-    nullif(btrim(p_note), ''), coalesce(p_occurred_at, now()), p_created_by
+    nullif(btrim(p_note), ''), coalesce(p_occurred_at, now()),
+    p_handled_by, p_created_by
   )
   returning * into v_entry;
 
@@ -78,7 +83,8 @@ create or replace function public.record_cash_entry(
   p_category       cash_category,
   p_occurred_at    timestamptz default null,
   p_note           text default null,
-  p_allow_negative boolean default false
+  p_allow_negative boolean default false,
+  p_handled_by     uuid default null
 )
 returns cash_entries
 language plpgsql
@@ -86,8 +92,9 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_actor uuid := app.current_member_id();
-  v_entry cash_entries;
+  v_actor  uuid := app.current_member_id();
+  v_entry  cash_entries;
+  v_role   app_role;
 begin
   perform app.require_super_admin();
 
@@ -105,11 +112,23 @@ begin
     raise exception 'The date cannot be in the future' using errcode = 'check_violation';
   end if;
 
-  -- positional: (direction, amount, category, source, created_by,
-  --              occurred_at, note, ref_type, ref_id, reverses_id, allow_negative)
+  if p_handled_by is not null then
+    select role into v_role from members where id = p_handled_by;
+    if not found then
+      raise exception 'That person is not a member' using errcode = 'foreign_key_violation';
+    end if;
+    if v_role <> 'SUPER_ADMIN' then
+      raise exception 'A cash entry can only be attributed to a Super Admin'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  -- positional: (direction, amount, category, source, created_by, occurred_at,
+  --              note, ref_type, ref_id, reverses_id, allow_negative, handled_by)
   v_entry := app.post_cash_entry(
     p_direction, p_amount, p_category, 'MANUAL', v_actor,
-    p_occurred_at, p_note, null, null, null, coalesce(p_allow_negative, false)
+    p_occurred_at, p_note, null, null, null, coalesce(p_allow_negative, false),
+    p_handled_by
   );
 
   insert into activity_logs (actor_id, verb, summary, reference_type, reference_id)
@@ -166,10 +185,11 @@ begin
   v_opposite := case when v_original.direction = 'IN' then 'OUT' else 'IN' end::cash_direction;
 
   -- A correction always posts, even if it briefly takes the balance negative.
+  -- The reversal carries the same handler as the entry it cancels.
   v_reversal := app.post_cash_entry(
     v_opposite, v_original.amount, v_original.category, 'ADJUSTMENT', v_actor,
     now(), format('Reversal of %s — %s', v_original.entry_number, btrim(p_reason)),
-    'CASH_ENTRY', v_original.id, v_original.id, true
+    'CASH_ENTRY', v_original.id, v_original.id, true, v_original.handled_by
   );
 
   insert into activity_logs (actor_id, verb, summary, reference_type, reference_id)
@@ -199,7 +219,7 @@ declare
   fn text;
 begin
   foreach fn in array array[
-    'record_cash_entry(cash_direction, numeric, cash_category, timestamptz, text, boolean)',
+    'record_cash_entry(cash_direction, numeric, cash_category, timestamptz, text, boolean, uuid)',
     'reverse_cash_entry(uuid, text)'
   ]
   loop
@@ -211,5 +231,5 @@ $$;
 
 revoke all on function app.post_cash_entry(
   cash_direction, numeric, cash_category, cash_entry_source, uuid,
-  timestamptz, text, reference_type, uuid, uuid, boolean
+  timestamptz, text, reference_type, uuid, uuid, boolean, uuid
 ) from public, anon, authenticated;

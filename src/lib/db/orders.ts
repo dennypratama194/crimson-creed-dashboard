@@ -182,6 +182,7 @@ export async function getOrderableItems(): Promise<OrderableItem[]> {
   const { data, error } = await supabase
     .from("items")
     .select("id, name, category, unit, price, description, image_url")
+    .eq("stock_type", "CATALOGUE")
     .eq("active", true)
     .eq("orderable", true)
     .is("archived_at", null)

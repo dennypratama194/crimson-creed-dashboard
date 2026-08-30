@@ -33,19 +33,35 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { recordCashEntryAction } from "@/app/(app)/admin/cash/actions";
 
+type AdminOption = { id: string; display_name: string };
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function RecordEntryDialog({ trigger }: { trigger: ReactNode }) {
+export function RecordEntryDialog({
+  trigger,
+  admins,
+  defaultHandledById,
+}: {
+  trigger: ReactNode;
+  admins: AdminOption[];
+  defaultHandledById?: string;
+}) {
   const router = useRouter();
   const amountId = useId();
   const dateId = useId();
   const noteId = useId();
 
+  const firstHandler =
+    defaultHandledById && admins.some((a) => a.id === defaultHandledById)
+      ? defaultHandledById
+      : (admins[0]?.id ?? "");
+
   const [open, setOpen] = useState(false);
   const [direction, setDirection] = useState<CashDirection>("IN");
   const [category, setCategory] = useState<string>(cashCategoriesFor("IN")[0]);
+  const [handledBy, setHandledBy] = useState(firstHandler);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
@@ -58,6 +74,7 @@ export function RecordEntryDialog({ trigger }: { trigger: ReactNode }) {
   function reset() {
     setDirection("IN");
     setCategory(cashCategoriesFor("IN")[0]);
+    setHandledBy(firstHandler);
     setAmount("");
     setDate(todayIso());
     setNote("");
@@ -77,12 +94,17 @@ export function RecordEntryDialog({ trigger }: { trigger: ReactNode }) {
       setError("Enter an amount greater than zero.");
       return;
     }
+    if (!handledBy) {
+      setError("Choose who handled this.");
+      return;
+    }
 
     startTransition(async () => {
       const result = await recordCashEntryAction({
         direction,
         amount: n,
         category,
+        handledBy,
         occurredAt: date || null,
         note: note.trim() || null,
         allowNegative,
@@ -146,6 +168,22 @@ export function RecordEntryDialog({ trigger }: { trigger: ReactNode }) {
               {categories.map((c) => (
                 <SelectItem key={c} value={c}>
                   {CASH_CATEGORY_LABEL[c]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Handled by</Label>
+          <Select value={handledBy} onValueChange={setHandledBy}>
+            <SelectTrigger aria-label="Handled by">
+              <SelectValue placeholder="Select a Super Admin" />
+            </SelectTrigger>
+            <SelectContent>
+              {admins.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.display_name}
                 </SelectItem>
               ))}
             </SelectContent>

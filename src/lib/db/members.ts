@@ -76,6 +76,21 @@ export async function listMembers(options: {
   };
 }
 
+export type MemberOption = { id: string; display_name: string };
+
+/** Active Super Admins, for "attributed to" pickers. Ordered by display name. */
+export async function listSuperAdmins(): Promise<MemberOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("members")
+    .select("id, display_name")
+    .eq("role", "SUPER_ADMIN")
+    .eq("status", "ACTIVE")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** Map of member id -> display name, for decorating rows that only carry ids. */
 export async function getMemberNames(
   ids: readonly string[],

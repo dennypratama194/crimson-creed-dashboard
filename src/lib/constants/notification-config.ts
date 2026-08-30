@@ -7,6 +7,7 @@ import {
   FlaskConical,
   PackageCheck,
   PackageX,
+  Recycle,
   TriangleAlert,
   Truck,
   Wallet,
@@ -37,6 +38,9 @@ export const NOTIFICATION_CONFIG: Record<
   PRODUCTION_LOG_REJECTED: { icon: XCircle, tone: "error" },
   PAYROLL_FINALIZED: { icon: Wallet, tone: "info" },
   PAYROLL_PAID: { icon: Banknote, tone: "success" },
+  SUBMISSION_SUBMITTED: { icon: Recycle, tone: "info" },
+  SUBMISSION_CONFIRMED: { icon: CheckCircle2, tone: "success" },
+  SUBMISSION_REJECTED: { icon: XCircle, tone: "error" },
 };
 
 export const NOTIFICATION_FALLBACK = { icon: PackageX, tone: "gray" as Tone };

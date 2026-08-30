@@ -43,6 +43,32 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   `production_logs`, `payroll_runs`, `payroll_run_lines`, under `/production` and
   `/admin/production/*` + `/admin/payroll/*`. Approved production does **not** yet
   touch inventory (deferred to 14f); do not wire that without agreeing it first.
+- Suppliers ARE implemented (Phase 16) — `suppliers` + `supplier_items` (a price
+  book: buy / sell / max-quanti per supplier-item pair), audited CRUD RPCs,
+  Super-Admin-only RLS, under `/admin/suppliers`. Super Admin only: members never
+  see suppliers or costs. `items.price` stays the single member-facing price;
+  `supplier_items.sell_price` is informational and does **not** feed order totals.
+  Max quanti is reference only — the member order path and `create_order` are
+  untouched. Do not wire per-order caps or any procurement/cash hookup without
+  agreeing it first (16a).
+- Monthly material submissions ARE implemented (Phase 17) — members hand in
+  metal scrap / empty bottles / cans each month. `submission_material_types`
+  (MS/EB/EC, seeded, each mapped to a stock item), lazy `submission_periods`
+  (auto-open on the 1st, **no finalize/lock**), informational per-month
+  `submission_period_targets`, `member_submissions` PENDING→CONFIRMED/REJECTED
+  with snapshot lines. Under `/submissions` (member) and `/admin/submissions`
+  (Super Admin grid). Members submit for the **current month only**; a CONFIRMED
+  submission **posts inventory movements** (`movement_type='SUBMISSION'`) for the
+  signed delta, and rejecting a confirmed one reverses that stock. Targets never
+  block a submission. Do not add material-type CRUD UI or any pay/cash valuation
+  of materials without agreeing it first (17a).
+- `items.stock_type` (Phase 18) splits the `items` table: `CATALOGUE` is the
+  member-facing shop (priced, may be `orderable`); `RAW_MATERIAL` / `TOOL` /
+  `SEIZED` / `OTHER` are the **company stash** only. Non-catalogue items are
+  Super-Admin-only (RLS), force `orderable=false` + `price=0` (constraint + RPC),
+  and never reach `create_order`. `/admin/items` shows CATALOGUE only;
+  `/admin/inventory` ("Company stash") shows every type and can create any of
+  them. Items carry an optional `image_url` thumbnail (`item-images` bucket).
 - Do not build the remaining future modules (member inventory requests, the
   production→inventory movement hookup) — the schema leaves room; the app does
   not implement them.

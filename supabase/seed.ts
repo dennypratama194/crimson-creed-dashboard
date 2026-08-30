@@ -12,12 +12,13 @@
  */
 import { createClient } from "@supabase/supabase-js";
 
-import type {
-  Database,
-  ItemCategory,
-  ItemUnit,
-  MemberRank,
-} from "../src/lib/database.types";
+import type { Database, MemberRank } from "../src/lib/database.types";
+import {
+  CATALOGUE_ITEMS,
+  SUPPLIER_ITEMS,
+  SUPPLIERS,
+  type SeedItem,
+} from "./catalogue-data";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -84,158 +85,9 @@ const PEOPLE: SeedPerson[] = [
 
 const password = (username: string) => `Crimson#${username.split("_")[0]}1`;
 
-// ── catalogue ─────────────────────────────────────────────────────────────
-interface SeedItem {
-  name: string;
-  category: ItemCategory;
-  unit: ItemUnit;
-  price: number;
-  threshold: number;
-  orderable?: boolean;
-  active?: boolean;
-  opening: number;
-}
-
-const ITEMS: SeedItem[] = [
-  {
-    name: "Pistol",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 4500,
-    threshold: 5,
-    opening: 24,
-  },
-  {
-    name: "Combat Pistol",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 6200,
-    threshold: 5,
-    opening: 12,
-  },
-  {
-    name: "SMG",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 14500,
-    threshold: 3,
-    opening: 8,
-  },
-  {
-    name: "Carbine Rifle",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 21000,
-    threshold: 3,
-    opening: 5,
-  },
-  {
-    name: "Pump Shotgun",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 9800,
-    threshold: 4,
-    opening: 9,
-  },
-  {
-    name: "Pistol Rounds",
-    category: "AMMO",
-    unit: "ROUND",
-    price: 6,
-    threshold: 400,
-    opening: 5200,
-  },
-  {
-    name: "SMG Rounds",
-    category: "AMMO",
-    unit: "ROUND",
-    price: 8,
-    threshold: 400,
-    opening: 3800,
-  },
-  {
-    name: "Rifle Rounds",
-    category: "AMMO",
-    unit: "ROUND",
-    price: 10,
-    threshold: 300,
-    opening: 2600,
-  },
-  {
-    name: "Shotgun Shells",
-    category: "AMMO",
-    unit: "ROUND",
-    price: 12,
-    threshold: 200,
-    opening: 1400,
-  },
-  {
-    name: "Light Armor",
-    category: "VEST",
-    unit: "UNIT",
-    price: 850,
-    threshold: 15,
-    opening: 60,
-  },
-  {
-    name: "Heavy Armor",
-    category: "VEST",
-    unit: "UNIT",
-    price: 1800,
-    threshold: 10,
-    opening: 34,
-  },
-  {
-    name: "Refined Product",
-    category: "PRODUCT",
-    unit: "GRAM",
-    price: 95,
-    threshold: 250,
-    opening: 1800,
-  },
-  {
-    name: "Packaged Product",
-    category: "PRODUCT",
-    unit: "PACK",
-    price: 2400,
-    threshold: 20,
-    opening: 46,
-  },
-  {
-    name: "Burner Phone",
-    category: "OTHER",
-    unit: "UNIT",
-    price: 300,
-    threshold: 25,
-    opening: 120,
-  },
-  {
-    name: "Lockpick Set",
-    category: "OTHER",
-    unit: "PACK",
-    price: 450,
-    threshold: 15,
-    opening: 8,
-  },
-  {
-    name: "Prototype Rifle",
-    category: "WEAPON",
-    unit: "UNIT",
-    price: 50000,
-    threshold: 0,
-    orderable: false,
-    opening: 2,
-  },
-  {
-    name: "Legacy Vest (discontinued)",
-    category: "VEST",
-    unit: "UNIT",
-    price: 500,
-    threshold: 0,
-    active: false,
-    opening: 0,
-  },
-];
+// ── catalogue + suppliers ──────────────────────────────────────────────
+// Real data lives in ./catalogue-data.ts (shared with import-catalogue.ts).
+const ITEMS: SeedItem[] = CATALOGUE_ITEMS;
 
 async function wipe() {
   console.log("Clearing existing seed data…");
@@ -260,9 +112,48 @@ async function wipe() {
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
   await admin
+    .from("member_submission_lines")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("member_submissions")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("submission_period_targets")
+    .delete()
+    .neq("period_id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("submission_periods")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("supplier_items")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("suppliers")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+
+  // The three submission material types + their stock items are created by
+  // migration 0033, not the seed. Keep those items (FK is ON DELETE RESTRICT).
+  const { data: matItems } = await admin
+    .from("submission_material_types")
+    .select("inventory_item_id");
+  const protectedItemIds = (matItems ?? []).map((r) => r.inventory_item_id);
+  let itemsDelete = admin
     .from("items")
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
+  if (protectedItemIds.length > 0) {
+    itemsDelete = itemsDelete.not(
+      "id",
+      "in",
+      `(${protectedItemIds.join(",")})`,
+    );
+  }
+  await itemsDelete;
   await admin
     .from("notifications")
     .delete()
@@ -336,10 +227,50 @@ async function seedItems() {
     .insert(rows)
     .select("id, name");
   if (error || !data) throw error ?? new Error("item insert failed");
-  return data.map((row) => ({
-    ...row,
-    opening: ITEMS.find((i) => i.name === row.name)?.opening ?? 0,
-  }));
+  return data.map((row) => {
+    const src = ITEMS.find((i) => i.name === row.name);
+    return {
+      ...row,
+      opening: src?.opening ?? 0,
+      category: src?.category ?? "OTHER",
+      orderable: src?.orderable ?? true,
+      active: src?.active ?? true,
+    };
+  });
+}
+
+type SeededItem = Awaited<ReturnType<typeof seedItems>>[number];
+
+async function seedSuppliers(items: SeededItem[]) {
+  console.log("Creating suppliers…");
+  const { data, error } = await admin
+    .from("suppliers")
+    .insert(SUPPLIERS.map((code) => ({ name: code, code })))
+    .select("id, code");
+  if (error || !data) throw error ?? new Error("supplier insert failed");
+
+  const idByCode = new Map(data.map((s) => [s.code, s.id]));
+  const idByItem = new Map(items.map((i) => [i.name, i.id]));
+
+  const rows = SUPPLIER_ITEMS.map(([code, itemName, buy, sell, max]) => {
+    const supplier_id = idByCode.get(code);
+    const item_id = idByItem.get(itemName);
+    if (!supplier_id) throw new Error(`unknown supplier code: ${code}`);
+    if (!item_id)
+      throw new Error(`supplier item has no catalogue match: ${itemName}`);
+    return {
+      supplier_id,
+      item_id,
+      buy_price: buy,
+      sell_price: sell,
+      max_quantity: max,
+    };
+  });
+
+  const { error: linesError } = await admin.from("supplier_items").insert(rows);
+  if (linesError) throw linesError;
+
+  return { suppliers: data.length, lines: rows.length };
 }
 
 async function clientFor(username: string) {
@@ -358,14 +289,13 @@ async function main() {
   await wipe();
   const members = await seedMembers();
   const items = await seedItems();
+  const supplierCounts = await seedSuppliers(items);
 
   const admins = members.filter((m) => m.person.isAdmin);
   const activeMembers = members.filter(
     (m) => !m.person.isAdmin && !m.person.inactive,
   );
-  const orderable = items.filter(
-    (i) => !["Prototype Rifle", "Legacy Vest (discontinued)"].includes(i.name),
-  );
+  const orderable = items.filter((i) => i.orderable && i.active);
 
   // opening stock via the real RPC, as an admin
   console.log("Setting opening stock…");
@@ -396,7 +326,7 @@ async function main() {
       const p_items = picks.map((it) => ({
         item_id: it.id,
         quantity:
-          it.name.includes("Rounds") || it.name.includes("Shells")
+          it.category === "AMMO"
             ? 50 * (1 + Math.floor(Math.random() * 8))
             : 1 + Math.floor(Math.random() * 4),
       }));
@@ -458,11 +388,9 @@ async function main() {
 
   // ── production pay rates, logs, and a payroll run ────────────────────────
   console.log("Setting production pay rates…");
-  const products = items.filter((i) =>
-    ["Refined Product", "Packaged Product"].includes(i.name),
-  );
+  const products = items.filter((i) => ["Bibit", "Morphine"].includes(i.name));
   for (const p of products) {
-    const rate = p.name === "Refined Product" ? 14 : 320;
+    const rate = p.name === "Bibit" ? 14 : 320;
     const { error } = await adminClient.rpc("set_production_rate", {
       p_item_id: p.id,
       p_unit_rate: rate,
@@ -483,7 +411,7 @@ async function main() {
           .toISOString()
           .slice(0, 10);
         const qty =
-          product.name === "Refined Product"
+          product.name === "Bibit"
             ? 20 + Math.floor(Math.random() * 180)
             : 1 + Math.floor(Math.random() * 6);
         const { data, error } = await client.rpc("submit_production_log", {
@@ -531,13 +459,71 @@ async function main() {
       await adminClient.rpc("finalize_payroll_run", { p_run_id: run.id });
   }
 
+  // ── monthly material submissions (current month only — the RPC is scoped) ──
+  console.log("Seeding monthly material submissions…");
+  const { data: materialTypes } = await adminClient
+    .from("submission_material_types")
+    .select("id, code");
+  let submissionCount = 0;
+  if (materialTypes && materialTypes.length > 0) {
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    await adminClient.rpc("set_submission_targets", {
+      p_period_month: `${thisMonth}-01`,
+      p_targets: materialTypes.map((t) => ({
+        material_type_id: t.id,
+        target_quantity: t.code === "MS" ? 250 : 1000,
+      })),
+    });
+
+    for (const m of activeMembers) {
+      const client = await clientFor(m.person.username);
+      const { data: sub, error } = await client.rpc(
+        "submit_material_submission",
+        {
+          p_lines: materialTypes.map((t) => ({
+            material_type_id: t.id,
+            quantity:
+              t.code === "MS"
+                ? 200 + Math.floor(Math.random() * 260)
+                : chance(0.4)
+                  ? 1000
+                  : 0,
+          })),
+          p_note: chance(0.2) ? "Dropped at the lock-up" : null,
+        },
+      );
+      if (error) throw error;
+      if (!sub) continue;
+      submissionCount += 1;
+
+      const roll = Math.random();
+      if (roll < 0.2) continue; // leave pending
+      if (roll < 0.32) {
+        await adminClient.rpc("reject_member_submission", {
+          p_submission_id: sub.id,
+          p_reason: "Count did not match the scales — please recount",
+        });
+      } else {
+        await adminClient.rpc("confirm_member_submission", {
+          p_submission_id: sub.id,
+          p_lines: null,
+          p_note: null,
+        });
+      }
+    }
+  }
+
   console.log("\nSeed complete.");
   console.log(
     `  members : ${members.length} (${admins.length} admin, 1 inactive)`,
   );
   console.log(`  items   : ${items.length}`);
+  console.log(
+    `  supplier: ${supplierCounts.suppliers} suppliers, ${supplierCounts.lines} price-book lines`,
+  );
   console.log(`  orders  : ${orderIds.length}`);
   console.log(`  prod.   : ${logIds.length} logs`);
+  console.log(`  submits : ${submissionCount} material submissions`);
   console.log(
     "\nSign-in credentials (development only) — username / password:",
   );

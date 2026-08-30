@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 
 import {
   CASH_CATEGORY_LABEL,
@@ -13,6 +14,7 @@ import { getCashEntryDetail } from "@/lib/db/cash";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ReverseEntryButton } from "@/app/(app)/admin/cash/[id]/reverse-entry-button";
 import { signedMoney } from "@/app/(app)/admin/cash/ledger-table";
@@ -35,12 +37,21 @@ export default async function CashEntryPage({
   const detail = await getCashEntryDetail(id);
   if (!detail) notFound();
 
-  const { entry, createdByName, reversedBy, reverses } = detail;
+  const { entry, createdByName, handledByName, reversedBy, reverses } = detail;
   const isReversal = !!entry.reverses_entry_id;
   const canReverse = entry.source === "MANUAL" && !reversedBy && !isReversal;
 
   return (
     <>
+      <div className="pb-4">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/admin/cash">
+            <ArrowLeft aria-hidden />
+            Company cash
+          </Link>
+        </Button>
+      </div>
+
       <PageHeader
         title={
           <span className="flex items-center gap-2">
@@ -77,6 +88,7 @@ export default async function CashEntryPage({
           <Row label="Balance after">{formatMoney(entry.balance_after)}</Row>
           <Row label="Date">{formatDateTime(entry.occurred_at)}</Row>
           <Row label="Source">{CASH_ENTRY_SOURCE_LABEL[entry.source]}</Row>
+          <Row label="Handled by">{handledByName ?? "—"}</Row>
           <Row label="Recorded by">{createdByName ?? "—"}</Row>
           <Row label="Recorded at">{formatDateTime(entry.created_at)}</Row>
         </Card>

@@ -19,17 +19,13 @@ import { SetRateDialog } from "@/app/(app)/admin/production/rates/set-rate-dialo
 
 export function RatesTable({ rows }: { rows: ProductionRateRow[] }) {
   return (
-    <Table className="min-w-[640px] table-fixed">
+    <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Product</TableHead>
-          <TableHead className="w-40">
-            <span data-align="right" className="block">
-              Rate
-            </span>
-          </TableHead>
-          <TableHead className="w-36">Updated</TableHead>
-          <TableHead className="w-28">
+          <TableHead className="w-full">Product</TableHead>
+          <TableHead>Rate</TableHead>
+          <TableHead className="whitespace-nowrap">Updated</TableHead>
+          <TableHead>
             <span className="sr-only">Actions</span>
           </TableHead>
         </TableRow>
@@ -39,8 +35,8 @@ export function RatesTable({ rows }: { rows: ProductionRateRow[] }) {
           const unitLabel = ITEM_UNIT_LABEL[row.unit].toLowerCase();
           return (
             <TableRow key={row.item_id}>
-              <TableCell className="truncate font-medium">{row.name}</TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="font-medium">{row.name}</TableCell>
+              <TableCell className="whitespace-nowrap tabular-nums">
                 {row.unit_rate === null ? (
                   <Badge tone="warning">Not set</Badge>
                 ) : (
@@ -53,7 +49,7 @@ export function RatesTable({ rows }: { rows: ProductionRateRow[] }) {
               <TableCell className="whitespace-nowrap text-muted-foreground">
                 {row.updated_at ? formatDate(row.updated_at) : "—"}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell>
                 <SetRateDialog
                   itemId={row.item_id}
                   itemName={row.name}

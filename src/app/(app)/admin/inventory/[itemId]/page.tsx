@@ -4,8 +4,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
-import { MOVEMENT_TYPE_LABEL } from "@/lib/constants/labels";
+import {
+  ITEM_CATEGORY_LABEL,
+  ITEM_UNIT_LABEL,
+  MOVEMENT_TYPE_LABEL,
+  STOCK_TYPE_LABEL,
+} from "@/lib/constants/labels";
 import { getInventoryDetail } from "@/lib/db/inventory";
 import { formatDateTime, formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
@@ -59,16 +63,23 @@ export default async function InventoryItemPage({
 
       <PageHeader
         title={item.name}
-        description={`${ITEM_CATEGORY_LABEL[item.category]} · per ${ITEM_UNIT_LABEL[
-          item.unit
-        ].toLowerCase()}`}
+        description={`${STOCK_TYPE_LABEL[item.stock_type]} · ${
+          ITEM_CATEGORY_LABEL[item.category]
+        } · per ${ITEM_UNIT_LABEL[item.unit].toLowerCase()}`}
         actions={
-          <StockDialog
-            itemId={item.id}
-            itemName={item.name}
-            currentQuantity={currentQuantity}
-            trigger={<Button>Adjust stock</Button>}
-          />
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" asChild>
+              <Link href={`/admin/items/${item.id}/edit` as Route}>
+                Edit details
+              </Link>
+            </Button>
+            <StockDialog
+              itemId={item.id}
+              itemName={item.name}
+              currentQuantity={currentQuantity}
+              trigger={<Button>Adjust stock</Button>}
+            />
+          </div>
         }
       />
 
@@ -97,102 +108,100 @@ export default async function InventoryItemPage({
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Movement history</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {movements.length === 0 ? (
-              <EmptyState
-                title="No movements yet"
-                description="Stock changes will appear here."
-              />
-            ) : (
-              <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>When</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>
-                        <span data-align="right" className="block">
-                          Change
-                        </span>
-                      </TableHead>
-                      <TableHead>By</TableHead>
-                      <TableHead>Note</TableHead>
+        <section className="flex min-w-0 flex-col gap-3 lg:col-span-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            Movement history
+          </h2>
+          {movements.length === 0 ? (
+            <EmptyState
+              title="No movements yet"
+              description="Stock changes will appear here."
+            />
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>
+                      <span data-align="right" className="block">
+                        Change
+                      </span>
+                    </TableHead>
+                    <TableHead>By</TableHead>
+                    <TableHead>Note</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {movements.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDateTime(m.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        {MOVEMENT_TYPE_LABEL[m.movement_type]}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right tabular-nums ${
+                          m.quantity < 0
+                            ? "text-tone-error-fg"
+                            : "text-tone-success-fg"
+                        }`}
+                      >
+                        {m.quantity > 0 ? "+" : ""}
+                        {formatQuantity(m.quantity)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {m.performed_by_name ?? "System"}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-muted-foreground">
+                        {m.notes ?? "—"}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {movements.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {formatDateTime(m.created_at)}
-                        </TableCell>
-                        <TableCell>
-                          {MOVEMENT_TYPE_LABEL[m.movement_type]}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right tabular-nums ${
-                            m.quantity < 0
-                              ? "text-tone-error-fg"
-                              : "text-tone-success-fg"
-                          }`}
-                        >
-                          {m.quantity > 0 ? "+" : ""}
-                          {formatQuantity(m.quantity)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {m.performed_by_name ?? "System"}
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate text-muted-foreground">
-                          {m.notes ?? "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {totalPages > 1 ? (
-                  <div className="flex items-center justify-between pt-3 text-sm">
-                    <span className="text-muted-foreground">
-                      Page {mp} of {totalPages}
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        asChild
-                        disabled={mp <= 1}
+                  ))}
+                </TableBody>
+              </Table>
+              {totalPages > 1 ? (
+                <div className="flex items-center justify-between pt-3 text-sm">
+                  <span className="text-muted-foreground">
+                    Page {mp} of {totalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      asChild
+                      disabled={mp <= 1}
+                    >
+                      <Link
+                        href={
+                          `/admin/inventory/${item.id}?mp=${mp - 1}` as Route
+                        }
                       >
-                        <Link
-                          href={
-                            `/admin/inventory/${item.id}?mp=${mp - 1}` as Route
-                          }
-                        >
-                          Previous
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        asChild
-                        disabled={mp >= totalPages}
+                        Previous
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      asChild
+                      disabled={mp >= totalPages}
+                    >
+                      <Link
+                        href={
+                          `/admin/inventory/${item.id}?mp=${mp + 1}` as Route
+                        }
                       >
-                        <Link
-                          href={
-                            `/admin/inventory/${item.id}?mp=${mp + 1}` as Route
-                          }
-                        >
-                          Next
-                        </Link>
-                      </Button>
-                    </div>
+                        Next
+                      </Link>
+                    </Button>
                   </div>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
       </div>
     </>
   );

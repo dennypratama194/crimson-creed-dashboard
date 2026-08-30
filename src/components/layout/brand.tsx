@@ -3,7 +3,11 @@ import Link from "next/link";
 
 export function Brand() {
   return (
-    <Link href="/dashboard" className="flex items-center gap-2.5">
+    <Link
+      href="/dashboard"
+      aria-label="Crimson Creed"
+      className="flex items-center gap-2.5"
+    >
       <Image
         src="/logo-mark.png"
         alt="Crimson Creed"

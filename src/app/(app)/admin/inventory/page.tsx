@@ -1,15 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Boxes, ChevronRight } from "lucide-react";
+import { Boxes, ChevronRight, Plus } from "lucide-react";
 
-import { ITEM_CATEGORY_LABEL, ITEM_UNIT_LABEL } from "@/lib/constants/labels";
+import { STOCK_TYPES, type StockType } from "@/lib/constants/enums";
+import {
+  ITEM_CATEGORY_LABEL,
+  ITEM_UNIT_LABEL,
+  STOCK_TYPE_LABEL,
+} from "@/lib/constants/labels";
 import { listInventory } from "@/lib/db/inventory";
 import { formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { ItemThumb } from "@/components/patterns/item-thumb";
 import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { StockBadge } from "@/components/patterns/stock-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -22,7 +29,7 @@ import {
 import { InventoryFilterBar } from "@/app/(app)/admin/inventory/inventory-filter-bar";
 import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
 
-export const metadata: Metadata = { title: "Inventory" };
+export const metadata: Metadata = { title: "Company stash" };
 
 function one(v: string | string[] | undefined) {
   return Array.isArray(v) ? v[0] : v;
@@ -36,20 +43,38 @@ export default async function AdminInventoryPage({
   const search = one(sp.q) ?? "";
   const lowStockOnly = one(sp.low) === "1";
 
+  const rawType = one(sp.type);
+  const stockType: StockType | "all" = (
+    STOCK_TYPES as readonly string[]
+  ).includes(rawType ?? "")
+    ? (rawType as StockType)
+    : "all";
+
   const { rows, total, pageSize, lowStockCount } = await listInventory({
     page,
     search,
     lowStockOnly,
+    stockType,
   });
+
+  const isFiltered = Boolean(search) || lowStockOnly || stockType !== "all";
 
   return (
     <>
       <PageHeader
-        title="Inventory"
+        title="Company stash"
         description={
           lowStockCount > 0
             ? `${lowStockCount} item${lowStockCount === 1 ? "" : "s"} at or below threshold.`
-            : "Current stock levels for the catalogue."
+            : "Everything the company holds — catalogue stock, raw materials, tools and seized property."
+        }
+        actions={
+          <Button asChild>
+            <Link href="/admin/inventory/new">
+              <Plus aria-hidden />
+              Add item
+            </Link>
+          </Button>
         }
       />
 
@@ -59,11 +84,21 @@ export default async function AdminInventoryPage({
         {rows.length === 0 ? (
           <EmptyState
             icon={Boxes}
-            title={search || lowStockOnly ? "Nothing matches" : "No items"}
+            title={isFiltered ? "Nothing matches" : "Nothing in the stash"}
             description={
-              search || lowStockOnly
+              isFiltered
                 ? "Try clearing the filter."
-                : "Add items to the catalogue first."
+                : "Add the first item the company holds."
+            }
+            action={
+              !isFiltered ? (
+                <Button asChild variant="secondary">
+                  <Link href="/admin/inventory/new">
+                    <Plus aria-hidden />
+                    Add item
+                  </Link>
+                </Button>
+              ) : null
             }
           />
         ) : (
@@ -72,6 +107,7 @@ export default async function AdminInventoryPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Item</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>
                     <span data-align="right" className="block">
@@ -99,12 +135,26 @@ export default async function AdminInventoryPage({
                     href={`/admin/inventory/${line.id}`}
                   >
                     <TableCell>
-                      <Link
-                        href={`/admin/inventory/${line.id}`}
-                        className="font-medium hover:underline"
+                      <div className="flex items-center gap-3">
+                        <ItemThumb
+                          src={line.image_url}
+                          name={line.name}
+                          size="sm"
+                        />
+                        <Link
+                          href={`/admin/inventory/${line.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {line.name}
+                        </Link>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        tone={line.stock_type === "CATALOGUE" ? "info" : "gray"}
                       >
-                        {line.name}
-                      </Link>
+                        {STOCK_TYPE_LABEL[line.stock_type]}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {ITEM_CATEGORY_LABEL[line.category]}

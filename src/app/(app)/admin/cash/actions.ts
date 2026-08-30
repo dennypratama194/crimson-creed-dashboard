@@ -30,8 +30,15 @@ export async function recordCashEntryAction(
     };
   }
 
-  const { direction, amount, category, occurredAt, note, allowNegative } =
-    parsed.data;
+  const {
+    direction,
+    amount,
+    category,
+    handledBy,
+    occurredAt,
+    note,
+    allowNegative,
+  } = parsed.data;
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("record_cash_entry", {
     p_direction: direction,
@@ -40,6 +47,7 @@ export async function recordCashEntryAction(
     p_occurred_at: occurredAt ? `${occurredAt}T00:00:00Z` : null,
     p_note: note?.trim() ? note.trim() : null,
     p_allow_negative: allowNegative ?? false,
+    p_handled_by: handledBy,
   });
 
   if (error || !data) {

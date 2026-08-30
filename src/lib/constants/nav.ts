@@ -8,8 +8,10 @@ import {
   LayoutDashboard,
   Package,
   Radio,
+  Recycle,
   ScrollText,
   ShoppingCart,
+  Truck,
   Users,
   Wallet,
   type LucideIcon,
@@ -43,6 +45,12 @@ const MEMBER_SECTIONS: NavSection[] = [
         icon: FlaskConical,
         matchPrefix: true,
       },
+      {
+        label: "Submissions",
+        href: "/submissions",
+        icon: Recycle,
+        matchPrefix: true,
+      },
     ],
   },
 ];
@@ -58,7 +66,7 @@ const ADMIN_SECTIONS: NavSection[] = [
         matchPrefix: true,
       },
       {
-        label: "Inventory",
+        label: "Company stash",
         href: "/admin/inventory",
         icon: Boxes,
         matchPrefix: true,
@@ -99,6 +107,17 @@ const ADMIN_SECTIONS: NavSection[] = [
     ],
   },
   {
+    heading: "Submissions",
+    items: [
+      {
+        label: "Monthly submissions",
+        href: "/admin/submissions",
+        icon: Recycle,
+        matchPrefix: true,
+      },
+    ],
+  },
+  {
     heading: "Manage",
     items: [
       {
@@ -111,6 +130,12 @@ const ADMIN_SECTIONS: NavSection[] = [
         label: "Items",
         href: "/admin/items",
         icon: Package,
+        matchPrefix: true,
+      },
+      {
+        label: "Suppliers",
+        href: "/admin/suppliers",
+        icon: Truck,
         matchPrefix: true,
       },
     ],

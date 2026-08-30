@@ -28,6 +28,8 @@ export const ITEM_CATEGORIES = [
   "AMMO",
   "VEST",
   "PRODUCT",
+  "ATTACHMENT",
+  "TOOL",
   "OTHER",
 ] as const;
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
@@ -35,11 +37,30 @@ export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 export const ITEM_UNITS = [
   "UNIT",
   "ROUND",
+  "BOX",
   "GRAM",
   "KILOGRAM",
   "PACK",
 ] as const;
 export type ItemUnit = (typeof ITEM_UNITS)[number];
+
+/**
+ * What an item is to the company. Only `CATALOGUE` items are member-facing and
+ * orderable; the rest exist purely in the company stash (`/admin/inventory`).
+ */
+export const STOCK_TYPES = [
+  "CATALOGUE",
+  "RAW_MATERIAL",
+  "TOOL",
+  "SEIZED",
+  "OTHER",
+] as const;
+export type StockType = (typeof STOCK_TYPES)[number];
+
+/** Stash-only stock types — everything except the member-facing catalogue. */
+export const NON_CATALOGUE_STOCK_TYPES = STOCK_TYPES.filter(
+  (t): t is Exclude<StockType, "CATALOGUE"> => t !== "CATALOGUE",
+);
 
 export const ORDER_STATUSES = [
   "PENDING",
@@ -104,6 +125,14 @@ export const CASH_CATEGORIES = [
 ] as const;
 export type CashCategory = (typeof CASH_CATEGORIES)[number];
 
+export const MEMBER_SUBMISSION_STATUSES = [
+  "PENDING",
+  "CONFIRMED",
+  "REJECTED",
+] as const;
+export type MemberSubmissionStatus =
+  (typeof MEMBER_SUBMISSION_STATUSES)[number];
+
 export const MOVEMENT_TYPES = [
   "IN",
   "OUT",
@@ -113,6 +142,7 @@ export const MOVEMENT_TYPES = [
   "DISTRIBUTION",
   "DEPOSIT",
   "WITHDRAWAL",
+  "SUBMISSION",
 ] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
@@ -127,6 +157,8 @@ export const REFERENCE_TYPES = [
   "PRODUCTION_LOG",
   "PAYROLL_RUN",
   "CASH_ENTRY",
+  "SUPPLIER",
+  "SUBMISSION",
 ] as const;
 export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
@@ -147,6 +179,9 @@ export const NOTIFICATION_TYPES = [
   "PRODUCTION_LOG_REJECTED",
   "PAYROLL_FINALIZED",
   "PAYROLL_PAID",
+  "SUBMISSION_SUBMITTED",
+  "SUBMISSION_CONFIRMED",
+  "SUBMISSION_REJECTED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -179,6 +214,15 @@ export const AUDIT_ACTIONS = [
   "PAYROLL_RUN_PAID",
   "CASH_ENTRY_RECORDED",
   "CASH_ENTRY_REVERSED",
+  "SUPPLIER_CREATED",
+  "SUPPLIER_UPDATED",
+  "SUPPLIER_ARCHIVED",
+  "SUPPLIER_ITEM_SET",
+  "SUPPLIER_ITEM_REMOVED",
+  "SUBMISSION_SUBMITTED",
+  "SUBMISSION_CONFIRMED",
+  "SUBMISSION_REJECTED",
+  "SUBMISSION_TARGETS_SET",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

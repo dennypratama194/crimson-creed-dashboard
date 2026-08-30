@@ -166,8 +166,9 @@ const item2 = await one(
 ok("fixture created");
 
 await expect("inventory row auto-created for each item", async () => {
+  // 2 fixture items + 3 seeded by 0033 (Metal Scrap / Empty Bottle / Empty Can)
   const r = await one(`select count(*)::int n from inventory`);
-  assert(r.n === 2, `expected 2 inventory rows, got ${r.n}`);
+  assert(r.n === 5, `expected 5 inventory rows, got ${r.n}`);
 });
 
 // ── auth predicates ──────────────────────────────────────────────────────
@@ -516,6 +517,52 @@ await expect("restore brings it back", async () => {
     "not restored",
   );
 });
+
+// ── stock types (company stash) ────────────────────────────────────────
+let stashItem;
+await expect(
+  "non-catalogue item is forced non-orderable and priced 0",
+  async () => {
+    stashItem = await one(
+      `select * from create_item($1,'TOOL','UNIT',$2,null,null,3,true,true,null,'TOOL')`,
+      ["Thermite Charge", 500],
+    );
+    assert(
+      stashItem.stock_type === "TOOL",
+      `stock_type ${stashItem.stock_type}`,
+    );
+    assert(
+      stashItem.orderable === false,
+      "non-catalogue item stayed orderable",
+    );
+    assert(Number(stashItem.price) === 0, `price ${stashItem.price}`);
+  },
+);
+await expect("members cannot see non-catalogue stock", async () => {
+  await asRole("authenticated", m1.id);
+  const seen = await one(`select count(*)::int n from items where id = $1`, [
+    stashItem.id,
+  ]);
+  assert(seen.n === 0, "member can see a stash-only item");
+  await asRole("authenticated", admin.id);
+});
+await expectThrows(
+  "the orderable flag cannot be set on non-catalogue stock",
+  () =>
+    db.query(`update items set orderable = true where id = $1`, [stashItem.id]),
+  "items_only_catalogue_orderable",
+);
+await expect(
+  "0033 material items are reclassified as raw materials",
+  async () => {
+    const bad = await one(
+      `select count(*)::int n from items i
+       join submission_material_types s on s.inventory_item_id = i.id
+      where i.stock_type <> 'RAW_MATERIAL'`,
+    );
+    assert(bad.n === 0, `${bad.n} material item(s) not RAW_MATERIAL`);
+  },
+);
 
 // ── organization settings ──────────────────────────────────────────────
 console.log("\nSettings");
@@ -927,6 +974,40 @@ await expectThrows(
   () => db.query(`select reverse_cash_entry($1, 'no')`, [cashReversal.id]),
   "cannot itself be reversed",
 );
+
+await expect(
+  "an entry can be attributed to a Super Admin (handled_by)",
+  async () => {
+    const e = await one(
+      `select * from record_cash_entry('IN', 100, 'OTHER_INCOME', null, null, false, $1)`,
+      [memberId.admin],
+    );
+    assert(e.handled_by === memberId.admin, `handled_by ${e.handled_by}`);
+  },
+);
+await expectThrows(
+  "handled_by cannot be a plain member",
+  () =>
+    db.query(
+      `select record_cash_entry('IN', 100, 'OTHER_INCOME', null, null, false, $1)`,
+      [memberId.m1],
+    ),
+  "only be attributed to a Super Admin",
+);
+await expect("a reversal carries the original's handler", async () => {
+  const src = await one(
+    `select * from record_cash_entry('OUT', 50, 'WITHDRAWAL', null, null, true, $1)`,
+    [memberId.admin],
+  );
+  const rev = await one(`select * from reverse_cash_entry($1, 'test')`, [
+    src.id,
+  ]);
+  assert(
+    rev.handled_by === memberId.admin,
+    `reversal handled_by ${rev.handled_by}`,
+  );
+});
+
 await asRole("authenticated", m1.id);
 await expect("member cannot see the cash ledger or balance", async () => {
   const e = await one(`select count(*)::int n from cash_entries`);
@@ -950,6 +1031,128 @@ await expect("cash_entries is append-only", async () => {
     blocked = true;
   }
   assert(blocked, "expected the append-only trigger to block the update");
+});
+
+// ── suppliers (0028-0031) ────────────────────────────────────────────────
+console.log("\nSuppliers");
+await asRole("authenticated", m1.id);
+await expect("member cannot see suppliers or the price book", async () => {
+  const s = await one(`select count(*)::int n from suppliers`);
+  const si = await one(`select count(*)::int n from supplier_items`);
+  assert(s.n === 0 && si.n === 0, `expected 0 visible, got ${s.n}/${si.n}`);
+});
+await expectThrows(
+  "member cannot create a supplier",
+  () => db.query(`select create_supplier('Hidden','HID',null,null,true)`),
+  "Super Admin",
+);
+
+await asRole("authenticated", admin.id);
+let supplier;
+await expect("admin creates a supplier (audit + activity)", async () => {
+  supplier = await one(
+    `select * from create_supplier('Peninsula Parts','PP','ask for Rae','trusted',true)`,
+  );
+  assert(supplier.code === "PP", supplier.code);
+  assert(supplier.active === true, "should be active");
+  await asRole(null);
+  const a = await one(
+    `select count(*)::int n from audit_logs where action = 'SUPPLIER_CREATED' and entity_id = $1`,
+    [supplier.id],
+  );
+  const act = await one(
+    `select count(*)::int n from activity_logs where reference_type = 'SUPPLIER' and reference_id = $1`,
+    [supplier.id],
+  );
+  assert(a.n === 1 && act.n === 1, `audit ${a.n}, activity ${act.n}`);
+  await asRole("authenticated", admin.id);
+});
+
+await expect("admin renames a supplier", async () => {
+  const updated = await one(
+    `select * from update_supplier($1,'Peninsula Parts Co','PP',null,null,true)`,
+    [supplier.id],
+  );
+  assert(updated.name === "Peninsula Parts Co", updated.name);
+});
+
+await expect("archive then restore a supplier", async () => {
+  const archived = await one(`select * from archive_supplier($1)`, [
+    supplier.id,
+  ]);
+  assert(
+    archived.archived_at !== null && archived.active === false,
+    "archive should set archived_at and clear active",
+  );
+  const restored = await one(`select * from restore_supplier($1)`, [
+    supplier.id,
+  ]);
+  assert(
+    restored.archived_at === null && restored.active === true,
+    "restore should clear archived_at and set active",
+  );
+});
+
+let supItem;
+await expect("set_supplier_item lists an item with buy/sell/max", async () => {
+  supItem = await one(
+    `select * from set_supplier_item($1,$2,6500,7000,25,true)`,
+    [supplier.id, item.id],
+  );
+  assert(Number(supItem.buy_price) === 6500, supItem.buy_price);
+  assert(Number(supItem.sell_price) === 7000, supItem.sell_price);
+  assert(supItem.max_quantity === 25, supItem.max_quantity);
+});
+await expect(
+  "set_supplier_item upserts the same pair (no duplicate)",
+  async () => {
+    const again = await one(
+      `select * from set_supplier_item($1,$2,6000,null,null,false)`,
+      [supplier.id, item.id],
+    );
+    assert(again.id === supItem.id, "should update the same row");
+    assert(Number(again.buy_price) === 6000, again.buy_price);
+    assert(again.sell_price === null, "sell_price should clear to null");
+    await asRole(null);
+    const c = await one(
+      `select count(*)::int n from supplier_items where supplier_id = $1 and item_id = $2`,
+      [supplier.id, item.id],
+    );
+    assert(c.n === 1, `expected 1 row, got ${c.n}`);
+    await asRole("authenticated", admin.id);
+  },
+);
+await expectThrows(
+  "set_supplier_item rejects a negative buy price",
+  () =>
+    db.query(`select set_supplier_item($1,$2,-1,null,null,true)`, [
+      supplier.id,
+      item.id,
+    ]),
+  "zero or more",
+);
+
+await expect("a listed item cannot be hard-deleted (FK restrict)", async () => {
+  await asRole(null);
+  let blocked = false;
+  try {
+    await db.query(`delete from items where id = $1`, [item.id]);
+  } catch {
+    blocked = true;
+  }
+  assert(blocked, "expected the supplier_items FK to block the delete");
+  await asRole("authenticated", admin.id);
+});
+
+await expect("remove_supplier_item drops the line", async () => {
+  await db.query(`select remove_supplier_item($1)`, [supItem.id]);
+  await asRole(null);
+  const c = await one(
+    `select count(*)::int n from supplier_items where id = $1`,
+    [supItem.id],
+  );
+  assert(c.n === 0, `expected 0 rows, got ${c.n}`);
+  await asRole("authenticated", admin.id);
 });
 
 // ── auth throttle (0022) ──────────────────────────────────────────────────
@@ -994,6 +1197,238 @@ await expect("auth_throttle is not readable by authenticated", async () => {
   assert(denied, "authenticated must not read auth_throttle");
   await asRole(null);
 });
+
+// ── monthly material submissions (0028–0031) ─────────────────────────────
+console.log("\nMonthly material submissions");
+await asRole(null);
+const mt = {};
+for (const row of (
+  await db.query(
+    `select code, id, inventory_item_id from submission_material_types`,
+  )
+).rows) {
+  mt[row.code] = row;
+}
+await expect("0033 seeded 3 material types mapped to items", async () => {
+  assert(mt.MS && mt.EB && mt.EC, "MS/EB/EC material types missing");
+  assert(
+    mt.MS.inventory_item_id &&
+      mt.EB.inventory_item_id &&
+      mt.EC.inventory_item_id,
+    "material types not mapped to inventory items",
+  );
+});
+
+const subLines = (ms, eb, ec) =>
+  JSON.stringify([
+    { material_type_id: mt.MS.id, quantity: ms },
+    { material_type_id: mt.EB.id, quantity: eb },
+    { material_type_id: mt.EC.id, quantity: ec },
+  ]);
+
+await asRole("authenticated", m1.id);
+let submission;
+await expect("member submits materials for the current month", async () => {
+  submission = await one(
+    `select * from submit_material_submission($1::jsonb, $2)`,
+    [subLines(400, 1000, 1000), "May haul"],
+  );
+  assert(submission.status === "PENDING", `status ${submission.status}`);
+  const lines = await db.query(
+    `select name_snapshot, unit_snapshot, quantity from member_submission_lines
+     where member_submission_id = $1 order by name_snapshot`,
+    [submission.id],
+  );
+  assert(lines.rows.length === 3, `expected 3 lines, got ${lines.rows.length}`);
+  const scrap = lines.rows.find((r) => r.name_snapshot === "Metal Scrap");
+  assert(
+    scrap &&
+      Number(scrap.quantity) === 400 &&
+      scrap.unit_snapshot === "KILOGRAM",
+    "metal scrap line not snapshotted correctly",
+  );
+});
+await expect("submit lazily created the month period", async () => {
+  const r = await one(
+    `select count(*)::int n from submission_periods
+     where period_month = date_trunc('month', current_date)::date`,
+  );
+  assert(r.n === 1, `expected 1 period row, got ${r.n}`);
+});
+await expect("re-submitting overwrites the pending lines", async () => {
+  const again = await one(
+    `select * from submit_material_submission($1::jsonb, null)`,
+    [subLines(420, 1000, 1000)],
+  );
+  assert(again.id === submission.id, "resubmit created a second row");
+  const scrap = await one(
+    `select quantity from member_submission_lines
+     where member_submission_id = $1 and material_type_id = $2`,
+    [submission.id, mt.MS.id],
+  );
+  assert(Number(scrap.quantity) === 420, `expected 420, got ${scrap.quantity}`);
+});
+await expectThrows(
+  "submit rejects an unknown material id",
+  () =>
+    db.query(`select submit_material_submission($1::jsonb, null)`, [
+      JSON.stringify([{ material_type_id: admin.id, quantity: 5 }]),
+    ]),
+  "not being collected",
+);
+
+await asRole("authenticated", m2.id);
+await expect("member_two cannot see member_one's submission", async () => {
+  const r = await one(`select count(*)::int n from member_submissions`);
+  assert(r.n === 0, `expected 0 visible, got ${r.n}`);
+});
+await expectThrows(
+  "member cannot confirm a submission",
+  () =>
+    db.query(`select confirm_member_submission($1, null, null)`, [
+      submission.id,
+    ]),
+  "Super Admin",
+);
+
+const scrapItem = mt.MS.inventory_item_id;
+const invQty = async (itemId) =>
+  Number(
+    (
+      await one(
+        `select coalesce(current_quantity,0) q from inventory where item_id=$1`,
+        [itemId],
+      )
+    ).q,
+  );
+
+await asRole("authenticated", admin.id);
+let scrapBefore;
+await expect("admin confirms — stock posted for each material", async () => {
+  scrapBefore = await invQty(scrapItem);
+  const confirmed = await one(
+    `select * from confirm_member_submission($1, null, $2)`,
+    [submission.id, "counted"],
+  );
+  assert(confirmed.status === "CONFIRMED", `status ${confirmed.status}`);
+  assert(
+    (await invQty(scrapItem)) === scrapBefore + 420,
+    "metal scrap stock not posted",
+  );
+  const mv = await one(
+    `select count(*)::int n from inventory_movements
+     where reference_type = 'SUBMISSION' and reference_id = $1`,
+    [submission.id],
+  );
+  assert(mv.n === 3, `expected 3 submission movements, got ${mv.n}`);
+});
+await expect("re-confirm with an adjustment posts only the delta", async () => {
+  const before = await invQty(scrapItem);
+  await db.query(`select confirm_member_submission($1, $2::jsonb, null)`, [
+    submission.id,
+    subLines(400, 1000, 1000),
+  ]);
+  assert(
+    (await invQty(scrapItem)) === before - 20,
+    `expected delta -20, stock went ${before} -> ${await invQty(scrapItem)}`,
+  );
+});
+await expect("member cannot submit once the month is confirmed", async () => {
+  await asRole("authenticated", m1.id);
+  let blocked = false;
+  try {
+    await db.query(`select submit_material_submission($1::jsonb, null)`, [
+      subLines(1, 1, 1),
+    ]);
+  } catch {
+    blocked = true;
+  }
+  assert(blocked, "expected a confirmed month to block resubmission");
+  await asRole("authenticated", admin.id);
+});
+await expect(
+  "rejecting a confirmed submission reverses its stock",
+  async () => {
+    const before = await invQty(scrapItem);
+    const rejected = await one(
+      `select * from reject_member_submission($1, $2)`,
+      [submission.id, "miscounted, resubmit"],
+    );
+    assert(rejected.status === "REJECTED", `status ${rejected.status}`);
+    assert(
+      (await invQty(scrapItem)) === before - 400,
+      "rejected stock not reversed",
+    );
+  },
+);
+await expect("member can resubmit after a rejection", async () => {
+  await asRole("authenticated", m1.id);
+  const r = await one(
+    `select * from submit_material_submission($1::jsonb, null)`,
+    [subLines(250, 0, 0)],
+  );
+  assert(r.status === "PENDING", `status ${r.status}`);
+  await asRole("authenticated", admin.id);
+});
+await expect("admin sets monthly targets", async () => {
+  const period = await one(
+    `select * from set_submission_targets($1, $2::jsonb)`,
+    [
+      new Date().toISOString().slice(0, 7) + "-01",
+      JSON.stringify([
+        { material_type_id: mt.MS.id, target_quantity: 250 },
+        { material_type_id: mt.EB.id, target_quantity: 1000 },
+      ]),
+    ],
+  );
+  const t = await one(
+    `select target_quantity from submission_period_targets
+     where period_id = $1 and material_type_id = $2`,
+    [period.id, mt.MS.id],
+  );
+  assert(Number(t.target_quantity) === 250, `target ${t.target_quantity}`);
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot set targets",
+  () =>
+    db.query(`select set_submission_targets($1, '[]'::jsonb)`, [
+      new Date().toISOString().slice(0, 7) + "-01",
+    ]),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+await asRole(null);
+await expect("super admins were notified of the submission", async () => {
+  const r = await one(
+    `select count(*)::int n from notifications
+     where recipient_id = $1 and type = 'SUBMISSION_SUBMITTED'`,
+    [memberId.admin],
+  );
+  assert(r.n >= 1, `expected >=1 admin notification, got ${r.n}`);
+});
+await expect("member was notified on confirm and reject", async () => {
+  const r = await one(
+    `select count(*)::int n from notifications
+     where recipient_id = $1 and type in ('SUBMISSION_CONFIRMED','SUBMISSION_REJECTED')`,
+    [memberId.m1],
+  );
+  assert(r.n === 2, `expected 2 member notifications, got ${r.n}`);
+});
+await asRole("authenticated", m1.id);
+await expect("member cannot write member_submissions directly", async () => {
+  let denied = false;
+  try {
+    await db.query(
+      `insert into member_submissions (period_id, member_id) values (gen_random_uuid(), $1)`,
+      [memberId.m1],
+    );
+  } catch {
+    denied = true;
+  }
+  assert(denied, "member must not INSERT into member_submissions");
+});
+await asRole(null);
 
 printSummaryAndExit();
 

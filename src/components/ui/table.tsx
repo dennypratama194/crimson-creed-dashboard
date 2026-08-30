@@ -36,7 +36,14 @@ export function Table({ className, ...props }: ComponentProps<"table">) {
         className="w-full overflow-x-auto rounded-xl border border-border"
       >
         <table
-          className={cn("w-full caption-bottom text-sm", className)}
+          className={cn(
+            "w-full caption-bottom text-sm",
+            // Tables are uniformly left-aligned; the trailing row chevron is
+            // dropped everywhere. Scoped to <table> so pagination arrows and
+            // other ChevronRight icons outside tables are untouched.
+            "[&_.lucide-chevron-right]:hidden",
+            className,
+          )}
           {...props}
         />
       </div>
@@ -101,12 +108,17 @@ export function TableRow({ className, ...props }: ComponentProps<"tr">) {
   );
 }
 
+/** Strip per-cell horizontal alignment — every table column is left-aligned. */
+function leftAlign(className?: string): string | undefined {
+  return className?.replace(/\btext-(right|center)\b/g, "").trim() || undefined;
+}
+
 export function TableHead({ className, ...props }: ComponentProps<"th">) {
   return (
     <th
       className={cn(
-        "h-10 px-4 text-left align-middle text-xs font-medium tracking-wide whitespace-nowrap text-muted-foreground uppercase [&:has([data-align=right])]:text-right",
-        className,
+        "h-10 px-4 text-left align-middle text-xs font-medium tracking-wide whitespace-nowrap text-muted-foreground uppercase",
+        leftAlign(className),
       )}
       {...props}
     />
@@ -114,5 +126,10 @@ export function TableHead({ className, ...props }: ComponentProps<"th">) {
 }
 
 export function TableCell({ className, ...props }: ComponentProps<"td">) {
-  return <td className={cn("px-4 py-3 align-middle", className)} {...props} />;
+  return (
+    <td
+      className={cn("px-4 py-3 text-left align-middle", leftAlign(className))}
+      {...props}
+    />
+  );
 }

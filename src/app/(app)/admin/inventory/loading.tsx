@@ -5,8 +5,8 @@ export default function LoadingInventory() {
   return (
     <>
       <PageHeader
-        title="Inventory"
-        description="Current stock levels for the catalogue."
+        title="Company stash"
+        description="Everything the company holds — catalogue stock, raw materials, tools and seized property."
       />
       <div className="flex flex-col gap-4">
         <Skeleton className="h-9 w-64" />

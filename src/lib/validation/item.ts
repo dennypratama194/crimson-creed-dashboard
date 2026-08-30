@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { ITEM_CATEGORIES, ITEM_UNITS } from "@/lib/constants/enums";
+import {
+  ITEM_CATEGORIES,
+  ITEM_UNITS,
+  STOCK_TYPES,
+} from "@/lib/constants/enums";
 
 export const itemInputSchema = z.object({
   name: z
@@ -8,6 +12,7 @@ export const itemInputSchema = z.object({
     .trim()
     .min(1, "Name is required")
     .max(120, "Name is too long"),
+  stockType: z.enum(STOCK_TYPES),
   category: z.enum(ITEM_CATEGORIES),
   unit: z.enum(ITEM_UNITS),
   price: z
@@ -53,15 +58,21 @@ export function parseItemForm(formData: FormData) {
     return typeof raw === "string" && raw.trim() !== "" ? raw : null;
   };
 
+  const rawStockType = formData.get("stockType");
+  const isCatalogue = rawStockType === "CATALOGUE" || rawStockType == null;
+
   return itemInputSchema.safeParse({
     name: formData.get("name") ?? "",
+    stockType: rawStockType ?? "CATALOGUE",
     category: formData.get("category"),
     unit: formData.get("unit"),
-    price: num("price"),
+    // Only catalogue items carry a member-facing price / order flag; the rest
+    // live in the stash only, so pin those regardless of what was submitted.
+    price: isCatalogue ? num("price") : 0,
     description: str("description"),
-    sku: str("sku"),
+    sku: isCatalogue ? str("sku") : null,
     lowStockThreshold: num("lowStockThreshold"),
-    orderable: formData.get("orderable") === "on",
+    orderable: isCatalogue && formData.get("orderable") === "on",
     active: formData.get("active") === "on",
     imageUrl:
       typeof formData.get("imageUrl") === "string"

@@ -31,6 +31,7 @@ export async function createItemAction(
     p_orderable: item.orderable,
     p_active: item.active,
     p_image_url: item.imageUrl,
+    p_stock_type: item.stockType,
   });
 
   if (error) {
@@ -41,6 +42,7 @@ export async function createItemAction(
   }
 
   revalidatePath("/admin/items");
+  revalidatePath("/admin/inventory");
   return { ok: true };
 }
 
@@ -74,6 +76,7 @@ export async function updateItemAction(
     p_orderable: item.orderable,
     p_active: item.active,
     p_image_url: item.imageUrl,
+    p_stock_type: item.stockType,
   });
 
   if (error) {
@@ -84,6 +87,7 @@ export async function updateItemAction(
   }
 
   revalidatePath("/admin/items");
+  revalidatePath("/admin/inventory");
   return { ok: true };
 }
 
@@ -100,6 +104,7 @@ export async function archiveItemAction(
     };
   }
   revalidatePath("/admin/items");
+  revalidatePath("/admin/inventory");
   return { ok: true };
 }
 
@@ -116,5 +121,6 @@ export async function restoreItemAction(
     };
   }
   revalidatePath("/admin/items");
+  revalidatePath("/admin/inventory");
   return { ok: true };
 }

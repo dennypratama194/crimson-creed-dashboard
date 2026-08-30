@@ -119,47 +119,45 @@ export default async function PayrollRunPage({
             }
           />
         ) : (
-          <Card className="overflow-x-auto p-0">
-            <Table className="min-w-[520px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead className="w-28">
-                    <span data-align="right" className="block">
-                      Logs
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-40">
-                    <span data-align="right" className="block">
-                      Amount
-                    </span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tableRows.map((row) => (
-                  <TableRow key={row.key}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.logCount}
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(row.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell>Total</TableCell>
-                  <TableCell />
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {formatMoney(total)}
+          <Table className="min-w-[520px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead className="w-28">
+                  <span data-align="right" className="block">
+                    Logs
+                  </span>
+                </TableHead>
+                <TableHead className="w-40">
+                  <span data-align="right" className="block">
+                    Amount
+                  </span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tableRows.map((row) => (
+                <TableRow key={row.key}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.logCount}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {formatMoney(row.amount)}
                   </TableCell>
                 </TableRow>
-              </TableFooter>
-            </Table>
-          </Card>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell>Total</TableCell>
+                <TableCell />
+                <TableCell className="text-right font-semibold tabular-nums">
+                  {formatMoney(total)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
         )}
       </div>
     </>

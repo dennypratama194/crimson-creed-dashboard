@@ -46,7 +46,7 @@ function AttentionRow({
   return (
     <Link
       href={href as Route}
-      className="-mx-2 flex items-center justify-between gap-4 rounded-lg px-2 py-2.5 transition-colors hover:bg-muted"
+      className="-mx-2 flex items-center justify-between gap-4 rounded-lg px-2 py-2 transition-colors hover:bg-muted"
     >
       <span className="flex min-w-0 flex-col">
         <span className="text-sm font-medium">{label}</span>
@@ -83,6 +83,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
       <PageHeader
         title="Dashboard"
         description="What needs your attention right now."
+        className="pb-4"
       />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
@@ -94,21 +95,29 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
             </span>
           }
           icon={Banknote}
+          delta={kpis.trends.companyCash.delta}
+          comparison={`vs. ${formatMoney(kpis.trends.companyCash.previous)} last period`}
         />
         <KpiCard
           label="Active members"
           value={kpis.activeMembers}
           icon={Users}
+          delta={kpis.trends.activeMembers.delta}
+          comparison={`vs. ${formatQuantity(kpis.trends.activeMembers.previous)} last period`}
         />
         <KpiCard
-          label="Orders this week"
-          value={kpis.ordersThisWeek}
+          label="Orders (7d)"
+          value={kpis.orders7d}
           icon={ClipboardList}
+          delta={kpis.trends.orders7d.delta}
+          comparison={`vs. ${formatQuantity(kpis.trends.orders7d.previous)} last period`}
         />
         <KpiCard
           label="Completed orders"
           value={kpis.completedOrders}
           icon={CheckCircle2}
+          delta={kpis.trends.completedOrders.delta}
+          comparison={`vs. ${formatQuantity(kpis.trends.completedOrders.previous)} last period`}
         />
         <KpiCard
           label="Low-stock items"
@@ -120,16 +129,16 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
         />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <div className="flex min-w-0 lg:col-span-2">
           <OrdersTrendChart data={orderTrend} className="flex-1" />
         </div>
 
         <Card className="min-w-0">
-          <CardHeader>
+          <CardHeader className="p-4 pb-0">
             <CardTitle>Needs attention</CardTitle>
           </CardHeader>
-          <CardContent className="pt-2">
+          <CardContent className="p-4 pt-2">
             <AttentionRow
               label="Payments to verify"
               description="Submitted payments awaiting review"
@@ -155,22 +164,22 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
               href="/admin/production/logs?status=PENDING"
             />
             <AttentionRow
-              label="Payroll runs to finalize"
-              description="Draft runs not yet finalized or paid"
-              count={attention.draftPayrollRuns}
-              href="/admin/payroll"
+              label="Material submissions to review"
+              description="Member monthly hand-ins awaiting confirmation"
+              count={attention.submissionsToReview}
+              href="/admin/submissions"
             />
           </CardContent>
         </Card>
       </div>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card className="min-w-0 lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-row items-center justify-between p-4 pb-0">
             <CardTitle>Recent activity</CardTitle>
             <SectionLink href="/admin/activity">View all</SectionLink>
           </CardHeader>
-          <CardContent className="pt-2">
+          <CardContent className="p-4 pt-2">
             {recentActivity.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet.</p>
             ) : (
@@ -178,7 +187,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
                 {recentActivity.map((entry) => (
                   <li
                     key={entry.id}
-                    className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+                    className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
                   >
                     <span
                       className={cn(
@@ -204,70 +213,48 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
         </Card>
 
         <Card className="min-w-0">
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-row items-center justify-between p-4 pb-0">
             <CardTitle>Low stock</CardTitle>
             <SectionLink href="/admin/inventory">View all</SectionLink>
           </CardHeader>
-          <CardContent className="pt-3">
+          <CardContent className="p-4 pt-2">
             {lowStockItems.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Every item is above its threshold.
               </p>
             ) : (
-              <ul className="flex flex-col gap-4">
+              <ul className="divide-y divide-border">
                 {lowStockItems.map((item) => {
                   const out = item.current_quantity <= 0;
                   const threshold = item.low_stock_threshold;
-                  const pct =
-                    threshold > 0
-                      ? Math.max(
-                          0,
-                          Math.min(
-                            100,
-                            (item.current_quantity / threshold) * 100,
-                          ),
-                        )
-                      : out
-                        ? 0
-                        : 100;
                   return (
-                    <li key={item.id} className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <Link
-                          href={`/admin/inventory/${item.id}` as Route}
-                          className="truncate text-sm font-medium hover:underline"
-                        >
-                          {item.name}
-                        </Link>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span
-                            className={cn(
-                              "text-sm font-semibold tabular-nums",
-                              out
-                                ? "text-tone-error-fg"
-                                : "text-tone-warning-fg",
-                            )}
-                          >
-                            {formatQuantity(item.current_quantity)}
-                          </span>
-                          <Badge tone={out ? "error" : "warning"}>
-                            {out ? "Out" : "Low"}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
+                    <li
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
+                    >
+                      <Link
+                        href={`/admin/inventory/${item.id}` as Route}
+                        className="truncate text-sm font-medium hover:underline"
+                      >
+                        {item.name}
+                      </Link>
+                      <div className="flex shrink-0 items-center gap-2 tabular-nums">
+                        <span
                           className={cn(
-                            "h-full rounded-full",
-                            out ? "bg-tone-error-fg" : "bg-tone-warning-fg",
+                            "text-sm font-semibold",
+                            out ? "text-tone-error-fg" : "text-tone-warning-fg",
                           )}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <div className="text-xs text-muted-foreground tabular-nums">
-                        {threshold > 0
-                          ? `Threshold ${threshold}`
-                          : "No threshold set"}
+                        >
+                          {formatQuantity(item.current_quantity)}
+                        </span>
+                        {threshold > 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            / {threshold}
+                          </span>
+                        ) : null}
+                        <Badge tone={out ? "error" : "warning"}>
+                          {out ? "Out" : "Low"}
+                        </Badge>
                       </div>
                     </li>
                   );
@@ -278,8 +265,8 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
         </Card>
       </div>
 
-      <div className="mt-6">
-        <div className="flex items-center justify-between pb-3">
+      <div className="mt-4">
+        <div className="flex items-center justify-between pb-2">
           <h2 className="text-lg font-semibold tracking-tight">
             Recent orders
           </h2>

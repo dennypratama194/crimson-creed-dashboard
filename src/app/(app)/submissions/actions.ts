@@ -1,0 +1,50 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { requireActiveMember } from "@/lib/auth/session";
+import { rpcErrorMessage } from "@/lib/forms";
+import { createClient } from "@/lib/supabase/server";
+import { submitMaterialSubmissionSchema } from "@/lib/validation/submission";
+
+export type ActionResult<T = undefined> = {
+  ok: boolean;
+  error?: string;
+  data?: T;
+};
+
+export async function submitMaterialSubmissionAction(
+  input: unknown,
+): Promise<ActionResult<{ submissionId: string }>> {
+  await requireActiveMember();
+
+  const parsed = submitMaterialSubmissionSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error:
+        parsed.error.issues[0]?.message ?? "Check the amounts and try again.",
+    };
+  }
+
+  const { lines, note } = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("submit_material_submission", {
+    p_lines: lines.map((l) => ({
+      material_type_id: l.materialTypeId,
+      quantity: l.quantity,
+    })),
+    p_note: note?.trim() ? note.trim() : null,
+  });
+
+  if (error || !data) {
+    return {
+      ok: false,
+      error: rpcErrorMessage(error, "Could not send your submission."),
+    };
+  }
+
+  revalidatePath("/submissions");
+  revalidatePath("/dashboard");
+  return { ok: true, data: { submissionId: data.id } };
+}

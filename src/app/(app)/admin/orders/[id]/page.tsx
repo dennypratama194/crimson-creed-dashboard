@@ -72,61 +72,59 @@ export default async function AdminOrderDetailPage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Items</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>
-                      <span data-align="right" className="block">
-                        Unit price
-                      </span>
-                    </TableHead>
-                    <TableHead>
-                      <span data-align="right" className="block">
-                        Qty
-                      </span>
-                    </TableHead>
-                    <TableHead>
-                      <span data-align="right" className="block">
-                        Line total
-                      </span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-medium">
-                        {line.item_name_snapshot}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatMoney(line.unit_price_snapshot)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {line.quantity}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatMoney(line.line_total)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow className="bg-muted/40">
-                    <TableCell colSpan={3} className="font-medium">
-                      Total
+          <section className="flex min-w-0 flex-col gap-3">
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              Items
+            </h2>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>
+                    <span data-align="right" className="block">
+                      Unit price
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span data-align="right" className="block">
+                      Qty
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span data-align="right" className="block">
+                      Line total
+                    </span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((line) => (
+                  <TableRow key={line.id}>
+                    <TableCell className="font-medium">
+                      {line.item_name_snapshot}
                     </TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">
-                      {formatMoney(order.total)}
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(line.unit_price_snapshot)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {line.quantity}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(line.line_total)}
                     </TableCell>
                   </TableRow>
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                ))}
+                <TableRow className="bg-muted/40">
+                  <TableCell colSpan={3} className="font-medium">
+                    Total
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {formatMoney(order.total)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </section>
 
           {order.note ? (
             <Card>

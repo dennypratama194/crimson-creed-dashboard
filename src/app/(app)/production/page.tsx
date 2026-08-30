@@ -21,7 +21,6 @@ import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -171,51 +170,49 @@ export default async function ProductionPage({
             <h2 className="text-sm font-semibold text-muted-foreground">
               Payslips
             </h2>
-            <Card className="overflow-x-auto p-0">
-              <Table className="min-w-[560px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="w-24">
-                      <span data-align="right" className="block">
-                        Logs
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-32">
-                      <span data-align="right" className="block">
-                        Amount
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-28">Status</TableHead>
+            <Table className="min-w-[560px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Run</TableHead>
+                  <TableHead>Period</TableHead>
+                  <TableHead className="w-24">
+                    <span data-align="right" className="block">
+                      Logs
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-32">
+                    <span data-align="right" className="block">
+                      Amount
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-28">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payslips.map((slip) => (
+                  <TableRow key={slip.id}>
+                    <TableCell className="font-mono text-sm">
+                      {slip.run_number}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(slip.period_start)} –{" "}
+                      {formatDate(slip.period_end)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {slip.log_count}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(slip.gross_amount)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge tone={PAYROLL_RUN_STATUS_TONE[slip.run_status]}>
+                        {PAYROLL_RUN_STATUS_LABEL[slip.run_status]}
+                      </Badge>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payslips.map((slip) => (
-                    <TableRow key={slip.id}>
-                      <TableCell className="font-mono text-sm">
-                        {slip.run_number}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(slip.period_start)} –{" "}
-                        {formatDate(slip.period_end)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {slip.log_count}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatMoney(slip.gross_amount)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge tone={PAYROLL_RUN_STATUS_TONE[slip.run_status]}>
-                          {PAYROLL_RUN_STATUS_LABEL[slip.run_status]}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
+                ))}
+              </TableBody>
+            </Table>
           </section>
         ) : null}
       </div>
