@@ -16,7 +16,7 @@ export default async function AdminFivemPage() {
     <>
       <PageHeader
         title="FiveM server"
-        description="Live player list for the roleplay server, polled from its public endpoints."
+        description="Live player list for the roleplay server, polled from the Cfx.re master list."
       />
       <FivemMonitor initialSnapshot={initialSnapshot} />
     </>

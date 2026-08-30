@@ -1,13 +1,12 @@
 import "server-only";
 
 import {
-  FIVEM_DEFAULT_ENDPOINT,
+  FIVEM_DEFAULT_JOIN_CODE,
   FIVEM_FETCH_TIMEOUT_MS,
+  FIVEM_MASTER_API_BASE,
 } from "@/lib/constants/fivem";
 import {
-  fivemDynamicSchema,
-  fivemInfoSchema,
-  fivemPlayersSchema,
+  fivemMasterResponseSchema,
   type FivemSnapshot,
 } from "@/lib/validation/fivem";
 
@@ -19,8 +18,8 @@ function stripColorCodes(value: string): string {
 /**
  * Flatten an error (and undici's nested `cause` chain) into a loggable object.
  * `causeCode` is the useful bit — `ETIMEDOUT` / `UND_ERR_CONNECT_TIMEOUT` means
- * the host blackholed us (IP block or server down); `ECONNREFUSED` means we
- * reached it but the port is closed.
+ * the master list blackholed us; `ECONNREFUSED` means we reached it but the
+ * port is closed.
  */
 function describeError(err: unknown): Record<string, unknown> {
   if (!(err instanceof Error)) return { value: String(err) };
@@ -43,22 +42,32 @@ function describeError(err: unknown): Record<string, unknown> {
   return out;
 }
 
-function resolveEndpoint(): string {
-  const raw = process.env.FIVEM_SERVER_URL?.trim() || FIVEM_DEFAULT_ENDPOINT;
-  return raw.replace(/\/+$/, "");
+function resolveJoinCode(): string {
+  return process.env.FIVEM_JOIN_CODE?.trim() || FIVEM_DEFAULT_JOIN_CODE;
 }
 
-/** `http://host:30120` -> `host:30120` for the `fivem://connect/` deep link. */
-function hostFromEndpoint(endpoint: string): string {
-  try {
-    const url = new URL(endpoint);
-    return url.port ? `${url.hostname}:${url.port}` : url.hostname;
-  } catch {
-    return endpoint.replace(/^https?:\/\//, "");
+function masterUrl(joinCode: string): string {
+  return `${FIVEM_MASTER_API_BASE}/${encodeURIComponent(joinCode)}`;
+}
+
+/** Cfx.re deep link + short display host for a join code. */
+function connectTarget(joinCode: string): { host: string; connectUri: string } {
+  return {
+    host: `cfx.re/join/${joinCode}`,
+    connectUri: `fivem://connect/cfx.re/join/${joinCode}`,
+  };
+}
+
+/** Raised when the master list has no server for our join code (HTTP 404). */
+class UnknownJoinCodeError extends Error {
+  constructor(joinCode: string) {
+    super(`Cfx.re master list has no server for join code "${joinCode}".`);
+    this.name = "UnknownJoinCodeError";
   }
 }
 
-async function getJson(url: string): Promise<unknown> {
+async function fetchMaster(joinCode: string): Promise<unknown> {
+  const url = masterUrl(joinCode);
   const startedAt = Date.now();
   try {
     const res = await fetch(url, {
@@ -66,11 +75,11 @@ async function getJson(url: string): Promise<unknown> {
       signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
       headers: { accept: "application/json" },
     });
+    if (res.status === 404) throw new UnknownJoinCodeError(joinCode);
     if (!res.ok) throw new Error(`${url} responded ${res.status}`);
     return await res.json();
   } catch (err) {
-    // Diagnostic: per-endpoint timing + failure code.
-    console.error("[fivem] endpoint failed", {
+    console.error("[fivem] master list fetch failed", {
       url,
       ms: Date.now() - startedAt,
       ...describeError(err),
@@ -80,85 +89,75 @@ async function getJson(url: string): Promise<unknown> {
 }
 
 export type FivemProbe = {
-  endpoint: string;
+  joinCode: string;
+  url: string;
   timeoutMs: number;
   startedAt: string;
-  results: {
-    name: string;
-    url: string;
+  result: {
     ok: boolean;
     status: number | null;
     ms: number;
     bytes: number | null;
     error: Record<string, unknown> | null;
-  }[];
+  };
 };
 
 /**
- * Diagnostic: hit each FiveM endpoint independently and report exactly what
- * happened (status, timing, failure code). Unlike `getServerSnapshot` this does
- * not fail fast, so a single blocked endpoint is visible next to the others.
+ * Diagnostic: hit the master list once and report exactly what happened
+ * (status, timing, failure code) without the schema/normalisation layer, so a
+ * transport failure is visible in the browser via `/api/fivem?debug=1`.
  */
 export async function probeServer(): Promise<FivemProbe> {
-  const endpoint = resolveEndpoint();
-  const targets = [
-    { name: "dynamic", url: `${endpoint}/dynamic.json` },
-    { name: "players", url: `${endpoint}/players.json` },
-    { name: "info", url: `${endpoint}/info.json` },
-  ];
+  const joinCode = resolveJoinCode();
+  const url = masterUrl(joinCode);
+  const startedAt = Date.now();
 
-  const results = await Promise.all(
-    targets.map(async ({ name, url }) => {
-      const startedAt = Date.now();
-      try {
-        const res = await fetch(url, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
-          headers: { accept: "application/json" },
-        });
-        const body = await res.text();
-        return {
-          name,
-          url,
-          ok: res.ok,
-          status: res.status,
-          ms: Date.now() - startedAt,
-          bytes: body.length,
-          error: res.ok
-            ? null
-            : { message: `HTTP ${res.status}`, body: body.slice(0, 200) },
-        };
-      } catch (err) {
-        return {
-          name,
-          url,
-          ok: false,
-          status: null,
-          ms: Date.now() - startedAt,
-          bytes: null,
-          error: describeError(err),
-        };
-      }
-    }),
-  );
+  let result: FivemProbe["result"];
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
+      headers: { accept: "application/json" },
+    });
+    const body = await res.text();
+    result = {
+      ok: res.ok,
+      status: res.status,
+      ms: Date.now() - startedAt,
+      bytes: body.length,
+      error: res.ok
+        ? null
+        : { message: `HTTP ${res.status}`, body: body.slice(0, 200) },
+    };
+  } catch (err) {
+    result = {
+      ok: false,
+      status: null,
+      ms: Date.now() - startedAt,
+      bytes: null,
+      error: describeError(err),
+    };
+  }
 
   return {
-    endpoint,
+    joinCode,
+    url,
     timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
     startedAt: new Date().toISOString(),
-    results,
+    result,
   };
 }
 
 function offlineSnapshot(
-  endpoint: string,
+  joinCode: string,
   error: string,
   latencyMs: number | null,
 ): FivemSnapshot {
+  const { host, connectUri } = connectTarget(joinCode);
   return {
     online: false,
-    host: hostFromEndpoint(endpoint),
-    connectUri: `fivem://connect/${hostFromEndpoint(endpoint)}`,
+    host,
+    connectUri,
     hostname: null,
     projectName: null,
     players: [],
@@ -171,70 +170,64 @@ function offlineSnapshot(
 }
 
 /**
- * Fetches a live snapshot of the configured FiveM server. Never throws — a
- * failure (server down, endpoint privacy, timeout) resolves to an offline
- * snapshot carrying a human-readable `error`.
+ * Fetches a live snapshot of the configured FiveM server from the Cfx.re master
+ * list. Never throws — a failure (unknown join code, master-list outage,
+ * timeout) resolves to an offline snapshot carrying a human-readable `error`.
  */
 export async function getServerSnapshot(): Promise<FivemSnapshot> {
-  const endpoint = resolveEndpoint();
-  const host = hostFromEndpoint(endpoint);
+  const joinCode = resolveJoinCode();
+  const { host, connectUri } = connectTarget(joinCode);
   const startedAt = Date.now();
 
-  let dynamicRaw: unknown;
-  let playersRaw: unknown;
-  let infoRaw: unknown;
+  let raw: unknown;
   try {
-    [dynamicRaw, playersRaw, infoRaw] = await Promise.all([
-      getJson(`${endpoint}/dynamic.json`),
-      getJson(`${endpoint}/players.json`),
-      getJson(`${endpoint}/info.json`).catch(() => ({})),
-    ]);
+    raw = await fetchMaster(joinCode);
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
-    // Diagnostic: surface the real network failure in the Vercel function logs.
     console.error("[fivem] snapshot fetch failed", {
-      endpoint,
+      joinCode,
       latencyMs,
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(err),
     });
+    if (err instanceof UnknownJoinCodeError) {
+      return offlineSnapshot(
+        joinCode,
+        `Server not listed on the Cfx.re master list for join code “${joinCode}”. The code may have changed.`,
+        latencyMs,
+      );
+    }
     const message =
       err instanceof Error && err.name === "TimeoutError"
-        ? "Server did not respond in time."
-        : "Could not reach the server.";
-    return offlineSnapshot(endpoint, message, latencyMs);
+        ? "The Cfx.re master list did not respond in time."
+        : "Could not reach the Cfx.re master list.";
+    return offlineSnapshot(joinCode, message, latencyMs);
   }
 
   const latencyMs = Date.now() - startedAt;
-  const dynamic = fivemDynamicSchema.safeParse(dynamicRaw);
-  if (!dynamic.success) {
+  const parsed = fivemMasterResponseSchema.safeParse(raw);
+  if (!parsed.success) {
     return offlineSnapshot(
-      endpoint,
-      "Server returned an unexpected response.",
+      joinCode,
+      "The Cfx.re master list returned an unexpected response.",
       latencyMs,
     );
   }
 
-  const players = fivemPlayersSchema
-    .parse(playersRaw)
+  const data = parsed.data.Data;
+  const players = data.players
     .map((p) => ({ id: p.id, name: stripColorCodes(p.name), ping: p.ping }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const info = fivemInfoSchema.safeParse(infoRaw);
-  const projectName = info.success
-    ? (info.data.vars?.sv_projectName?.trim() ?? null)
-    : null;
-
-  const hostname = dynamic.data.hostname
-    ? stripColorCodes(dynamic.data.hostname)
-    : null;
-  const maxClients = dynamic.data.sv_maxclients ?? null;
-  const playerCount = players.length || dynamic.data.clients;
+  const hostname = data.hostname ? stripColorCodes(data.hostname) : null;
+  const projectName = data.vars?.sv_projectName?.trim() || null;
+  const maxClients = data.sv_maxclients ?? null;
+  const playerCount = players.length || data.clients;
 
   return {
     online: true,
     host,
-    connectUri: `fivem://connect/${host}`,
+    connectUri,
     hostname,
     projectName,
     players,

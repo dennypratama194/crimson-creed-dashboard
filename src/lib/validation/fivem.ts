@@ -1,20 +1,12 @@
 import { z } from "zod";
 
 /**
- * Defensive schemas for the FiveM HTTP endpoints. Community servers run many
- * framework versions and the payloads drift, so every field the UI does not
- * strictly need is optional and coerced.
+ * Defensive schema for the Cfx.re master-list single-server payload. Community
+ * servers run many framework versions and the payloads drift, so every field
+ * the UI does not strictly need is optional and coerced.
  */
 
 const looseInt = z.coerce.number().int().catch(0);
-
-export const fivemDynamicSchema = z.object({
-  clients: looseInt,
-  sv_maxclients: looseInt.optional(),
-  hostname: z.string().optional(),
-  gametype: z.string().optional(),
-  mapname: z.string().optional(),
-});
 
 export const fivemPlayerSchema = z.object({
   id: looseInt,
@@ -24,14 +16,28 @@ export const fivemPlayerSchema = z.object({
 
 export const fivemPlayersSchema = z.array(fivemPlayerSchema).catch([]);
 
-export const fivemInfoSchema = z.object({
-  vars: z
-    .object({
-      sv_projectName: z.string().optional(),
-      sv_projectDesc: z.string().optional(),
-    })
-    .partial()
-    .optional(),
+/**
+ * `GET https://frontend.cfx-services.net/api/servers/single/{joinCode}`. The
+ * `Data` object is the merge of the server's own `dynamic.json` + `info.json` +
+ * `players.json`. `identifiers` on each player is privacy-scrubbed to `[]` at
+ * this access level, so we never read it.
+ */
+export const fivemMasterResponseSchema = z.object({
+  Data: z.object({
+    clients: looseInt,
+    sv_maxclients: looseInt.optional(),
+    hostname: z.string().optional(),
+    gametype: z.string().optional(),
+    mapname: z.string().optional(),
+    vars: z
+      .object({
+        sv_projectName: z.string().optional(),
+        sv_projectDesc: z.string().optional(),
+      })
+      .partial()
+      .optional(),
+    players: fivemPlayersSchema,
+  }),
 });
 
 /** Normalised snapshot returned by the proxy route and consumed by the UI. */
