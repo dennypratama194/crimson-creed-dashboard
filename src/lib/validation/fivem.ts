@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 /**
- * Defensive schema for the Cfx.re master-list single-server payload. Community
- * servers run many framework versions and the payloads drift, so every field
- * the UI does not strictly need is optional and coerced.
+ * Defensive schemas for the FiveM HTTP endpoints and the Cfx.re master-list
+ * payload. Community servers run many framework versions and the payloads
+ * drift, so every field the UI does not strictly need is optional and coerced.
  */
 
 const looseInt = z.coerce.number().int().catch(0);
@@ -15,6 +15,26 @@ export const fivemPlayerSchema = z.object({
 });
 
 export const fivemPlayersSchema = z.array(fivemPlayerSchema).catch([]);
+
+/** `GET {endpoint}/dynamic.json` — server headline numbers. */
+export const fivemDynamicSchema = z.object({
+  clients: looseInt,
+  sv_maxclients: looseInt.optional(),
+  hostname: z.string().optional(),
+  gametype: z.string().optional(),
+  mapname: z.string().optional(),
+});
+
+/** `GET {endpoint}/info.json` — we only read the project name out of `vars`. */
+export const fivemInfoSchema = z.object({
+  vars: z
+    .object({
+      sv_projectName: z.string().optional(),
+      sv_projectDesc: z.string().optional(),
+    })
+    .partial()
+    .optional(),
+});
 
 /**
  * `GET https://frontend.cfx-services.net/api/servers/single/{joinCode}`. The
