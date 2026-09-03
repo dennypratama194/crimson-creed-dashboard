@@ -1,5 +1,7 @@
 import "server-only";
 
+import { Agent, fetch as undiciFetch } from "undici";
+
 import {
   FIVEM_DEFAULT_ENDPOINT,
   FIVEM_FETCH_TIMEOUT_MS,
@@ -48,6 +50,17 @@ function resolveEndpoint(): string {
   return raw.replace(/\/+$/, "");
 }
 
+/**
+ * The server's HTTPS endpoint answers behind a proxy (reachable from datacenter
+ * IPs, unlike its raw-IP http port) but ships an EXPIRED certificate. We accept
+ * it deliberately: this is a read-only player-count widget, nothing keys off the
+ * data, and plain http — the only alternative — is blackholed from Vercel. The
+ * dispatcher is scoped to these calls only; it is not the global default.
+ */
+const fivemDispatcher = new Agent({
+  connect: { rejectUnauthorized: false, timeout: FIVEM_FETCH_TIMEOUT_MS },
+});
+
 /** `http://host:30120` -> `host:30120` for display + the `fivem://connect/` link. */
 function hostFromEndpoint(endpoint: string): string {
   try {
@@ -59,8 +72,8 @@ function hostFromEndpoint(endpoint: string): string {
 }
 
 async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    cache: "no-store",
+  const res = await undiciFetch(url, {
+    dispatcher: fivemDispatcher,
     signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
     headers: { accept: "application/json" },
   });
@@ -197,8 +210,8 @@ export async function probeServer(): Promise<FivemProbe> {
     targets.map(async ({ name, url }) => {
       const startedAt = Date.now();
       try {
-        const res = await fetch(url, {
-          cache: "no-store",
+        const res = await undiciFetch(url, {
+          dispatcher: fivemDispatcher,
           signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
           headers: { accept: "application/json" },
         });
