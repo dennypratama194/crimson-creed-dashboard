@@ -51,11 +51,34 @@ function resolveEndpoint(): string {
 }
 
 /**
- * The server's HTTPS endpoint answers behind a proxy (reachable from datacenter
- * IPs, unlike its raw-IP http port) but ships an EXPIRED certificate. We accept
- * it deliberately: this is a read-only player-count widget, nothing keys off the
- * data, and plain http — the only alternative — is blackholed from Vercel. The
- * dispatcher is scoped to these calls only; it is not the global default.
+ * The configured endpoint first, then the same host:port with the scheme
+ * flipped. The two transports fail on opposite networks and we cannot tell
+ * which caller we are: from a datacenter (Vercel) the raw-IP http port is
+ * blackholed but the https proxy answers; from some ISP/office networks a
+ * middlebox resets Node's TLS handshake to the game port (a browser or curl
+ * gets through, undici does not) while plain http is fine. Trying both, and
+ * remembering the winner, covers every case.
+ */
+function candidateEndpoints(): [string, ...string[]] {
+  const primary = resolveEndpoint();
+  let flipped: string | null = null;
+  if (primary.startsWith("https://")) {
+    flipped = `http://${primary.slice("https://".length)}`;
+  } else if (primary.startsWith("http://")) {
+    flipped = `https://${primary.slice("http://".length)}`;
+  }
+  return flipped ? [primary, flipped] : [primary];
+}
+
+/** Remember which transport last worked so the healthy path is one round-trip. */
+let cachedBase: { url: string; at: number } | undefined;
+const BASE_CACHE_MS = 5 * 60_000;
+
+/**
+ * The server's https endpoint answers behind a proxy but ships an EXPIRED
+ * certificate, so verification is disabled deliberately: this is a read-only
+ * player-count widget and nothing keys off the data. The dispatcher is scoped
+ * to these calls only; it is not the global default.
  */
 const fivemDispatcher = new Agent({
   connect: { rejectUnauthorized: false, timeout: FIVEM_FETCH_TIMEOUT_MS },
@@ -107,16 +130,55 @@ function offlineSnapshot(
  * payload) resolves to an offline snapshot carrying a human-readable `error`.
  */
 export async function getServerSnapshot(): Promise<FivemSnapshot> {
-  const endpoint = resolveEndpoint();
-  const host = hostFromEndpoint(endpoint);
+  const candidates = candidateEndpoints();
+  const host = hostFromEndpoint(candidates[0]);
   const startedAt = Date.now();
 
+  // Try the remembered-good transport first, then the rest, until one answers
+  // `dynamic.json`. That response is kept — no need to re-fetch it below.
+  const cached =
+    cachedBase && Date.now() - cachedBase.at < BASE_CACHE_MS
+      ? cachedBase.url
+      : null;
+  const ordered =
+    cached && candidates.includes(cached)
+      ? [cached, ...candidates.filter((c) => c !== cached)]
+      : candidates;
+
+  let endpoint: string | null = null;
   let dynamicRaw: unknown;
+  let lastErr: unknown;
+  for (const candidate of ordered) {
+    try {
+      dynamicRaw = await getJson(`${candidate}/dynamic.json`);
+      endpoint = candidate;
+      cachedBase = { url: candidate, at: Date.now() };
+      break;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  if (endpoint === null) {
+    cachedBase = undefined;
+    const latencyMs = Date.now() - startedAt;
+    console.error("[fivem] snapshot fetch failed", {
+      candidates: ordered,
+      latencyMs,
+      timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
+      ...describeError(lastErr),
+    });
+    const message =
+      lastErr instanceof Error && lastErr.name === "TimeoutError"
+        ? "The server did not respond in time."
+        : "Could not reach the server.";
+    return offlineSnapshot(host, message, latencyMs);
+  }
+
   let playersRaw: unknown;
   let infoRaw: unknown;
   try {
-    [dynamicRaw, playersRaw, infoRaw] = await Promise.all([
-      getJson(`${endpoint}/dynamic.json`),
+    [playersRaw, infoRaw] = await Promise.all([
       getJson(`${endpoint}/players.json`),
       getJson(`${endpoint}/info.json`).catch(() => ({})),
     ]);
@@ -179,6 +241,7 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
 
 export type FivemProbe = {
   endpoint: string;
+  candidates: string[];
   timeoutMs: number;
   startedAt: string;
   results: {
@@ -193,18 +256,17 @@ export type FivemProbe = {
 };
 
 /**
- * Diagnostic: hit each FiveM endpoint independently and report exactly what
- * happened (status, timing, failure code). Unlike `getServerSnapshot` this does
- * not fail fast, so one blocked endpoint is visible next to the others via
- * `/api/fivem?debug=1`.
+ * Diagnostic: hit `dynamic.json` on every candidate transport independently and
+ * report exactly what happened (status, timing, failure code). Unlike
+ * `getServerSnapshot` this does not fail fast, so a scheme that a middlebox
+ * resets is visible next to the one that works via `/api/fivem?debug=1`.
  */
 export async function probeServer(): Promise<FivemProbe> {
-  const endpoint = resolveEndpoint();
-  const targets = [
-    { name: "dynamic", url: `${endpoint}/dynamic.json` },
-    { name: "players", url: `${endpoint}/players.json` },
-    { name: "info", url: `${endpoint}/info.json` },
-  ];
+  const candidates = candidateEndpoints();
+  const targets = candidates.map((base) => ({
+    name: base.startsWith("https://") ? "https" : "http",
+    url: `${base}/dynamic.json`,
+  }));
 
   const results = await Promise.all(
     targets.map(async ({ name, url }) => {
@@ -242,7 +304,8 @@ export async function probeServer(): Promise<FivemProbe> {
   );
 
   return {
-    endpoint,
+    endpoint: candidates[0],
+    candidates,
     timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
     startedAt: new Date().toISOString(),
     results,
