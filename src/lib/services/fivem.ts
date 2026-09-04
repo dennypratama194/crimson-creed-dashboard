@@ -89,7 +89,19 @@ const fivemDispatcher = new Agent({
   },
 });
 
-/** `http://host:30120` -> `host:30120` for display + the `fivem://connect/` link. */
+/**
+ * The address players join, shown in the header and used for `fivem://connect/`.
+ * Defaults to whatever we read from, which is correct when that is the game
+ * server itself. When `FIVEM_SERVER_URL` points at a relay it is not: a tunnel
+ * hostname is not joinable, so `FIVEM_PUBLIC_HOST` names the real server.
+ */
+function resolvePublicHost(readEndpoint: string): string {
+  return (
+    process.env.FIVEM_PUBLIC_HOST?.trim() || hostFromEndpoint(readEndpoint)
+  );
+}
+
+/** `http://host:30120` -> `host:30120`. */
 function hostFromEndpoint(endpoint: string): string {
   try {
     const url = new URL(endpoint);
@@ -136,7 +148,7 @@ function offlineSnapshot(
  */
 export async function getServerSnapshot(): Promise<FivemSnapshot> {
   const candidates = candidateEndpoints();
-  const host = hostFromEndpoint(candidates[0]);
+  const host = resolvePublicHost(candidates[0]);
   const startedAt = Date.now();
 
   // Race the transports rather than trying them in turn: whichever answers
