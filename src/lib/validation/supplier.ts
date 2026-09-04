@@ -6,11 +6,6 @@ export const supplierInputSchema = z.object({
     .trim()
     .min(1, "Name is required")
     .max(120, "Name is too long"),
-  code: z
-    .string()
-    .trim()
-    .min(1, "Code is required")
-    .max(20, "Code is too long"),
   contact: z
     .string()
     .trim()
@@ -30,7 +25,6 @@ export function parseSupplierForm(formData: FormData) {
 
   return supplierInputSchema.safeParse({
     name: formData.get("name") ?? "",
-    code: formData.get("code") ?? "",
     contact: str("contact"),
     notes: str("notes"),
     active: formData.get("active") === "on",

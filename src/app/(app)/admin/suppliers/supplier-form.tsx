@@ -50,31 +50,14 @@ export function SupplierForm({ supplier }: { supplier?: Supplier }) {
         </p>
       ) : null}
 
-      <div className="grid gap-6 sm:grid-cols-[1fr_180px]">
-        <Field label="Name" htmlFor="name" required error={errors.name}>
-          <Input
-            id="name"
-            name="name"
-            defaultValue={supplier?.name ?? ""}
-            aria-invalid={Boolean(errors.name)}
-          />
-        </Field>
-
-        <Field
-          label="Code"
-          htmlFor="code"
-          required
-          error={errors.code}
-          hint="Short tag, e.g. PP"
-        >
-          <Input
-            id="code"
-            name="code"
-            defaultValue={supplier?.code ?? ""}
-            aria-invalid={Boolean(errors.code)}
-          />
-        </Field>
-      </div>
+      <Field label="Name" htmlFor="name" required error={errors.name}>
+        <Input
+          id="name"
+          name="name"
+          defaultValue={supplier?.name ?? ""}
+          aria-invalid={Boolean(errors.name)}
+        />
+      </Field>
 
       <Field
         label="Contact"

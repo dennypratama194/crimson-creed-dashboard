@@ -47,10 +47,11 @@ export function SuppliersTable({ rows }: { rows: SupplierWithCounts[] }) {
               >
                 {supplier.name}
               </Link>
-              <div className="font-mono text-xs text-muted-foreground">
-                {supplier.code}
-                {supplier.contact ? ` · ${supplier.contact}` : ""}
-              </div>
+              {supplier.contact ? (
+                <div className="text-xs text-muted-foreground">
+                  {supplier.contact}
+                </div>
+              ) : null}
             </TableCell>
             <TableCell className="tabular-nums">
               {formatQuantity(supplier.item_count)}

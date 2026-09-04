@@ -70,7 +70,7 @@ export async function listSuppliers(options: ListSuppliersOptions): Promise<{
 
   const search = options.search ? sanitizeSearch(options.search) : "";
   if (search) {
-    query = query.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+    query = query.ilike("name", `%${search}%`);
   }
 
   if ((options.sort ?? "name") === "recent") {
@@ -225,7 +225,7 @@ export async function listSupplierGroups(): Promise<SupplierGroup[]> {
 
 /** Which suppliers carry one catalogue item (item edit page panel). */
 export type ItemSupplierLine = SupplierItem & {
-  supplier: Pick<Supplier, "id" | "name" | "code" | "archived_at">;
+  supplier: Pick<Supplier, "id" | "name" | "archived_at">;
 };
 
 export async function getItemSuppliers(
@@ -242,7 +242,7 @@ export async function getItemSuppliers(
 
   const { data: suppliers, error: suppliersError } = await supabase
     .from("suppliers")
-    .select("id, name, code, archived_at")
+    .select("id, name, archived_at")
     .in(
       "id",
       lines.map((l) => l.supplier_id),

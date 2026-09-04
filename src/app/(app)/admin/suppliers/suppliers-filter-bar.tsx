@@ -68,7 +68,7 @@ export function SuppliersFilterBar() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or code…"
+          placeholder="Search suppliers…"
           className="pl-9"
           aria-label="Search suppliers"
         />

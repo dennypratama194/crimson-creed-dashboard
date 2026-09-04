@@ -80,9 +80,6 @@ export default async function EditItemPage({
                     >
                       {line.supplier.name}
                     </Link>
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {line.supplier.code}
-                    </span>
                     {line.supplier.archived_at ? (
                       <Badge tone="gray" className="ml-2">
                         Archived

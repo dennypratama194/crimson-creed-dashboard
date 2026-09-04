@@ -62,9 +62,6 @@ export default async function SupplierDetailPage({
           </CardHeader>
           <CardContent className="flex flex-col gap-3 pt-4 text-sm">
             <Row label="Status">{statusBadge()}</Row>
-            <Row label="Code">
-              <span className="font-mono text-xs">{supplier.code}</span>
-            </Row>
             <Row label="Contact">
               <span>{supplier.contact ?? "—"}</span>
             </Row>

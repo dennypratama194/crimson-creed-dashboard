@@ -25,7 +25,6 @@ export async function createSupplierAction(
   const supabase = await createClient();
   const { error } = await supabase.rpc("create_supplier", {
     p_name: supplier.name,
-    p_code: supplier.code,
     p_contact: supplier.contact,
     p_notes: supplier.notes,
     p_active: supplier.active,
@@ -63,7 +62,6 @@ export async function updateSupplierAction(
   const { error } = await supabase.rpc("update_supplier", {
     p_supplier_id: id,
     p_name: supplier.name,
-    p_code: supplier.code,
     p_contact: supplier.contact,
     p_notes: supplier.notes,
     p_active: supplier.active,

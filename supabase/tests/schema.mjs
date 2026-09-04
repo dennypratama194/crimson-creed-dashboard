@@ -1043,7 +1043,7 @@ await expect("member cannot see suppliers or the price book", async () => {
 });
 await expectThrows(
   "member cannot create a supplier",
-  () => db.query(`select create_supplier('Hidden','HID',null,null,true)`),
+  () => db.query(`select create_supplier('Hidden',null,null,true)`),
   "Super Admin",
 );
 
@@ -1051,9 +1051,9 @@ await asRole("authenticated", admin.id);
 let supplier;
 await expect("admin creates a supplier (audit + activity)", async () => {
   supplier = await one(
-    `select * from create_supplier('Peninsula Parts','PP','ask for Rae','trusted',true)`,
+    `select * from create_supplier('Peninsula Parts','ask for Rae','trusted',true)`,
   );
-  assert(supplier.code === "PP", supplier.code);
+  assert(supplier.name === "Peninsula Parts", supplier.name);
   assert(supplier.active === true, "should be active");
   await asRole(null);
   const a = await one(
@@ -1070,7 +1070,7 @@ await expect("admin creates a supplier (audit + activity)", async () => {
 
 await expect("admin renames a supplier", async () => {
   const updated = await one(
-    `select * from update_supplier($1,'Peninsula Parts Co','PP',null,null,true)`,
+    `select * from update_supplier($1,'Peninsula Parts Co',null,null,true)`,
     [supplier.id],
   );
   assert(updated.name === "Peninsula Parts Co", updated.name);

@@ -35,9 +35,6 @@ export function SupplierCatalogue({ groups }: { groups: SupplierGroup[] }) {
                   {supplier.name}
                 </Link>
               </CardTitle>
-              <span className="font-mono text-xs text-muted-foreground">
-                {supplier.code}
-              </span>
               {!supplier.active ? <Badge tone="warning">Inactive</Badge> : null}
             </div>
             <span className="text-sm text-muted-foreground">

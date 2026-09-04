@@ -10,7 +10,7 @@
  * Unlike `npm run db:seed` this touches ONLY the catalogue:
  *   - items          — upsert by name (73 rows); leftover pre-launch placeholder
  *                      items are archived (soft delete, reversible in the UI)
- *   - suppliers      — insert any of the 10 sheet codes that are missing;
+ *   - suppliers      — insert any of the 10 sheet names that are missing;
  *                      existing ones are left exactly as they are (names you
  *                      set in the admin UI are preserved)
  *   - supplier_items — upsert by (supplier, item) — 99 price-book lines
@@ -141,12 +141,12 @@ async function archiveLegacy() {
 async function importSuppliers(): Promise<Map<SupplierCode, string>> {
   const { data: existing, error } = await admin
     .from("suppliers")
-    .select("id, code");
+    .select("id, name");
   if (error) throw error;
 
   const idByCode = new Map<string, string>();
   for (const row of existing ?? []) {
-    idByCode.set(row.code.toUpperCase(), row.id);
+    idByCode.set(row.name.toUpperCase(), row.id);
   }
 
   let created = 0;
@@ -161,7 +161,7 @@ async function importSuppliers(): Promise<Map<SupplierCode, string>> {
     if (!DRY) {
       const { data, error: insErr } = await admin
         .from("suppliers")
-        .insert({ name: code, code })
+        .insert({ name: code })
         .select("id")
         .single();
       if (insErr || !data) throw insErr ?? new Error(`insert supplier ${code}`);

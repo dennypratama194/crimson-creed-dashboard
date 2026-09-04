@@ -368,7 +368,6 @@ type CashEntryRow = {
 type SupplierRow = {
   id: string;
   name: string;
-  code: string;
   contact: string | null;
   notes: string | null;
   active: boolean;
@@ -540,7 +539,6 @@ export interface Database {
         {
           id?: string;
           name: string;
-          code: string;
           contact?: string | null;
           notes?: string | null;
           active?: boolean;
@@ -666,7 +664,6 @@ export interface Database {
       create_supplier: {
         Args: {
           p_name: string;
-          p_code: string;
           p_contact?: string | null;
           p_notes?: string | null;
           p_active?: boolean;
@@ -677,7 +674,6 @@ export interface Database {
         Args: {
           p_supplier_id: string;
           p_name: string;
-          p_code: string;
           p_contact?: string | null;
           p_notes?: string | null;
           p_active?: boolean;

@@ -245,11 +245,11 @@ async function seedSuppliers(items: SeededItem[]) {
   console.log("Creating suppliers…");
   const { data, error } = await admin
     .from("suppliers")
-    .insert(SUPPLIERS.map((code) => ({ name: code, code })))
-    .select("id, code");
+    .insert(SUPPLIERS.map((code) => ({ name: code })))
+    .select("id, name");
   if (error || !data) throw error ?? new Error("supplier insert failed");
 
-  const idByCode = new Map(data.map((s) => [s.code, s.id]));
+  const idByCode = new Map(data.map((s) => [s.name, s.id]));
   const idByItem = new Map(items.map((i) => [i.name, i.id]));
 
   const rows = SUPPLIER_ITEMS.map(([code, itemName, buy, sell, max]) => {
