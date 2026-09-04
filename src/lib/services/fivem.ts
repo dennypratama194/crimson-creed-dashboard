@@ -75,13 +75,22 @@ let cachedBase: { url: string; at: number } | undefined;
 const BASE_CACHE_MS = 5 * 60_000;
 
 /**
- * The server's https endpoint answers behind a proxy but ships an EXPIRED
- * certificate, so verification is disabled deliberately: this is a read-only
- * player-count widget and nothing keys off the data. The dispatcher is scoped
- * to these calls only; it is not the global default.
+ * The server's https endpoint ships a SELF-SIGNED certificate, so verification
+ * is disabled deliberately: this is a read-only player-count widget and nothing
+ * keys off the data. The dispatcher is scoped to these calls only; it is not the
+ * global default.
+ *
+ * `family: 4` is not cosmetic. The host publishes an AAAA record, and serverless
+ * runtimes (Vercel/Lambda) have no IPv6 egress — picking the v6 address there
+ * fails with no useful error. Pin to the A record so every environment takes the
+ * same route.
  */
 const fivemDispatcher = new Agent({
-  connect: { rejectUnauthorized: false, timeout: FIVEM_FETCH_TIMEOUT_MS },
+  connect: {
+    rejectUnauthorized: false,
+    timeout: FIVEM_FETCH_TIMEOUT_MS,
+    family: 4,
+  },
 });
 
 /** `http://host:30120` -> `host:30120` for display + the `fivem://connect/` link. */
