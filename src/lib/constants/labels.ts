@@ -28,7 +28,7 @@ export const MEMBER_RANK_LABEL: Record<MemberRank, string> = {
   BOSS: "Boss",
   UNDER_BOSS: "Under Boss",
   SECRETARY: "Secretary",
-  B: "B",
+  CAPOREGIME: "Caporegime",
   SOLDIER: "Soldier",
 };
 

@@ -15,7 +15,7 @@ export const MEMBER_RANKS = [
   "BOSS",
   "UNDER_BOSS",
   "SECRETARY",
-  "B",
+  "CAPOREGIME",
   "SOLDIER",
 ] as const;
 export type MemberRank = (typeof MEMBER_RANKS)[number];

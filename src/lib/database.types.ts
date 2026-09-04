@@ -17,7 +17,12 @@ export type Json =
 
 // ── enums ───────────────────────────────────────────────────────────────────
 export type AppRole = "SUPER_ADMIN" | "MEMBER";
-export type MemberRank = "BOSS" | "UNDER_BOSS" | "SECRETARY" | "B" | "SOLDIER";
+export type MemberRank =
+  | "BOSS"
+  | "UNDER_BOSS"
+  | "SECRETARY"
+  | "CAPOREGIME"
+  | "SOLDIER";
 export type MemberStatus = "ACTIVE" | "INACTIVE";
 export type ItemCategory =
   | "WEAPON"
