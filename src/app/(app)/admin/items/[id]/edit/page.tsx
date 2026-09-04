@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 import { getItem } from "@/lib/db/items";
 import { getItemSuppliers } from "@/lib/db/suppliers";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -28,9 +30,19 @@ export default async function EditItemPage({
 
   const suppliers = await getItemSuppliers(item.id);
   const isCatalogue = item.stock_type === "CATALOGUE";
+  const returnTo = isCatalogue ? "/admin/items" : "/admin/inventory";
 
   return (
     <>
+      <div className="pb-4">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={returnTo}>
+            <ArrowLeft aria-hidden />
+            {isCatalogue ? "Items" : "Company stash"}
+          </Link>
+        </Button>
+      </div>
+
       <PageHeader
         title={item.name}
         description={
@@ -39,10 +51,7 @@ export default async function EditItemPage({
             : "A company-stash item — not shown to members or the order page."
         }
       />
-      <ItemForm
-        item={item}
-        returnTo={isCatalogue ? "/admin/items" : "/admin/inventory"}
-      />
+      <ItemForm item={item} returnTo={returnTo} />
 
       {suppliers.length > 0 ? (
         <section className="mt-8 flex max-w-2xl flex-col gap-3">

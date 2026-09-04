@@ -28,10 +28,18 @@ export function formatPercent(value: number): string {
   return Number.isFinite(value) ? `${percent.format(value)}%` : "—";
 }
 
+/**
+ * Every timestamp is stored in UTC and read back in the crew's own clock —
+ * Los Santos runs on GMT+7 here — so the server and the browser never disagree
+ * about what day an order was placed.
+ */
+export const APP_TIME_ZONE = "Asia/Jakarta";
+
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
   day: "numeric",
+  timeZone: APP_TIME_ZONE,
 });
 const dateTimeFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -39,6 +47,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: APP_TIME_ZONE,
 });
 
 export function formatDate(value: string | Date): string {
@@ -77,6 +86,7 @@ export function formatDateTime(value: string | Date): string {
 const timeFmt = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
+  timeZone: APP_TIME_ZONE,
 });
 
 /** "9:30 PM" — clock time only, for rows that show the date separately. */

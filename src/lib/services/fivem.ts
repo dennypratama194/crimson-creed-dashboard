@@ -158,13 +158,29 @@ function hostFromEndpoint(endpoint: string): string {
   }
 }
 
+/**
+ * Carries the upstream HTTP status so callers can tell apart a relay that
+ * answered ("the game server did not respond to me", 502) from one that never
+ * answered at all. Those look identical without it, and they have completely
+ * different fixes.
+ */
+class HttpStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number, url: string) {
+    super(`${url} responded ${status}`);
+    this.name = "HttpStatusError";
+    this.status = status;
+  }
+}
+
 async function getJson(url: string): Promise<unknown> {
   const res = await undiciFetch(url, {
     dispatcher: fivemDispatcher,
     signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
     headers: { accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`${url} responded ${res.status}`);
+  if (!res.ok) throw new HttpStatusError(res.status, url);
   return res.json();
 }
 
@@ -195,7 +211,15 @@ function offlineSnapshot(
  * at home is simply asleep.
  */
 function offlineMessage(source: EndpointSource, err: unknown): string {
-  if (source === "uplink") return "Could not reach the relay machine.";
+  if (source === "uplink") {
+    // The relay reached us but its own read of the game server failed, which it
+    // reports as 502. Blaming the relay machine there sends whoever is on call
+    // to the wrong box — it is awake and answering.
+    if (err instanceof HttpStatusError && err.status === 502) {
+      return "The game server is not responding.";
+    }
+    return "Could not reach the relay machine.";
+  }
   return err instanceof Error && err.name === "TimeoutError"
     ? "The server did not respond in time."
     : "Could not reach the server.";

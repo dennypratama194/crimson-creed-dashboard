@@ -16,6 +16,7 @@ import {
   FIVEM_PLAYERS_PER_PAGE,
   FIVEM_REFRESH_INTERVAL_MS,
 } from "@/lib/constants/fivem";
+import { APP_TIME_ZONE } from "@/lib/format";
 import type { FivemPlayer, FivemSnapshot } from "@/lib/validation/fivem";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/patterns/empty-state";
@@ -38,10 +39,11 @@ function pingTone(ping: number): "gray" | "success" | "warning" | "error" {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
+  return new Date(iso).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: APP_TIME_ZONE,
   });
 }
 

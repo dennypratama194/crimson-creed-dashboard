@@ -4,7 +4,9 @@ import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+  // w-fit so the pill keeps its intrinsic width inside a flex column, where the
+  // default align-items:stretch would otherwise pull it edge to edge.
+  "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
   {
     variants: {
       tone: {

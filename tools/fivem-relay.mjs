@@ -30,7 +30,12 @@ const UPSTREAM = (
   process.env.FIVEM_UPSTREAM || "http://main.imeroleplay.com:30120"
 ).replace(/\/+$/, "");
 const CACHE_MS = Number(process.env.CACHE_MS) || 5000;
-const UPSTREAM_TIMEOUT_MS = 5000;
+// Must stay UNDER the caller's own timeout (FIVEM_FETCH_TIMEOUT_MS, 4s). If the
+// relay waits longer than the app does, the app aborts first and sees a network
+// failure — indistinguishable from this machine being asleep. Failing fast here
+// lets the relay answer 502 instead, which the app reports as "the game server
+// is not responding".
+const UPSTREAM_TIMEOUT_MS = 3000;
 
 /** The only paths this relay will forward. Anything else is a 404. */
 const ALLOWED = new Set(["/dynamic.json", "/players.json", "/info.json"]);
