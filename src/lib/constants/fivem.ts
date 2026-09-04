@@ -16,11 +16,13 @@
 export const FIVEM_DEFAULT_ENDPOINT = "https://main.imeroleplay.com:30120";
 
 /**
- * How long the server proxy waits on each FiveM endpoint before giving up. Kept
- * under Vercel's 10s Hobby function limit so a stall resolves to our own
- * "offline" snapshot rather than a platform 504.
+ * How long the proxy waits on each FiveM endpoint before giving up. A snapshot
+ * costs at most two of these back to back (the transport race, then the player
+ * and info reads), so this has to stay under half Vercel's 10s Hobby function
+ * limit — otherwise a server that simply ignores us produces a platform 504
+ * instead of our own "offline" snapshot.
  */
-export const FIVEM_FETCH_TIMEOUT_MS = 8000;
+export const FIVEM_FETCH_TIMEOUT_MS = 4000;
 
 /** Client auto-refresh cadence when the toggle is on. */
 export const FIVEM_REFRESH_INTERVAL_MS = 10_000;

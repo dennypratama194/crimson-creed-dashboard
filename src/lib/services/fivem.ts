@@ -70,10 +70,6 @@ function candidateEndpoints(): [string, ...string[]] {
   return flipped ? [primary, flipped] : [primary];
 }
 
-/** Remember which transport last worked so the healthy path is one round-trip. */
-let cachedBase: { url: string; at: number } | undefined;
-const BASE_CACHE_MS = 5 * 60_000;
-
 /**
  * The server's https endpoint ships a SELF-SIGNED certificate, so verification
  * is disabled deliberately: this is a read-only player-count widget and nothing
@@ -143,36 +139,31 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
   const host = hostFromEndpoint(candidates[0]);
   const startedAt = Date.now();
 
-  // Try the remembered-good transport first, then the rest, until one answers
-  // `dynamic.json`. That response is kept — no need to re-fetch it below.
-  const cached =
-    cachedBase && Date.now() - cachedBase.at < BASE_CACHE_MS
-      ? cachedBase.url
-      : null;
-  const ordered =
-    cached && candidates.includes(cached)
-      ? [cached, ...candidates.filter((c) => c !== cached)]
-      : candidates;
-
+  // Race the transports rather than trying them in turn: whichever answers
+  // `dynamic.json` first wins and its response is kept. Sequential attempts
+  // would cost the sum of both timeouts on a server that ignores us, which
+  // overruns the platform's function limit before we can return "offline".
   let endpoint: string | null = null;
   let dynamicRaw: unknown;
   let lastErr: unknown;
-  for (const candidate of ordered) {
-    try {
-      dynamicRaw = await getJson(`${candidate}/dynamic.json`);
-      endpoint = candidate;
-      cachedBase = { url: candidate, at: Date.now() };
-      break;
-    } catch (err) {
-      lastErr = err;
-    }
+  try {
+    const won = await Promise.any(
+      candidates.map(async (base) => ({
+        base,
+        raw: await getJson(`${base}/dynamic.json`),
+      })),
+    );
+    endpoint = won.base;
+    dynamicRaw = won.raw;
+  } catch (err) {
+    // AggregateError — every transport failed. Report the first cause.
+    lastErr = err instanceof AggregateError ? (err.errors[0] ?? err) : err;
   }
 
   if (endpoint === null) {
-    cachedBase = undefined;
     const latencyMs = Date.now() - startedAt;
     console.error("[fivem] snapshot fetch failed", {
-      candidates: ordered,
+      candidates,
       latencyMs,
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(lastErr),
