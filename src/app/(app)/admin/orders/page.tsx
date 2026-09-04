@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { ClipboardList } from "lucide-react";
+import Link from "next/link";
+import { ClipboardList, Plus } from "lucide-react";
 
 import {
   DISTRIBUTION_STATUSES,
@@ -13,6 +14,7 @@ import { listAdminOrders } from "@/lib/db/orders";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
+import { Button } from "@/components/ui/button";
 import { AdminOrdersFilterBar } from "@/app/(app)/admin/orders/admin-orders-filter-bar";
 import { AdminOrdersTable } from "@/app/(app)/admin/orders/admin-orders-table";
 
@@ -59,6 +61,14 @@ export default async function AdminOrdersPage({
       <PageHeader
         title="Orders"
         description="Every order, with its payment and distribution workflow."
+        actions={
+          <Button asChild>
+            <Link href="/orders/new">
+              <Plus aria-hidden />
+              New order
+            </Link>
+          </Button>
+        }
       />
 
       <div className="flex flex-col gap-4">

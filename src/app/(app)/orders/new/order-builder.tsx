@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Minus, Package, Plus, Search, X } from "lucide-react";
@@ -30,7 +31,15 @@ function qtyValue(quantity: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function OrderBuilder({ items }: { items: OrderableItem[] }) {
+export function OrderBuilder({
+  items,
+  listPath = "/orders",
+}: {
+  items: OrderableItem[];
+  /** Where "Cancel" and the placed-order link go — the member list, or the
+   *  admin queue when a Super Admin is ordering. */
+  listPath?: Route;
+}) {
   const router = useRouter();
   const [lines, setLines] = useState<Line[]>([]);
   const [note, setNote] = useState("");
@@ -132,7 +141,7 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
         return;
       }
       toast.success("Order placed.");
-      router.push(`/orders/${result.data.orderId}`);
+      router.push(`${listPath}/${result.data.orderId}` as Route);
     });
   }
 
@@ -292,7 +301,7 @@ export function OrderBuilder({ items }: { items: OrderableItem[] }) {
             </Button>
             <Button
               variant="ghost"
-              onClick={() => router.push("/orders")}
+              onClick={() => router.push(listPath)}
               disabled={pending}
             >
               Cancel

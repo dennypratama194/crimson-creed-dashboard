@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { PackageX } from "lucide-react";
 
-import { requireActiveMember } from "@/lib/auth/session";
+import { isSuperAdmin, requireActiveMember } from "@/lib/auth/session";
 import { getOrderableItems } from "@/lib/db/orders";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -12,8 +12,9 @@ import { OrderBuilder } from "@/app/(app)/orders/new/order-builder";
 export const metadata: Metadata = { title: "New order" };
 
 export default async function NewOrderPage() {
-  await requireActiveMember();
+  const member = await requireActiveMember();
   const items = await getOrderableItems();
+  const listPath: Route = isSuperAdmin(member) ? "/admin/orders" : "/orders";
 
   return (
     <>
@@ -28,12 +29,12 @@ export default async function NewOrderPage() {
           description="There are no orderable items in the catalogue right now."
           action={
             <Button asChild variant="secondary">
-              <Link href="/orders">Back to orders</Link>
+              <Link href={listPath}>Back to orders</Link>
             </Button>
           }
         />
       ) : (
-        <OrderBuilder items={items} />
+        <OrderBuilder items={items} listPath={listPath} />
       )}
     </>
   );
