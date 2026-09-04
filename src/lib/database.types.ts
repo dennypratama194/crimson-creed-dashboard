@@ -285,6 +285,12 @@ type OrganizationSettingsRow = {
   updated_by: string | null;
 }
 
+type FivemUplinkRow = {
+  id: boolean;
+  endpoint: string | null;
+  updated_at: string;
+}
+
 type ProductionRateRow = {
   item_id: string;
   unit_rate: number;
@@ -528,6 +534,7 @@ export interface Database {
         never,
         { org_name?: string; logo_url?: string | null; updated_by?: string | null }
       >;
+      fivem_uplink: TableShape<FivemUplinkRow, never, never>;
       production_rates: TableShape<ProductionRateRow, never, never>;
       production_logs: TableShape<ProductionLogRow, never, never>;
       payroll_runs: TableShape<PayrollRunRow, never, never>;

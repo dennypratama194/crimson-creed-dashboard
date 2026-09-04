@@ -6,6 +6,7 @@ import {
   FIVEM_DEFAULT_ENDPOINT,
   FIVEM_FETCH_TIMEOUT_MS,
 } from "@/lib/constants/fivem";
+import { getFivemUplink } from "@/lib/db/fivem";
 import {
   fivemDynamicSchema,
   fivemInfoSchema,
@@ -45,29 +46,70 @@ function describeError(err: unknown): Record<string, unknown> {
   return out;
 }
 
-function resolveEndpoint(): string {
-  const raw = process.env.FIVEM_SERVER_URL?.trim() || FIVEM_DEFAULT_ENDPOINT;
-  return raw.replace(/\/+$/, "");
+/** Which configuration source won, for logging and for the offline message. */
+type EndpointSource = "uplink" | "env" | "default";
+
+type ResolvedEndpoint = {
+  base: string;
+  source: EndpointSource;
+  /** When the relay last published (ISO). Only set for `source: "uplink"`. */
+  publishedAt: string | null;
+};
+
+/**
+ * The relay's own published address wins over `FIVEM_SERVER_URL`.
+ *
+ * That order is deliberate. The relay sits behind a tunnel whose hostname
+ * changes on every restart, so an env var pinned at deploy time goes stale the
+ * first time the relay machine reboots — and fixing it meant editing the
+ * hosting dashboard and redeploying, with the monitor stuck on "Offline" until
+ * someone noticed. Letting the database value take precedence means a long-dead
+ * `FIVEM_SERVER_URL` is simply ignored instead of having to be cleared. The env
+ * var still applies when no relay has ever published.
+ */
+async function resolveEndpoint(): Promise<ResolvedEndpoint> {
+  const strip = (value: string) => value.replace(/\/+$/, "");
+
+  const uplink = await getFivemUplink();
+  if (uplink) {
+    return {
+      base: strip(uplink.endpoint),
+      source: "uplink",
+      publishedAt: uplink.updatedAt,
+    };
+  }
+
+  const fromEnv = process.env.FIVEM_SERVER_URL?.trim();
+  if (fromEnv) {
+    return { base: strip(fromEnv), source: "env", publishedAt: null };
+  }
+
+  return { base: FIVEM_DEFAULT_ENDPOINT, source: "default", publishedAt: null };
 }
 
 /**
- * The configured endpoint first, then the same host:port with the scheme
- * flipped. The two transports fail on opposite networks and we cannot tell
- * which caller we are: from a datacenter (Vercel) the raw-IP http port is
- * blackholed but the https proxy answers; from some ISP/office networks a
- * middlebox resets Node's TLS handshake to the game port (a browser or curl
- * gets through, undici does not) while plain http is fine. Trying both, and
- * remembering the winner, covers every case.
+ * The resolved endpoint first, then the same host:port with the scheme flipped.
+ * The two transports fail on opposite networks and we cannot tell which caller
+ * we are: from a datacenter (Vercel) the raw-IP http port is blackholed but the
+ * https proxy answers; from some ISP/office networks a middlebox resets Node's
+ * TLS handshake to the game port (a browser or curl gets through, undici does
+ * not) while plain http is fine. Trying both covers every case.
  */
-function candidateEndpoints(): [string, ...string[]] {
-  const primary = resolveEndpoint();
+async function candidateEndpoints(): Promise<
+  ResolvedEndpoint & { candidates: [string, ...string[]] }
+> {
+  const resolved = await resolveEndpoint();
+  const primary = resolved.base;
   let flipped: string | null = null;
   if (primary.startsWith("https://")) {
     flipped = `http://${primary.slice("https://".length)}`;
   } else if (primary.startsWith("http://")) {
     flipped = `https://${primary.slice("http://".length)}`;
   }
-  return flipped ? [primary, flipped] : [primary];
+  return {
+    ...resolved,
+    candidates: flipped ? [primary, flipped] : [primary],
+  };
 }
 
 /**
@@ -92,13 +134,18 @@ const fivemDispatcher = new Agent({
 /**
  * The address players join, shown in the header and used for `fivem://connect/`.
  * Defaults to whatever we read from, which is correct when that is the game
- * server itself. When `FIVEM_SERVER_URL` points at a relay it is not: a tunnel
- * hostname is not joinable, so `FIVEM_PUBLIC_HOST` names the real server.
+ * server itself. Reading through a relay says nothing about where players
+ * connect — a tunnel hostname is not joinable — so that case falls back to the
+ * game server we know about. `FIVEM_PUBLIC_HOST` overrides both.
  */
-function resolvePublicHost(readEndpoint: string): string {
-  return (
-    process.env.FIVEM_PUBLIC_HOST?.trim() || hostFromEndpoint(readEndpoint)
-  );
+function resolvePublicHost(
+  readEndpoint: string,
+  source: EndpointSource,
+): string {
+  const explicit = process.env.FIVEM_PUBLIC_HOST?.trim();
+  if (explicit) return explicit;
+  if (source === "uplink") return hostFromEndpoint(FIVEM_DEFAULT_ENDPOINT);
+  return hostFromEndpoint(readEndpoint);
 }
 
 /** `http://host:30120` -> `host:30120`. */
@@ -142,13 +189,26 @@ function offlineSnapshot(
 }
 
 /**
+ * A dead relay and a dead game server are different problems with different
+ * fixes, and the monitor is the only place either becomes visible. Name the one
+ * that actually failed so nobody goes hunting the game server when the machine
+ * at home is simply asleep.
+ */
+function offlineMessage(source: EndpointSource, err: unknown): string {
+  if (source === "uplink") return "Could not reach the relay machine.";
+  return err instanceof Error && err.name === "TimeoutError"
+    ? "The server did not respond in time."
+    : "Could not reach the server.";
+}
+
+/**
  * Live snapshot of the configured FiveM server, read from its own public HTTP
  * endpoints. Never throws — a failure (server down, timeout, unexpected
  * payload) resolves to an offline snapshot carrying a human-readable `error`.
  */
 export async function getServerSnapshot(): Promise<FivemSnapshot> {
-  const candidates = candidateEndpoints();
-  const host = resolvePublicHost(candidates[0]);
+  const { candidates, source, publishedAt } = await candidateEndpoints();
+  const host = resolvePublicHost(candidates[0], source);
   const startedAt = Date.now();
 
   // Race the transports rather than trying them in turn: whichever answers
@@ -176,15 +236,13 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
     const latencyMs = Date.now() - startedAt;
     console.error("[fivem] snapshot fetch failed", {
       candidates,
+      source,
+      publishedAt,
       latencyMs,
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(lastErr),
     });
-    const message =
-      lastErr instanceof Error && lastErr.name === "TimeoutError"
-        ? "The server did not respond in time."
-        : "Could not reach the server.";
-    return offlineSnapshot(host, message, latencyMs);
+    return offlineSnapshot(host, offlineMessage(source, lastErr), latencyMs);
   }
 
   let playersRaw: unknown;
@@ -198,15 +256,13 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
     const latencyMs = Date.now() - startedAt;
     console.error("[fivem] snapshot fetch failed", {
       endpoint,
+      source,
+      publishedAt,
       latencyMs,
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(err),
     });
-    const message =
-      err instanceof Error && err.name === "TimeoutError"
-        ? "The server did not respond in time."
-        : "Could not reach the server.";
-    return offlineSnapshot(host, message, latencyMs);
+    return offlineSnapshot(host, offlineMessage(source, err), latencyMs);
   }
 
   const latencyMs = Date.now() - startedAt;
@@ -254,6 +310,8 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
 export type FivemProbe = {
   endpoint: string;
   candidates: string[];
+  source: EndpointSource;
+  publishedAt: string | null;
   timeoutMs: number;
   startedAt: string;
   results: {
@@ -272,9 +330,11 @@ export type FivemProbe = {
  * report exactly what happened (status, timing, failure code). Unlike
  * `getServerSnapshot` this does not fail fast, so a scheme that a middlebox
  * resets is visible next to the one that works via `/api/fivem?debug=1`.
+ * `source` and `publishedAt` say where the address came from, which is the
+ * first thing to check when the monitor reads a stale relay URL.
  */
 export async function probeServer(): Promise<FivemProbe> {
-  const candidates = candidateEndpoints();
+  const { candidates, source, publishedAt } = await candidateEndpoints();
   const targets = candidates.map((base) => ({
     name: base.startsWith("https://") ? "https" : "http",
     url: `${base}/dynamic.json`,
@@ -318,6 +378,8 @@ export async function probeServer(): Promise<FivemProbe> {
   return {
     endpoint: candidates[0],
     candidates,
+    source,
+    publishedAt,
     timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
     startedAt: new Date().toISOString(),
     results,
