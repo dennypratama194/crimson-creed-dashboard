@@ -34,6 +34,35 @@ export const fivemInfoSchema = z.object({
     .optional(),
 });
 
+/**
+ * Cfx.re's public directory payload. Only the handful of fields the fallback
+ * needs are modelled; the endpoint returns a great deal more. `svMaxclients`
+ * and `sv_maxclients` both appear in the wild, so accept either.
+ */
+export const fivemDirectorySchema = z.object({
+  Data: z
+    .object({
+      hostname: z.string().optional(),
+      clients: looseInt.optional(),
+      svMaxclients: looseInt.optional(),
+      sv_maxclients: looseInt.optional(),
+      lastSeen: z.string().optional(),
+      vars: z
+        .object({ sv_projectName: z.string().optional() })
+        .partial()
+        .optional(),
+    })
+    .optional(),
+});
+
+/**
+ * Where a snapshot's numbers came from. `server` is the game server's own
+ * endpoints, read directly or through the relay, and carries the real roster.
+ * `directory` is Cfx.re's public listing — always reachable, but it anonymises
+ * players, so the roster is withheld rather than shown as `Anon0`, `Anon1`, …
+ */
+export type FivemSource = "server" | "directory";
+
 /** Normalised snapshot returned by the proxy route and consumed by the UI. */
 export type FivemPlayer = {
   id: number;
@@ -53,4 +82,5 @@ export type FivemSnapshot = {
   latencyMs: number | null;
   fetchedAt: string;
   error: string | null;
+  source: FivemSource;
 };

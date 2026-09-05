@@ -4,10 +4,14 @@ import { Agent, fetch as undiciFetch } from "undici";
 
 import {
   FIVEM_DEFAULT_ENDPOINT,
+  FIVEM_DEFAULT_JOIN_CODE,
+  FIVEM_DIRECTORY_MAX_AGE_MS,
+  FIVEM_DIRECTORY_URL,
   FIVEM_FETCH_TIMEOUT_MS,
 } from "@/lib/constants/fivem";
 import { getFivemUplink } from "@/lib/db/fivem";
 import {
+  fivemDirectorySchema,
   fivemDynamicSchema,
   fivemInfoSchema,
   fivemPlayersSchema,
@@ -201,7 +205,74 @@ function offlineSnapshot(
     latencyMs,
     fetchedAt: new Date().toISOString(),
     error,
+    source: "server",
   };
+}
+
+/**
+ * Cfx.re is an ordinary public CDN, so its certificate is verified normally.
+ * Only the game server needs the self-signed exemption above.
+ */
+const directoryDispatcher = new Agent({
+  connect: { timeout: FIVEM_FETCH_TIMEOUT_MS, family: 4 },
+});
+
+/**
+ * Fallback: read status and player count from Cfx.re's public directory.
+ *
+ * The game server black-holes datacenter traffic, so when the relay machine is
+ * off there is no route to it at all and the monitor would otherwise just show
+ * "offline" — indistinguishable from the server actually being down, which is
+ * the question the page exists to answer. The directory is reachable from
+ * anywhere and its counts are accurate to within about a minute.
+ *
+ * It anonymises the roster, so `players` is deliberately left empty rather than
+ * filled with `Anon0`, `Anon1`, …; the UI explains the gap. Returns null when
+ * the directory cannot answer either, leaving the caller to report offline.
+ */
+async function readDirectory(
+  host: string,
+  startedAt: number,
+): Promise<FivemSnapshot | null> {
+  const joinCode =
+    process.env.FIVEM_JOIN_CODE?.trim() || FIVEM_DEFAULT_JOIN_CODE;
+  try {
+    const res = await undiciFetch(`${FIVEM_DIRECTORY_URL}/${joinCode}`, {
+      dispatcher: directoryDispatcher,
+      signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return null;
+
+    const parsed = fivemDirectorySchema.safeParse(await res.json());
+    const data = parsed.success ? parsed.data.Data : undefined;
+    if (!data) return null;
+
+    // A server that has dropped off the list keeps its record for a while, so
+    // trust the directory only while its own timestamp is recent.
+    if (data.lastSeen) {
+      const age = Date.now() - new Date(data.lastSeen).getTime();
+      if (Number.isFinite(age) && age > FIVEM_DIRECTORY_MAX_AGE_MS) return null;
+    }
+
+    const maxClients = data.svMaxclients ?? data.sv_maxclients ?? null;
+    return {
+      online: true,
+      host,
+      connectUri: `fivem://connect/${host}`,
+      hostname: data.hostname ? stripColorCodes(data.hostname) : null,
+      projectName: data.vars?.sv_projectName?.trim() ?? null,
+      players: [],
+      playerCount: data.clients ?? 0,
+      maxClients: maxClients && maxClients > 0 ? maxClients : null,
+      latencyMs: Date.now() - startedAt,
+      fetchedAt: new Date().toISOString(),
+      error: null,
+      source: "directory",
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -266,6 +337,11 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(lastErr),
     });
+    // No route to the game server. Before declaring it offline, ask the public
+    // directory — it can still say whether the server is up and how busy it is.
+    const viaDirectory = await readDirectory(host, startedAt);
+    if (viaDirectory) return viaDirectory;
+
     return offlineSnapshot(host, offlineMessage(source, lastErr), latencyMs);
   }
 
@@ -286,6 +362,9 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(err),
     });
+    const viaDirectory = await readDirectory(host, startedAt);
+    if (viaDirectory) return viaDirectory;
+
     return offlineSnapshot(host, offlineMessage(source, err), latencyMs);
   }
 
@@ -326,6 +405,7 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
     latencyMs,
     fetchedAt: new Date().toISOString(),
     error: null,
+    source: "server",
   };
 }
 

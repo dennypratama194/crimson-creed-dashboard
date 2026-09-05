@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Gamepad2,
+  Info,
   RefreshCw,
   Search,
   SignalHigh,
@@ -91,6 +92,11 @@ export function FivemMonitor({
         )
       : null;
 
+  // The public directory knows the server is up and how full it is, but not who
+  // is on it. Say that plainly instead of rendering an empty roster that reads
+  // like nobody is playing.
+  const rosterUnavailable = snapshot.source === "directory";
+
   return (
     <div className="flex flex-col gap-6">
       {/* Server identity + controls */}
@@ -146,6 +152,17 @@ export function FivemMonitor({
         </div>
       ) : null}
 
+      {rosterUnavailable ? (
+        <div className="flex items-start gap-3 rounded-xl border border-border bg-subtle px-4 py-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            The relay machine is offline, so this is read from the public FiveM
+            directory. Status and player count are live; player names are not
+            published there.
+          </span>
+        </div>
+      ) : null}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
@@ -164,7 +181,7 @@ export function FivemMonitor({
         <KpiCard
           label="Latency"
           value={snapshot.latencyMs != null ? `${snapshot.latencyMs} ms` : "—"}
-          hint="Proxy round-trip"
+          hint={rosterUnavailable ? "Directory round-trip" : "Proxy round-trip"}
         />
         <KpiCard
           label="Updated"
@@ -203,24 +220,34 @@ export function FivemMonitor({
           <h2 className="text-sm font-medium">
             Players online{" "}
             <span className="text-muted-foreground tabular-nums">
-              {filtered.length === snapshot.players.length
-                ? `(${snapshot.players.length})`
-                : `(${filtered.length} of ${snapshot.players.length})`}
+              {rosterUnavailable
+                ? `(${snapshot.playerCount})`
+                : filtered.length === snapshot.players.length
+                  ? `(${snapshot.players.length})`
+                  : `(${filtered.length} of ${snapshot.players.length})`}
             </span>
           </h2>
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Filter by name or ID"
-              className="pl-9"
-              aria-label="Filter players"
-            />
-          </div>
+          {rosterUnavailable ? null : (
+            <div className="relative w-full max-w-xs">
+              <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Filter by name or ID"
+                className="pl-9"
+                aria-label="Filter players"
+              />
+            </div>
+          )}
         </div>
 
-        {snapshot.players.length === 0 ? (
+        {rosterUnavailable ? (
+          <EmptyState
+            icon={Users}
+            title="Player list unavailable"
+            description={`${snapshot.playerCount} online right now, but the public directory does not publish player names. Start the uplink on the relay PC to see the roster.`}
+          />
+        ) : snapshot.players.length === 0 ? (
           <EmptyState
             icon={Users}
             title={snapshot.online ? "No players online" : "Server unreachable"}
