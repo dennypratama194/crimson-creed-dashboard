@@ -1,8 +1,9 @@
 /**
  * Create one real Super Admin — an auth user plus its `members` row — for
- * bootstrapping a fresh production project. Mirrors how `seed.ts` provisions an
- * admin, but interactive and strictly non-destructive: it never wipes anything
- * and refuses to run if the username is already taken.
+ * bootstrapping a fresh production project. Mirrors how `seed.ts` and the
+ * admin "add member" flow provision accounts: sign-in is by USERNAME, and
+ * Supabase Auth's required email is a synthetic `<username>@crimson.local`
+ * that is never routed (see src/lib/auth/member-credentials.ts).
  *
  *   # against the dev project (.env.local):
  *   npm run db:create-admin
@@ -11,9 +12,8 @@
  *   npx tsx --env-file=.env.prod.local supabase/create-admin.ts
  *
  * Values come from flags or interactive prompts (flags win):
- *   --email     login email                              (prompted if omitted)
- *   --username  3–32 chars, unique (case-insensitive)    (prompted if omitted)
- *   --name      display name                             (prompted if omitted)
+ *   --username  3–32 chars, [a-z0-9._-], unique   (prompted if omitted)
+ *   --name      display name                       (prompted if omitted)
  *   --rank      BOSS | UNDER_BOSS | SECRETARY | CAPOREGIME | SOLDIER  (default BOSS)
  *   --password  min 8 chars — better via ADMIN_PASSWORD env or the hidden
  *               prompt than a flag (flags leak into shell history)
@@ -30,6 +30,7 @@ import { createInterface } from "node:readline/promises";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { usernameToEmail } from "../src/lib/auth/member-credentials";
 import type { Database, MemberRank } from "../src/lib/database.types";
 import { announceTarget } from "./_env-guard";
 
@@ -147,15 +148,13 @@ async function main(): Promise<void> {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  let email = flag("email");
   let username = flag("username");
   let displayName = flag("name");
   let rankRaw = flag("rank");
 
-  if (!email || !username || !displayName || !rankRaw) {
+  if (!username || !displayName || !rankRaw) {
     const rl = createInterface({ input: stdin, output: stdout });
     try {
-      if (!email) email = (await rl.question("Login email: ")).trim();
       if (!username)
         username = (await rl.question("Username (3–32 chars): ")).trim();
       if (!displayName)
@@ -167,7 +166,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const uname = (username ?? "").trim();
+  const uname = (username ?? "").trim().toLowerCase();
   const dname = (displayName ?? "").trim();
   const rank = (rankRaw ?? "BOSS").toUpperCase() as MemberRank;
 
@@ -178,11 +177,11 @@ async function main(): Promise<void> {
 
   // ── validate ──────────────────────────────────────────────────────────────
   const problems: string[] = [];
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    problems.push("email is not a valid address");
-  }
   if (uname.length < 3 || uname.length > 32) {
     problems.push("username must be 3–32 characters");
+  }
+  if (!/^[a-z0-9._-]+$/.test(uname)) {
+    problems.push("username may only contain letters, digits, . _ -");
   }
   if (dname.length < 1) problems.push("display name is required");
   if (!RANKS.includes(rank)) {
@@ -195,6 +194,8 @@ async function main(): Promise<void> {
     console.error("Cannot create admin:\n  - " + problems.join("\n  - "));
     process.exit(1);
   }
+
+  const email = usernameToEmail(uname);
 
   // ── uniqueness ────────────────────────────────────────────────────────────
   const { data: clash, error: clashErr } = await admin
@@ -213,12 +214,12 @@ async function main(): Promise<void> {
 
   if (DRY) {
     console.log("Dry run — would create this Super Admin:");
-    console.log(`  email        : ${email}`);
     console.log(`  username     : ${uname}`);
     console.log(`  display name : ${dname}`);
     console.log(`  rank         : ${rank}`);
     console.log("  role         : SUPER_ADMIN");
     console.log("  status       : ACTIVE");
+    console.log(`  auth email   : ${email}  (synthetic, never routed)`);
     console.log("\nNothing written.");
     return;
   }
@@ -235,7 +236,7 @@ async function main(): Promise<void> {
 
   let userId: string;
   if (createErr || !created.user) {
-    const existing = await findUserIdByEmail(admin, email!);
+    const existing = await findUserIdByEmail(admin, email);
     if (!existing) throw createErr ?? new Error("createUser failed");
     console.log("Auth user already existed — attaching a member row to it.");
     userId = existing;
@@ -269,7 +270,7 @@ async function main(): Promise<void> {
   console.log("\nSuper Admin created.");
   console.log(`  member id : ${member.id}`);
   console.log(`  user id   : ${userId}`);
-  console.log(`  login     : ${email}`);
+  console.log(`  sign in   : username "${uname}" + your password`);
   console.log(`  rank      : ${rank}`);
 }
 

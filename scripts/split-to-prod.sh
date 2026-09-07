@@ -35,7 +35,7 @@ set +a
 MISSING=0
 for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY \
   SUPABASE_SERVICE_ROLE_KEY SUPABASE_PROJECT_ID SUPABASE_DB_PASSWORD \
-  SUPABASE_ENV ADMIN_EMAIL ADMIN_USERNAME ADMIN_NAME ADMIN_PASSWORD; do
+  SUPABASE_ENV ADMIN_USERNAME ADMIN_NAME ADMIN_PASSWORD; do
   if [ -z "${!v:-}" ]; then
     echo "  $ENV_FILE is missing: $v"
     MISSING=1
@@ -59,7 +59,7 @@ esac
 
 echo "Production Supabase project  : $SUPABASE_PROJECT_ID"
 echo "Dev project (re-linked after): $DEV_REF"
-echo "Super Admin to create        : $ADMIN_EMAIL ($ADMIN_USERNAME, ${ADMIN_RANK:-BOSS})"
+echo "Super Admin to create        : $ADMIN_USERNAME (${ADMIN_RANK:-BOSS})"
 echo
 read -r -p "Proceed? This repoints the live Vercel deployment. [y/N] " ok
 case "$ok" in
@@ -98,18 +98,17 @@ npx --yes tsx --env-file="$ENV_FILE" supabase/backfill-item-images.ts ||
 
 step "5/6  Create the Super Admin"
 npx --yes tsx --env-file="$ENV_FILE" supabase/create-admin.ts \
-  --email "$ADMIN_EMAIL" --username "$ADMIN_USERNAME" \
-  --name "$ADMIN_NAME" --rank "${ADMIN_RANK:-BOSS}"
+  --username "$ADMIN_USERNAME" --name "$ADMIN_NAME" --rank "${ADMIN_RANK:-BOSS}" ||
+  echo "  (create-admin returned non-zero — likely the username already exists; continuing)"
 
-step "6/6  Repoint Vercel (production + preview) and redeploy"
+step "6/6  Repoint Vercel (production) and redeploy"
+# Production only. Preview deployments keep whatever they had (usually the dev
+# project) — repoint those in the Vercel dashboard if you want them on prod too.
 set_var() {
   local name="$1" value="$2"
   shift 2
-  local target
-  for target in production preview; do
-    npx --yes vercel env add "$name" "$target" --force --value "$value" "$@" >/dev/null
-    echo "   set $name → $target"
-  done
+  npx --yes vercel env add "$name" production --force --value "$value" "$@" >/dev/null
+  echo "   set $name → production"
 }
 set_var NEXT_PUBLIC_SUPABASE_URL "$NEXT_PUBLIC_SUPABASE_URL"
 set_var NEXT_PUBLIC_SUPABASE_ANON_KEY "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
@@ -122,7 +121,7 @@ echo
 echo "Done."
 echo "Verify:"
 echo "  • https://crimson-creed-dashboard.vercel.app — dashboard KPIs near zero,"
-echo "    only $ADMIN_EMAIL can sign in, Items populated, Members/Orders empty."
+echo "    sign in with username \"$ADMIN_USERNAME\", Items populated, Members/Orders empty."
 echo "  • localhost still shows the dummy data (unchanged)."
 echo
 echo "Now delete $ENV_FILE — it holds the prod DB password and the admin password."
