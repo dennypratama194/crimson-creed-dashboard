@@ -137,7 +137,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
       .order("created_at", { ascending: true }),
     getOrdersNeedingAttention(),
     getRecentActivity(8),
-    listInventory({ lowStockOnly: true, page: 1 }),
+    listInventory({ page: 1 }),
     listAdminOrders({ page: 1 }),
     getPendingProductionCount(),
     getPayrollAttention(),

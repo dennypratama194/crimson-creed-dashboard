@@ -170,8 +170,8 @@ export function ItemForm({
         </Field>
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        {isCatalogue ? (
+      {isCatalogue ? (
+        <div className="grid gap-6 sm:grid-cols-2">
           <Field
             label="Price"
             htmlFor="price"
@@ -190,26 +190,26 @@ export function ItemForm({
               aria-invalid={Boolean(errors.price)}
             />
           </Field>
-        ) : null}
 
-        <Field
-          label="Low-stock threshold"
-          htmlFor="lowStockThreshold"
-          error={errors.lowStockThreshold}
-          hint="0 disables the alert."
-        >
-          <Input
-            id="lowStockThreshold"
-            name="lowStockThreshold"
-            type="number"
-            min={0}
-            step="1"
-            inputMode="numeric"
-            defaultValue={item ? String(item.low_stock_threshold) : "0"}
-            aria-invalid={Boolean(errors.lowStockThreshold)}
-          />
-        </Field>
-      </div>
+          <Field
+            label="Low-stock threshold"
+            htmlFor="lowStockThreshold"
+            error={errors.lowStockThreshold}
+            hint="0 disables the alert."
+          >
+            <Input
+              id="lowStockThreshold"
+              name="lowStockThreshold"
+              type="number"
+              min={0}
+              step="1"
+              inputMode="numeric"
+              defaultValue={item ? String(item.low_stock_threshold) : "0"}
+              aria-invalid={Boolean(errors.lowStockThreshold)}
+            />
+          </Field>
+        </div>
+      ) : null}
 
       {isCatalogue ? (
         <Field

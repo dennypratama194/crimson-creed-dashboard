@@ -41,7 +41,6 @@ export default async function AdminInventoryPage({
   const sp = await searchParams;
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const search = one(sp.q) ?? "";
-  const lowStockOnly = one(sp.low) === "1";
 
   const rawType = one(sp.type);
   const stockType: StockType | "all" = (
@@ -50,24 +49,19 @@ export default async function AdminInventoryPage({
     ? (rawType as StockType)
     : "all";
 
-  const { rows, total, pageSize, lowStockCount } = await listInventory({
+  const { rows, total, pageSize } = await listInventory({
     page,
     search,
-    lowStockOnly,
     stockType,
   });
 
-  const isFiltered = Boolean(search) || lowStockOnly || stockType !== "all";
+  const isFiltered = Boolean(search) || stockType !== "all";
 
   return (
     <>
       <PageHeader
         title="Company stash"
-        description={
-          lowStockCount > 0
-            ? `${lowStockCount} item${lowStockCount === 1 ? "" : "s"} at or below threshold.`
-            : "Everything the company holds — catalogue stock, raw materials, tools and seized property."
-        }
+        description="Everything the company holds — catalogue stock, raw materials, tools and seized property."
         actions={
           <Button asChild>
             <Link href="/admin/inventory/new">
@@ -112,11 +106,6 @@ export default async function AdminInventoryPage({
                   <TableHead>
                     <span data-align="right" className="block">
                       On hand
-                    </span>
-                  </TableHead>
-                  <TableHead>
-                    <span data-align="right" className="block">
-                      Threshold
                     </span>
                   </TableHead>
                   <TableHead>Status</TableHead>
@@ -165,11 +154,6 @@ export default async function AdminInventoryPage({
                         {" "}
                         {ITEM_UNIT_LABEL[line.unit].toLowerCase()}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground tabular-nums">
-                      {line.low_stock_threshold > 0
-                        ? formatQuantity(line.low_stock_threshold)
-                        : "—"}
                     </TableCell>
                     <TableCell>
                       <StockBadge state={line.stock_state} />

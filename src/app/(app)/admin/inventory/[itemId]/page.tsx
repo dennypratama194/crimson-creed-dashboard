@@ -99,12 +99,6 @@ export default async function InventoryItemPage({
             <StockBadge
               state={stockState(currentQuantity, item.low_stock_threshold)}
             />
-            <p className="text-sm text-muted-foreground">
-              Low-stock threshold:{" "}
-              {item.low_stock_threshold > 0
-                ? formatQuantity(item.low_stock_threshold)
-                : "not set"}
-            </p>
           </CardContent>
         </Card>
 

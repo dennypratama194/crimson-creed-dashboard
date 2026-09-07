@@ -38,13 +38,14 @@ function stockState(
 export async function listInventory(options: {
   page?: number;
   search?: string;
-  lowStockOnly?: boolean;
   stockType?: StockType | "all";
 }): Promise<{
   rows: InventoryLine[];
   total: number;
   page: number;
   pageSize: number;
+  /** Items not "ok" across the whole stash — powers the dashboard KPI, not
+   *  shown on the stash page itself. */
   lowStockCount: number;
 }> {
   const supabase = await createClient();
@@ -80,7 +81,6 @@ export async function listInventory(options: {
     lines = lines.filter((l) => l.name.toLowerCase().includes(search));
   if (options.stockType && options.stockType !== "all")
     lines = lines.filter((l) => l.stock_type === options.stockType);
-  if (options.lowStockOnly) lines = lines.filter((l) => l.stock_state !== "ok");
 
   const total = lines.length;
   const page = Math.max(1, options.page ?? 1);

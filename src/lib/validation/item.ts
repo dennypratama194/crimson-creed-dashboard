@@ -71,7 +71,8 @@ export function parseItemForm(formData: FormData) {
     price: isCatalogue ? num("price") : 0,
     description: str("description"),
     sku: isCatalogue ? str("sku") : null,
-    lowStockThreshold: num("lowStockThreshold"),
+    // Low-stock alerts are a catalogue concept only; stash items have no threshold.
+    lowStockThreshold: isCatalogue ? num("lowStockThreshold") : 0,
     orderable: isCatalogue && formData.get("orderable") === "on",
     active: formData.get("active") === "on",
     imageUrl:

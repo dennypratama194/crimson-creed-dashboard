@@ -7,9 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { STOCK_TYPES } from "@/lib/constants/enums";
 import { STOCK_TYPE_LABEL } from "@/lib/constants/labels";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -45,8 +43,6 @@ export function InventoryFilterBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const lowOnly = params.get("low") === "1";
-
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="relative sm:w-64">
@@ -81,19 +77,6 @@ export function InventoryFilterBar() {
           ))}
         </SelectContent>
       </Select>
-
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={lowOnly}
-          onCheckedChange={(checked) => {
-            const next = new URLSearchParams(params);
-            if (checked) next.set("low", "1");
-            else next.delete("low");
-            commit(next);
-          }}
-        />
-        <Label className="cursor-pointer">Low stock only</Label>
-      </label>
     </div>
   );
 }
