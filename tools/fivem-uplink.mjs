@@ -45,12 +45,23 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-// Prefer a real environment (a service wrapper may provide one) and fall back to
-// the same .env.local the app uses, so there is only ever one copy of the keys.
-try {
-  process.loadEnvFile(join(repoRoot, ".env.local"));
-} catch {
-  // No .env.local — fine as long as the variables are already set.
+// Env precedence, highest first: a real environment (a service wrapper may
+// provide one), then a relay-specific file, then the app's own .env.local.
+// `loadEnvFile` never overrides a key that is already set, so the first source
+// to define a key wins.
+//
+// The relay files matter because the deployment reads a SEPARATE prod Supabase
+// project (scripts/split-to-prod.sh repoints Vercel at it). The uplink must
+// publish to whatever project the deployment reads, which is no longer the dev
+// project .env.local points at — so drop a .env.relay.local (or keep
+// .env.prod.local) on the relay machine with the prod NEXT_PUBLIC_SUPABASE_URL
+// and SUPABASE_SERVICE_ROLE_KEY.
+for (const envFile of [".env.relay.local", ".env.prod.local", ".env.local"]) {
+  try {
+    process.loadEnvFile(join(repoRoot, envFile));
+  } catch {
+    // Missing file is fine as long as the variables are set another way.
+  }
 }
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
