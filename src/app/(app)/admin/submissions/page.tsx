@@ -129,7 +129,7 @@ export default async function AdminSubmissionsPage({
                 <TableHead>Member</TableHead>
                 {data.materials.map((m) => (
                   <TableHead key={m.id} className="text-right">
-                    <span className="block">{m.code}</span>
+                    <span className="block">{m.name}</span>
                     {m.target > 0 ? (
                       <span className="block text-xs font-normal text-muted-foreground">
                         target {formatQuantity(m.target)}
