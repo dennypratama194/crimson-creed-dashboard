@@ -27,6 +27,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "../src/lib/database.types";
+import { announceTarget } from "./_env-guard";
 import {
   CATALOGUE_ITEMS,
   LEGACY_PLACEHOLDER_ITEMS,
@@ -234,6 +235,7 @@ async function importSupplierItems(
 }
 
 async function main() {
+  announceTarget("db:catalogue");
   console.log(
     DRY ? "Catalogue import — DRY RUN (no writes)\n" : "Catalogue import\n",
   );

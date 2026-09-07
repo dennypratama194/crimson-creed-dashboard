@@ -1155,6 +1155,58 @@ await expect("remove_supplier_item drops the line", async () => {
   await asRole("authenticated", admin.id);
 });
 
+// ── relations (0042-0044) ───────────────────────────────────────────────
+console.log("\nRelations");
+await asRole("authenticated", m1.id);
+await expect("member cannot see relations", async () => {
+  const r = await one(`select count(*)::int n from relations`);
+  assert(r.n === 0, `expected 0 visible, got ${r.n}`);
+});
+await expectThrows(
+  "member cannot create a relation",
+  () => db.query(`select create_relation('Hidden', current_date, null)`),
+  "Super Admin",
+);
+
+await asRole("authenticated", admin.id);
+let relation;
+await expect("admin creates a relation (audit + activity)", async () => {
+  relation = await one(
+    `select * from create_relation('Harbour contact', date '2026-01-05', 'docks crew intro')`,
+  );
+  assert(relation.name === "Harbour contact", relation.name);
+  const joined = new Date(relation.joined_on).toISOString().slice(0, 10);
+  assert(joined === "2026-01-05", joined);
+  await asRole(null);
+  const a = await one(
+    `select count(*)::int n from audit_logs where action = 'RELATION_CREATED' and entity_id = $1`,
+    [relation.id],
+  );
+  const act = await one(
+    `select count(*)::int n from activity_logs where reference_type = 'RELATION' and reference_id = $1`,
+    [relation.id],
+  );
+  assert(a.n === 1 && act.n === 1, `audit ${a.n}, activity ${act.n}`);
+  await asRole("authenticated", admin.id);
+});
+
+await expect("admin updates a relation", async () => {
+  const updated = await one(
+    `select * from update_relation($1, 'Harbour contact — Nils', date '2026-02-01', null)`,
+    [relation.id],
+  );
+  assert(updated.name === "Harbour contact — Nils", updated.name);
+  const joined = new Date(updated.joined_on).toISOString().slice(0, 10);
+  assert(joined === "2026-02-01", joined);
+  assert(updated.notes === null, "notes should clear to null");
+});
+
+await expectThrows(
+  "create_relation rejects a blank name",
+  () => db.query(`select create_relation('   ', current_date, null)`),
+  "required",
+);
+
 // ── auth throttle (0022) ──────────────────────────────────────────────────
 await asRole(null);
 await expect(

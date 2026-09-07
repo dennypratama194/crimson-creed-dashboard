@@ -20,6 +20,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "../src/lib/database.types";
+import { announceTarget } from "./_env-guard";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -139,6 +140,7 @@ async function publishIcon(image: string, cache: Map<string, string>) {
 }
 
 async function main() {
+  announceTarget("db:item-images");
   const { data: items, error } = await admin
     .from("items")
     .select("id, name, image_url");

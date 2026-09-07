@@ -159,6 +159,7 @@ export const REFERENCE_TYPES = [
   "CASH_ENTRY",
   "SUPPLIER",
   "SUBMISSION",
+  "RELATION",
 ] as const;
 export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
@@ -223,6 +224,8 @@ export const AUDIT_ACTIONS = [
   "SUBMISSION_CONFIRMED",
   "SUBMISSION_REJECTED",
   "SUBMISSION_TARGETS_SET",
+  "RELATION_CREATED",
+  "RELATION_UPDATED",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

@@ -90,7 +90,8 @@ export type ReferenceType =
   | "PAYROLL_RUN"
   | "CASH_ENTRY"
   | "SUPPLIER"
-  | "SUBMISSION";
+  | "SUBMISSION"
+  | "RELATION";
 export type NotificationType =
   | "ORDER_CREATED"
   | "ORDER_PROCESSING"
@@ -148,7 +149,9 @@ export type AuditAction =
   | "SUBMISSION_SUBMITTED"
   | "SUBMISSION_CONFIRMED"
   | "SUBMISSION_REJECTED"
-  | "SUBMISSION_TARGETS_SET";
+  | "SUBMISSION_TARGETS_SET"
+  | "RELATION_CREATED"
+  | "RELATION_UPDATED";
 
 // ── row shapes ──────────────────────────────────────────────────────────────
 type MemberRow = {
@@ -382,6 +385,15 @@ type SupplierRow = {
   archived_at: string | null;
 }
 
+type RelationRow = {
+  id: string;
+  name: string;
+  joined_on: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 type SupplierItemRow = {
   id: string;
   supplier_id: string;
@@ -570,6 +582,18 @@ export interface Database {
         },
         Partial<SupplierItemRow>
       >;
+      relations: TableShape<
+        RelationRow,
+        {
+          id?: string;
+          name: string;
+          joined_on?: string;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<RelationRow>
+      >;
       submission_material_types: TableShape<
         SubmissionMaterialTypeRow,
         never,
@@ -709,6 +733,23 @@ export interface Database {
       remove_supplier_item: {
         Args: { p_supplier_item_id: string };
         Returns: undefined;
+      };
+      create_relation: {
+        Args: {
+          p_name: string;
+          p_joined_on?: string;
+          p_notes?: string | null;
+        };
+        Returns: RelationRow;
+      };
+      update_relation: {
+        Args: {
+          p_relation_id: string;
+          p_name: string;
+          p_joined_on: string;
+          p_notes?: string | null;
+        };
+        Returns: RelationRow;
       };
       update_organization_settings: {
         Args: { p_org_name: string; p_logo_url?: string | null };

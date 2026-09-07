@@ -16,9 +16,11 @@
     "db:test": "node supabase/tests/schema.mjs",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
     "db:push": "supabase db push",
+    "db:migrations": "supabase migration list",
     "db:seed": "tsx --env-file=.env.local supabase/seed.ts",
     "db:catalogue": "tsx --env-file=.env.local supabase/import-catalogue.ts",
     "db:item-images": "tsx --env-file=.env.local supabase/backfill-item-images.ts",
+    "db:create-admin": "tsx --env-file=.env.local supabase/create-admin.ts",
     "validate": "npm run typecheck && npm run lint && npm run test && npm run db:test",
     "prepare": "husky"
   },

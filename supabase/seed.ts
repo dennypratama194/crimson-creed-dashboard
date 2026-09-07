@@ -13,6 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database, MemberRank } from "../src/lib/database.types";
+import { assertSafeToWipe } from "./_env-guard";
 import {
   CATALOGUE_ITEMS,
   SUPPLIER_ITEMS,
@@ -133,6 +134,10 @@ async function wipe() {
     .neq("id", "00000000-0000-0000-0000-000000000000");
   await admin
     .from("suppliers")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  await admin
+    .from("relations")
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
 
@@ -273,6 +278,28 @@ async function seedSuppliers(items: SeededItem[]) {
   return { suppliers: data.length, lines: rows.length };
 }
 
+async function seedRelations() {
+  console.log("Creating relations…");
+  const names = [
+    "Los Santos PD — Officer Reyes",
+    "Vagos liaison — 'Tio'",
+    "Harbour customs contact",
+    "Vanilla Unicorn management",
+    "Judge Harlan's clerk",
+    "Chop shop — Sandy Shores",
+  ];
+  const rows = names.map((name, i) => ({
+    name,
+    joined_on: new Date(Date.now() - (30 + i * 45) * 86_400_000)
+      .toISOString()
+      .slice(0, 10),
+    notes: i % 2 === 0 ? "Introduced through the docks crew." : null,
+  }));
+  const { error } = await admin.from("relations").insert(rows);
+  if (error) throw error;
+  return rows.length;
+}
+
 async function clientFor(username: string) {
   const c = createClient<Database>(url!, anonKey!, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -286,10 +313,12 @@ async function clientFor(username: string) {
 }
 
 async function main() {
+  assertSafeToWipe("db:seed");
   await wipe();
   const members = await seedMembers();
   const items = await seedItems();
   const supplierCounts = await seedSuppliers(items);
+  const relationCount = await seedRelations();
 
   const admins = members.filter((m) => m.person.isAdmin);
   const activeMembers = members.filter(
@@ -521,6 +550,7 @@ async function main() {
   console.log(
     `  supplier: ${supplierCounts.suppliers} suppliers, ${supplierCounts.lines} price-book lines`,
   );
+  console.log(`  relation: ${relationCount}`);
   console.log(`  orders  : ${orderIds.length}`);
   console.log(`  prod.   : ${logIds.length} logs`);
   console.log(`  submits : ${submissionCount} material submissions`);
