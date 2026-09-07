@@ -156,9 +156,9 @@ export function FivemMonitor({
         <div className="flex items-start gap-3 rounded-xl border border-border bg-subtle px-4 py-3 text-sm text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
-            The relay machine is offline, so this is read from the public FiveM
-            directory. Status and player count are live; player names are not
-            published there.
+            Couldn&rsquo;t reach the relay machine, so this is read from the
+            public FiveM directory instead. The player count is accurate to
+            within a few minutes; names are not published there.
           </span>
         </div>
       ) : null}

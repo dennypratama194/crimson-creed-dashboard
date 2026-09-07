@@ -282,18 +282,30 @@ async function readDirectory(
  * at home is simply asleep.
  */
 function offlineMessage(source: EndpointSource, err: unknown): string {
-  if (source === "uplink") {
-    // The relay reached us but its own read of the game server failed, which it
-    // reports as 502. Blaming the relay machine there sends whoever is on call
-    // to the wrong box — it is awake and answering.
-    if (err instanceof HttpStatusError && err.status === 502) {
-      return "The game server is not responding.";
-    }
-    return "Could not reach the relay machine.";
+  // A 502 means whatever we talked to reached us and is reporting that the game
+  // server did not answer IT. Blaming the relay machine there sends whoever is
+  // on call to the wrong box — it is awake and answering.
+  if (err instanceof HttpStatusError && err.status === 502) {
+    return "The game server is not responding.";
   }
+  if (source === "uplink") return "Could not reach the relay machine.";
   return err instanceof Error && err.name === "TimeoutError"
     ? "The server did not respond in time."
     : "Could not reach the server.";
+}
+
+/**
+ * Whether to consult the public directory after a failed read.
+ *
+ * Only when we have no information at all. A 502 from the relay IS information:
+ * it reached us, and it is reporting first-hand that the game server did not
+ * answer *it*. The directory's record is minutes old, so falling back there
+ * would let a stale "online" override a live "the server is down" — and the
+ * banner would then blame the relay machine, which is awake and answering.
+ * Reserve the fallback for the case it was built for: the relay being gone.
+ */
+function shouldTryDirectory(err: unknown): boolean {
+  return !(err instanceof HttpStatusError && err.status === 502);
 }
 
 /**
@@ -337,9 +349,11 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(lastErr),
     });
-    // No route to the game server. Before declaring it offline, ask the public
-    // directory — it can still say whether the server is up and how busy it is.
-    const viaDirectory = await readDirectory(host, startedAt);
+    // No route at all. Before declaring it offline, ask the public directory —
+    // it can still say whether the server is up and how busy it is.
+    const viaDirectory = shouldTryDirectory(lastErr)
+      ? await readDirectory(host, startedAt)
+      : null;
     if (viaDirectory) return viaDirectory;
 
     return offlineSnapshot(host, offlineMessage(source, lastErr), latencyMs);
@@ -362,7 +376,9 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
       timeoutMs: FIVEM_FETCH_TIMEOUT_MS,
       ...describeError(err),
     });
-    const viaDirectory = await readDirectory(host, startedAt);
+    const viaDirectory = shouldTryDirectory(err)
+      ? await readDirectory(host, startedAt)
+      : null;
     if (viaDirectory) return viaDirectory;
 
     return offlineSnapshot(host, offlineMessage(source, err), latencyMs);
