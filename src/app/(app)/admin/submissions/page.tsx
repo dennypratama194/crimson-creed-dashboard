@@ -178,7 +178,12 @@ export default async function AdminSubmissionsPage({
                   >
                     <TableCell className="tabular-nums">{i + 1}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <span className={cn(!missing && "font-medium")}>
+                      <span
+                        className={cn(
+                          "text-foreground",
+                          !missing && "font-medium",
+                        )}
+                      >
                         {row.memberName}
                       </span>
                       <span className="ml-2 text-xs text-muted-foreground">

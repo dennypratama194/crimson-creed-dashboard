@@ -22,29 +22,32 @@
 --   Metal Scrap is counted in pieces, not weight: its unit moves KILOGRAM → UNIT
 --   here (UNIT renders as "pcs" — src/lib/constants/labels.ts).
 --
+-- Written idempotent (IF NOT EXISTS / OR REPLACE / guarded backfill) so it is
+-- safe to re-apply against a database where a prior run got part-way.
 -- Still Super Admin only. RPC arg lists grow (trailing, defaulted).
 -- ============================================================================
 
-alter table relations
-  add column handler_member_id   uuid references members (id) on delete set null,
-  add column metal_scrap_settled boolean not null default false,
-  add column oath_date           date,
-  add column blood_oath          boolean not null default false;
+alter table relations add column if not exists handler_member_id   uuid references members (id) on delete set null;
+alter table relations add column if not exists metal_scrap_settled boolean not null default false;
+alter table relations add column if not exists oath_date           date;
+alter table relations add column if not exists blood_oath          boolean not null default false;
 
 comment on column relations.handler_member_id is 'Member responsible for this relation (the "PJ" on the roster sheet). Null = unassigned.';
 comment on column relations.metal_scrap_settled is 'Metal-scrap prerequisite (250 pcs) settled ("lunas"). Toggling posts/reverses stock.';
 comment on column relations.oath_date is 'Date the oath was taken, if recorded.';
 comment on column relations.blood_oath is 'Blood oath taken.';
 
-create index relations_handler_member_id_idx
+create index if not exists relations_handler_member_id_idx
   on relations (handler_member_id)
   where handler_member_id is not null;
 
 -- ── Metal Scrap is a piece count, not a weight ──────────────────────────────
 update items set unit = 'UNIT'::item_unit
-where id = (select inventory_item_id from submission_material_types where code = 'MS');
+where id = (select inventory_item_id from submission_material_types where code = 'MS')
+  and unit <> 'UNIT';
 
-update submission_material_types set unit = 'UNIT'::item_unit where code = 'MS';
+update submission_material_types set unit = 'UNIT'::item_unit
+where code = 'MS' and unit <> 'UNIT';
 
 -- ---------------------------------------------------------------------------
 -- app.metal_scrap_item_id  (internal) — the canonical Metal Scrap stash item
@@ -119,12 +122,12 @@ revoke all on function app.apply_relation_metal_scrap(uuid, boolean, boolean, uu
   from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- RPCs — drop the old signatures, recreate with the four new trailing params.
+-- RPCs — drop the old 3-arg signatures, (re)create the 7-arg ones.
 -- ---------------------------------------------------------------------------
 drop function if exists public.create_relation(text, date, text);
 drop function if exists public.update_relation(uuid, text, date, text);
 
-create function public.create_relation(
+create or replace function public.create_relation(
   p_name                text,
   p_joined_on           date default current_date,
   p_notes               text default null,
@@ -175,7 +178,7 @@ begin
 end;
 $$;
 
-create function public.update_relation(
+create or replace function public.update_relation(
   p_relation_id         uuid,
   p_name                text,
   p_joined_on           date,
@@ -249,7 +252,9 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- one-time backfill — +250 for every relation already marked settled
+-- one-time backfill — +250 for every relation already marked settled.
+-- Guarded: skips entirely once any relation movement exists, so re-running
+-- this migration never double-posts.
 -- ---------------------------------------------------------------------------
 do $$
 declare
@@ -259,6 +264,9 @@ declare
 begin
   if v_item_id is null then
     return; -- no MS stash item yet (fresh DB in the test harness); nothing to do
+  end if;
+  if exists (select 1 from inventory_movements where reference_type = 'RELATION') then
+    return; -- already backfilled / relation movements exist
   end if;
 
   select count(*) into v_total from relations where metal_scrap_settled;

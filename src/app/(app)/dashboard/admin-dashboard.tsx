@@ -179,7 +179,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
             <CardTitle>Recent activity</CardTitle>
             <SectionLink href="/admin/activity">View all</SectionLink>
           </CardHeader>
-          <CardContent className="p-4 pt-2">
+          <CardContent className="p-4">
             {recentActivity.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet.</p>
             ) : (
