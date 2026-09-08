@@ -1205,8 +1205,32 @@ await expect("remove_supplier_item drops the line", async () => {
   await asRole("authenticated", admin.id);
 });
 
-// ── relations (0042-0044) ───────────────────────────────────────────────
+// ── relations (0042-0044, 0051) ─────────────────────────────────────────
 console.log("\nRelations");
+await asRole(null);
+const msItemId = (
+  await one(
+    `select inventory_item_id id from submission_material_types where code = 'MS'`,
+  )
+).id;
+await expect("0051 switched Metal Scrap from kg to pcs (UNIT)", async () => {
+  const it = await one(`select unit from items where id = $1`, [msItemId]);
+  const mt = await one(
+    `select unit from submission_material_types where code = 'MS'`,
+  );
+  assert(
+    it.unit === "UNIT" && mt.unit === "UNIT",
+    `item ${it.unit}, material_type ${mt.unit}`,
+  );
+});
+const msQtyBefore = Number(
+  (
+    await one(
+      `select coalesce(current_quantity, 0) q from inventory where item_id = $1`,
+      [msItemId],
+    )
+  ).q,
+);
 await asRole("authenticated", m1.id);
 await expect("member cannot see relations", async () => {
   const r = await one(`select count(*)::int n from relations`);
@@ -1222,25 +1246,61 @@ await asRole("authenticated", admin.id);
 let relation;
 await expect("admin creates a relation (audit + activity)", async () => {
   relation = await one(
-    `select * from create_relation('Harbour contact', date '2026-01-05', 'docks crew intro')`,
+    `select * from create_relation('Harbour contact', date '2026-01-05', 'docks crew intro', $1, true, date '2026-03-01', true)`,
+    [memberId.m1],
   );
   assert(relation.name === "Harbour contact", relation.name);
   const joined = new Date(relation.joined_on).toISOString().slice(0, 10);
   assert(joined === "2026-01-05", joined);
+  assert(
+    relation.handler_member_id === memberId.m1,
+    relation.handler_member_id,
+  );
+  assert(relation.metal_scrap_settled === true, "metal_scrap_settled");
+  const oath = new Date(relation.oath_date).toISOString().slice(0, 10);
+  assert(oath === "2026-03-01", oath);
+  assert(relation.blood_oath === true, "blood_oath");
   await asRole(null);
   const a = await one(
     `select count(*)::int n from audit_logs where action = 'RELATION_CREATED' and entity_id = $1`,
     [relation.id],
   );
   const act = await one(
-    `select count(*)::int n from activity_logs where reference_type = 'RELATION' and reference_id = $1`,
+    `select count(*)::int n from activity_logs where verb = 'relation.created' and reference_id = $1`,
     [relation.id],
   );
   assert(a.n === 1 && act.n === 1, `audit ${a.n}, activity ${act.n}`);
   await asRole("authenticated", admin.id);
 });
 
-await expect("admin updates a relation", async () => {
+await expect(
+  "creating a settled relation posts +250 Metal Scrap to the stash",
+  async () => {
+    await asRole(null);
+    const q = Number(
+      (
+        await one(
+          `select current_quantity q from inventory where item_id = $1`,
+          [msItemId],
+        )
+      ).q,
+    );
+    assert(
+      q === msQtyBefore + 250,
+      `metal scrap ${q}, expected ${msQtyBefore + 250}`,
+    );
+    const mv = await one(
+      `select count(*)::int n from inventory_movements
+       where reference_type = 'RELATION'
+         and reference_id = $1 and quantity = 250`,
+      [relation.id],
+    );
+    assert(mv.n === 1, `expected 1 +250 movement, got ${mv.n}`);
+    await asRole("authenticated", admin.id);
+  },
+);
+
+await expect("admin updates a relation (clears optional fields)", async () => {
   const updated = await one(
     `select * from update_relation($1, 'Harbour contact — Nils', date '2026-02-01', null)`,
     [relation.id],
@@ -1249,7 +1309,78 @@ await expect("admin updates a relation", async () => {
   const joined = new Date(updated.joined_on).toISOString().slice(0, 10);
   assert(joined === "2026-02-01", joined);
   assert(updated.notes === null, "notes should clear to null");
+  assert(updated.handler_member_id === null, "handler should clear to null");
+  assert(updated.metal_scrap_settled === false, "metal_scrap_settled clears");
+  assert(updated.oath_date === null, "oath_date should clear to null");
+  assert(updated.blood_oath === false, "blood_oath clears");
 });
+
+await expect(
+  "reopening the prerequisite reverses the 250 in the stash",
+  async () => {
+    await asRole(null);
+    const q = Number(
+      (
+        await one(
+          `select current_quantity q from inventory where item_id = $1`,
+          [msItemId],
+        )
+      ).q,
+    );
+    assert(q === msQtyBefore, `metal scrap back to ${msQtyBefore}, got ${q}`);
+    const rev = await one(
+      `select count(*)::int n from inventory_movements
+       where reference_type = 'RELATION' and reference_id = $1 and quantity = -250`,
+      [relation.id],
+    );
+    assert(rev.n === 1, `expected 1 reversal movement, got ${rev.n}`);
+    await asRole("authenticated", admin.id);
+  },
+);
+
+await expect("re-settling posts +250 again", async () => {
+  await one(
+    `select * from update_relation($1, 'Harbour contact — Nils', date '2026-02-01', null, null, true, null, false)`,
+    [relation.id],
+  );
+  await asRole(null);
+  const q = Number(
+    (
+      await one(`select current_quantity q from inventory where item_id = $1`, [
+        msItemId,
+      ])
+    ).q,
+  );
+  assert(q === msQtyBefore + 250, `metal scrap ${q}`);
+  await asRole("authenticated", admin.id);
+});
+
+await expect(
+  "updating a settled relation without touching the flag posts nothing",
+  async () => {
+    await asRole(null);
+    const before = (
+      await one(
+        `select count(*)::int n from inventory_movements where reference_type = 'RELATION' and reference_id = $1`,
+        [relation.id],
+      )
+    ).n;
+    await asRole("authenticated", admin.id);
+    await one(
+      `select * from update_relation($1, 'Harbour contact — Nils 2', date '2026-02-01', 'note', null, true, null, false)`,
+      [relation.id],
+    );
+    await asRole(null);
+    const after = (
+      await one(
+        `select count(*)::int n from inventory_movements where reference_type = 'RELATION' and reference_id = $1`,
+        [relation.id],
+      )
+    ).n;
+    assert(after === before, `movements changed ${before} -> ${after}`);
+    await asRole("authenticated", admin.id);
+  },
+);
 
 await expectThrows(
   "create_relation rejects a blank name",
@@ -1344,9 +1475,7 @@ await expect("member submits materials for the current month", async () => {
   assert(lines.rows.length === 3, `expected 3 lines, got ${lines.rows.length}`);
   const scrap = lines.rows.find((r) => r.name_snapshot === "Metal Scrap");
   assert(
-    scrap &&
-      Number(scrap.quantity) === 400 &&
-      scrap.unit_snapshot === "KILOGRAM",
+    scrap && Number(scrap.quantity) === 400 && scrap.unit_snapshot === "UNIT", // 0051 moved Metal Scrap from kg to pcs
     "metal scrap line not snapshotted correctly",
   );
 });

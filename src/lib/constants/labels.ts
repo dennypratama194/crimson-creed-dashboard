@@ -48,7 +48,7 @@ export const ITEM_CATEGORY_LABEL: Record<ItemCategory, string> = {
 };
 
 export const ITEM_UNIT_LABEL: Record<ItemUnit, string> = {
-  UNIT: "Unit",
+  UNIT: "pcs",
   ROUND: "Round",
   BOX: "Box",
   GRAM: "Gram",

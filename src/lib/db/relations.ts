@@ -2,9 +2,13 @@ import "server-only";
 
 import type { Tables } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { getMemberNames } from "@/lib/db/members";
 import type { RelationListSort } from "@/lib/validation/relation";
 
 export type Relation = Tables<"relations">;
+
+/** A relation row decorated with the handler's display name for list rendering. */
+export type RelationListRow = Relation & { handler_name: string | null };
 
 export const RELATION_PAGE_SIZE = 20;
 
@@ -22,7 +26,7 @@ export type ListRelationsOptions = {
 };
 
 export async function listRelations(options: ListRelationsOptions): Promise<{
-  rows: Relation[];
+  rows: RelationListRow[];
   total: number;
   page: number;
   pageSize: number;
@@ -51,7 +55,20 @@ export async function listRelations(options: ListRelationsOptions): Promise<{
   );
   if (error) throw error;
 
-  return { rows: data ?? [], total: count ?? 0, page, pageSize };
+  const relations = data ?? [];
+  const names = await getMemberNames(
+    relations
+      .map((r) => r.handler_member_id)
+      .filter((id): id is string => !!id),
+  );
+  const rows: RelationListRow[] = relations.map((r) => ({
+    ...r,
+    handler_name: r.handler_member_id
+      ? (names.get(r.handler_member_id) ?? null)
+      : null,
+  }));
+
+  return { rows, total: count ?? 0, page, pageSize };
 }
 
 export async function getRelation(id: string): Promise<Relation | null> {

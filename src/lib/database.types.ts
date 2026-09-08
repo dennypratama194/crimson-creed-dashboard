@@ -392,6 +392,10 @@ type RelationRow = {
   name: string;
   joined_on: string;
   notes: string | null;
+  handler_member_id: string | null;
+  metal_scrap_settled: boolean;
+  oath_date: string | null;
+  blood_oath: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -591,6 +595,10 @@ export interface Database {
           name: string;
           joined_on?: string;
           notes?: string | null;
+          handler_member_id?: string | null;
+          metal_scrap_settled?: boolean;
+          oath_date?: string | null;
+          blood_oath?: boolean;
           created_at?: string;
           updated_at?: string;
         },
@@ -741,6 +749,10 @@ export interface Database {
           p_name: string;
           p_joined_on?: string;
           p_notes?: string | null;
+          p_handler_member_id?: string | null;
+          p_metal_scrap_settled?: boolean;
+          p_oath_date?: string | null;
+          p_blood_oath?: boolean;
         };
         Returns: RelationRow;
       };
@@ -750,6 +762,10 @@ export interface Database {
           p_name: string;
           p_joined_on: string;
           p_notes?: string | null;
+          p_handler_member_id?: string | null;
+          p_metal_scrap_settled?: boolean;
+          p_oath_date?: string | null;
+          p_blood_oath?: boolean;
         };
         Returns: RelationRow;
       };

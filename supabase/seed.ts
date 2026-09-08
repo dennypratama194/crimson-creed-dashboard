@@ -278,7 +278,10 @@ async function seedSuppliers(items: SeededItem[]) {
   return { suppliers: data.length, lines: rows.length };
 }
 
-async function seedRelations() {
+async function seedRelations(
+  members: Awaited<ReturnType<typeof seedMembers>>,
+  adminClient: Awaited<ReturnType<typeof clientFor>>,
+) {
   console.log("Creating relations…");
   const names = [
     "Los Santos PD — Officer Reyes",
@@ -288,16 +291,24 @@ async function seedRelations() {
     "Judge Harlan's clerk",
     "Chop shop — Sandy Shores",
   ];
-  const rows = names.map((name, i) => ({
-    name,
-    joined_on: new Date(Date.now() - (30 + i * 45) * 86_400_000)
-      .toISOString()
-      .slice(0, 10),
-    notes: i % 2 === 0 ? "Introduced through the docks crew." : null,
-  }));
-  const { error } = await admin.from("relations").insert(rows);
-  if (error) throw error;
-  return rows.length;
+  for (const [i, name] of names.entries()) {
+    const joinedMs = Date.now() - (30 + i * 45) * 86_400_000;
+    // through the RPC — a settled relation posts +250 Metal Scrap to the stash
+    const { error } = await adminClient.rpc("create_relation", {
+      p_name: name,
+      p_joined_on: new Date(joinedMs).toISOString().slice(0, 10),
+      p_notes: i % 2 === 0 ? "Introduced through the docks crew." : null,
+      p_handler_member_id: members[i % members.length]?.memberId ?? undefined,
+      p_metal_scrap_settled: i % 3 !== 0,
+      p_oath_date:
+        i % 2 === 0
+          ? new Date(joinedMs + 14 * 86_400_000).toISOString().slice(0, 10)
+          : undefined,
+      p_blood_oath: i % 2 === 0,
+    });
+    if (error) throw error;
+  }
+  return names.length;
 }
 
 async function clientFor(username: string) {
@@ -316,19 +327,22 @@ async function main() {
   assertSafeToWipe("db:seed");
   await wipe();
   const members = await seedMembers();
-  const items = await seedItems();
-  const supplierCounts = await seedSuppliers(items);
-  const relationCount = await seedRelations();
-
   const admins = members.filter((m) => m.person.isAdmin);
   const activeMembers = members.filter(
     (m) => !m.person.isAdmin && !m.person.inactive,
   );
+  // an authed admin client — relations go through create_relation so a settled
+  // one posts its metal-scrap prerequisite to the stash, like the real app
+  const adminClient = await clientFor(admins[0]!.person.username);
+
+  const items = await seedItems();
+  const supplierCounts = await seedSuppliers(items);
+  const relationCount = await seedRelations(members, adminClient);
+
   const orderable = items.filter((i) => i.orderable && i.active);
 
   // opening stock via the real RPC, as an admin
   console.log("Setting opening stock…");
-  const adminClient = await clientFor(admins[0]!.person.username);
   for (const item of items) {
     if (item.opening > 0) {
       const { error } = await adminClient.rpc("record_inventory_movement", {

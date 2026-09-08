@@ -78,6 +78,18 @@ export async function listMembers(options: {
 
 export type MemberOption = { id: string; display_name: string };
 
+/** Every active member, for assignment pickers. Ordered by display name. */
+export async function listMemberOptions(): Promise<MemberOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("members")
+    .select("id, display_name")
+    .eq("status", "ACTIVE")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** Active Super Admins, for "attributed to" pickers. Ordered by display name. */
 export async function listSuperAdmins(): Promise<MemberOption[]> {
   const supabase = await createClient();

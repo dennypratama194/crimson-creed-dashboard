@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
+import { listMemberOptions } from "@/lib/db/members";
 import { getRelation } from "@/lib/db/relations";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,10 @@ export default async function EditRelationPage({
   params,
 }: PageProps<"/admin/relations/[id]/edit">) {
   const { id } = await params;
-  const relation = await getRelation(id);
+  const [relation, members] = await Promise.all([
+    getRelation(id),
+    listMemberOptions(),
+  ]);
   if (!relation) notFound();
 
   return (
@@ -32,7 +36,7 @@ export default async function EditRelationPage({
         title={`Edit ${relation.name}`}
         description="Update this relation's details."
       />
-      <RelationForm relation={relation} />
+      <RelationForm relation={relation} members={members} />
     </>
   );
 }

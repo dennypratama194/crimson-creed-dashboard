@@ -24,6 +24,10 @@ export async function createRelationAction(
     p_name: relation.name,
     p_joined_on: relation.joinedOn,
     p_notes: relation.notes,
+    p_handler_member_id: relation.handlerMemberId,
+    p_metal_scrap_settled: relation.metalScrapSettled,
+    p_oath_date: relation.oathDate,
+    p_blood_oath: relation.bloodOath,
   });
 
   if (error) {
@@ -60,6 +64,10 @@ export async function updateRelationAction(
     p_name: relation.name,
     p_joined_on: relation.joinedOn,
     p_notes: relation.notes,
+    p_handler_member_id: relation.handlerMemberId,
+    p_metal_scrap_settled: relation.metalScrapSettled,
+    p_oath_date: relation.oathDate,
+    p_blood_oath: relation.bloodOath,
   });
 
   if (error) {
