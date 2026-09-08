@@ -57,11 +57,23 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   (auto-open on the 1st, **no finalize/lock**), informational per-month
   `submission_period_targets`, `member_submissions` PENDING→CONFIRMED/REJECTED
   with snapshot lines. Under `/submissions` (member) and `/admin/submissions`
-  (Super Admin grid). Members submit for the **current month only**; a CONFIRMED
-  submission **posts inventory movements** (`movement_type='SUBMISSION'`) for the
-  signed delta, and rejecting a confirmed one reverses that stock. Targets never
-  block a submission. Do not add material-type CRUD UI or any pay/cash valuation
-  of materials without agreeing it first (17a).
+  (Super Admin grid). Members submit for the **current month only** (plus owed
+  past months once the gate below is on); a CONFIRMED submission **posts
+  inventory movements** (`movement_type='SUBMISSION'`) for the signed delta, and
+  rejecting a confirmed one reverses that stock. Targets never block a
+  submission. Do not add material-type CRUD UI or any pay/cash valuation of
+  materials without agreeing it first (17a).
+- The **submission order gate** (Phase 17b) is implemented but ships **off**.
+  `organization_settings.submission_gate_enabled` + `submission_obligation_start_month`
+  (Super-Admin `set_submission_gate` RPC, control on `/admin/submissions`). When
+  on, `create_order` refuses while `app.member_owed_months(member)` is non-empty:
+  any closed month from the start month onward (never the current month, MEMBER
+  role only) with **no CONFIRMED** submission — MISSING / PENDING / REJECTED all
+  block (strict). Members clear a month via `submit_material_submission(…, p_period_month)`;
+  it stays PENDING until a Super Admin confirms it. `my_submission_debt()` backs
+  the member-facing block on `/orders/new`, `/submissions` and the dashboard.
+  Do not add grace periods, auto-approval, or per-material owed logic without
+  agreeing it first.
 - `items.stock_type` (Phase 18) splits the `items` table: `CATALOGUE` is the
   member-facing shop (priced, may be `orderable`); `RAW_MATERIAL` / `TOOL` /
   `SEIZED` / `OTHER` are the **company stash** only. Non-catalogue items are

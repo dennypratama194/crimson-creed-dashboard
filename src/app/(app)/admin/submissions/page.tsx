@@ -3,18 +3,22 @@ import {
   CircleAlert,
   CircleCheck,
   Clock,
+  Lock,
+  LockOpen,
   Recycle,
   SlidersHorizontal,
 } from "lucide-react";
 
 import {
   MEMBER_RANK_LABEL,
+  MEMBER_SUBMISSION_MISSING_LABEL,
   MEMBER_SUBMISSION_STATUS_LABEL,
 } from "@/lib/constants/labels";
 import { MEMBER_SUBMISSION_STATUS_TONE } from "@/lib/constants/status-config";
 import {
   currentPeriodMonth,
   getAdminSubmissionMonth,
+  getSubmissionGate,
   monthParamToPeriod,
 } from "@/lib/db/submissions";
 import { formatMonth, formatQuantity } from "@/lib/format";
@@ -32,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EditGateDialog } from "@/app/(app)/admin/submissions/edit-gate-dialog";
 import { EditTargetsDialog } from "@/app/(app)/admin/submissions/edit-targets-dialog";
 import { MonthPicker } from "@/app/(app)/admin/submissions/month-picker";
 import { ReviewSubmissionDialog } from "@/app/(app)/admin/submissions/review-submission-dialog";
@@ -59,12 +64,26 @@ export default async function AdminSubmissionsPage({
 
   const periodMonth = monthParamToPeriod(monthParam);
   const monthLabel = formatMonth(periodMonth);
-  const data = await getAdminSubmissionMonth(periodMonth);
+  const [data, gate] = await Promise.all([
+    getAdminSubmissionMonth(periodMonth),
+    getSubmissionGate(),
+  ]);
 
   const editTargetsTrigger = (
     <Button variant="secondary">
       <SlidersHorizontal aria-hidden />
       Edit targets
+    </Button>
+  );
+
+  const GateIcon = gate.enabled ? Lock : LockOpen;
+  const gateTrigger = (
+    <Button variant="secondary">
+      <GateIcon aria-hidden />
+      Order gate:{" "}
+      {gate.enabled
+        ? `on${gate.startMonth ? ` · from ${formatMonth(gate.startMonth)}` : ""}`
+        : "off"}
     </Button>
   );
 
@@ -74,12 +93,20 @@ export default async function AdminSubmissionsPage({
         title="Monthly submissions"
         description="What each member handed in — metal scrap, empty bottles and cans."
         actions={
-          <EditTargetsDialog
-            periodMonthParam={monthParam}
-            monthLabel={monthLabel}
-            materials={data.materials}
-            trigger={editTargetsTrigger}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <EditGateDialog
+              enabled={gate.enabled}
+              startMonth={gate.startMonth ? gate.startMonth.slice(0, 7) : null}
+              maxMonth={nowMonth}
+              trigger={gateTrigger}
+            />
+            <EditTargetsDialog
+              periodMonthParam={monthParam}
+              monthLabel={monthLabel}
+              materials={data.materials}
+              trigger={editTargetsTrigger}
+            />
+          </div>
         }
       />
 
@@ -181,7 +208,9 @@ export default async function AdminSubmissionsPage({
                           {MEMBER_SUBMISSION_STATUS_LABEL[row.status]}
                         </Badge>
                       ) : (
-                        <span className="text-xs italic">Not submitted</span>
+                        <Badge tone="gray">
+                          {MEMBER_SUBMISSION_MISSING_LABEL}
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">

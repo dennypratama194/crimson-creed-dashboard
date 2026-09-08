@@ -6,7 +6,7 @@ import { useId, useState, useTransition } from "react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createPayrollRunAction } from "@/app/(app)/admin/payroll/actions";
@@ -62,21 +62,11 @@ export function NewRunForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={startId}>Period start</Label>
-          <Input
-            id={startId}
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
+          <DatePicker id={startId} value={start} onChange={setStart} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={endId}>Period end</Label>
-          <Input
-            id={endId}
-            type="date"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
+          <DatePicker id={endId} value={end} onChange={setEnd} min={start} />
         </div>
       </div>
 

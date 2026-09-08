@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   confirmMemberSubmissionSchema,
   rejectMemberSubmissionSchema,
+  setSubmissionGateSchema,
   setSubmissionTargetsSchema,
 } from "@/lib/validation/submission";
 
@@ -83,6 +84,41 @@ export async function rejectMemberSubmissionAction(
   }
 
   revalidatePath("/admin/submissions");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function setSubmissionGateAction(
+  input: unknown,
+): Promise<ActionResult> {
+  await requireSuperAdmin();
+
+  const parsed = setSubmissionGateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error:
+        parsed.error.issues[0]?.message ?? "Check the settings and try again.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_submission_gate", {
+    p_enabled: parsed.data.enabled,
+    p_start_month: parsed.data.startMonth
+      ? `${parsed.data.startMonth}-01`
+      : null,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: rpcErrorMessage(error, "Could not update the order gate."),
+    };
+  }
+
+  revalidatePath("/admin/submissions");
+  revalidatePath("/orders/new");
   revalidatePath("/dashboard");
   return { ok: true };
 }

@@ -10,6 +10,7 @@ import {
   CASH_DIRECTION_LABEL,
 } from "@/lib/constants/labels";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -141,21 +143,32 @@ export function RecordEntryDialog({
 
         <div className="flex flex-col gap-1.5">
           <Label>Type</Label>
-          <Select
-            value={direction}
-            onValueChange={(v) => changeDirection(v as CashDirection)}
+          <div
+            role="radiogroup"
+            aria-label="Type"
+            className="grid grid-cols-2 gap-0.5 rounded-lg border border-border p-0.5 text-sm"
           >
-            <SelectTrigger aria-label="Type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CASH_DIRECTIONS.map((d) => (
-                <SelectItem key={d} value={d}>
+            {CASH_DIRECTIONS.map((d) => {
+              const active = d === direction;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => changeDirection(d)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 font-medium transition-colors",
+                    active
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
                   {CASH_DIRECTION_LABEL[d]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -206,12 +219,11 @@ export function RecordEntryDialog({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={dateId}>Date</Label>
-          <Input
+          <DatePicker
             id={dateId}
-            type="date"
             value={date}
             max={todayIso()}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
           />
         </div>
 

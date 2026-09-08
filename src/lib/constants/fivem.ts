@@ -58,3 +58,13 @@ export const FIVEM_DEFAULT_JOIN_CODE = "zrvmg4";
  * as online.
  */
 export const FIVEM_DIRECTORY_MAX_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * How stale `fivem_uplink.updated_at` may be before the relay's published
+ * endpoint is ignored and the app falls through to `FIVEM_SERVER_URL` / the
+ * default / the directory. The relay re-publishes every ~60s and a standby takes
+ * over within ~3min, so a row older than this means every publisher is down and
+ * its URL (often a dead tunnel hostname) is worse than useless — trusting it
+ * forever makes a dead relay indistinguishable from a dead game server.
+ */
+export const FIVEM_UPLINK_MAX_AGE_MS = 10 * 60 * 1000;

@@ -1,9 +1,11 @@
 import type { Metadata, Route } from "next";
 import Link from "next/link";
-import { PackageX } from "lucide-react";
+import { Lock, PackageX } from "lucide-react";
 
 import { isSuperAdmin, requireActiveMember } from "@/lib/auth/session";
 import { getOrderableItems } from "@/lib/db/orders";
+import { getMySubmissionDebt } from "@/lib/db/submissions";
+import { formatMonth } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,10 @@ export const metadata: Metadata = { title: "New order" };
 
 export default async function NewOrderPage() {
   const member = await requireActiveMember();
-  const items = await getOrderableItems();
+  const [items, debtMonths] = await Promise.all([
+    getOrderableItems(),
+    getMySubmissionDebt(),
+  ]);
   const listPath: Route = isSuperAdmin(member) ? "/admin/orders" : "/orders";
 
   return (
@@ -22,7 +27,20 @@ export default async function NewOrderPage() {
         title="New order"
         description="Add items and quantities, then place the order for review."
       />
-      {items.length === 0 ? (
+      {debtMonths.length > 0 ? (
+        <EmptyState
+          icon={Lock}
+          title="Hand in your monthly materials first"
+          description={`Ordering is locked until your material submission is confirmed for ${debtMonths
+            .map((m) => formatMonth(m))
+            .join(", ")}.`}
+          action={
+            <Button asChild>
+              <Link href="/submissions">Go to monthly submissions</Link>
+            </Button>
+          }
+        />
+      ) : items.length === 0 ? (
         <EmptyState
           icon={PackageX}
           title="Nothing to order"

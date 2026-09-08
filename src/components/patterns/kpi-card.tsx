@@ -40,10 +40,12 @@ export function KpiCard({
   delta,
   comparison,
   hint,
+  className,
 }: {
   label: string;
   value: ReactNode;
   icon?: LucideIcon;
+  className?: string;
   /** Period-over-period change, rendered as a coloured pill beside the value. */
   delta?: KpiDelta;
   /** Baseline caption under the value, e.g. `vs. 1,185 last period`. */
@@ -54,7 +56,7 @@ export function KpiCard({
   const caption = comparison ?? hint;
 
   return (
-    <Card className="flex flex-col gap-2 p-4 sm:p-5">
+    <Card className={cn("flex flex-col gap-2 p-4 sm:p-5", className)}>
       <div className="flex items-start justify-between gap-2 text-sm text-muted-foreground">
         <span>{label}</span>
         {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null}

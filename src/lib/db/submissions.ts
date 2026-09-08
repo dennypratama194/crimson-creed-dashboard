@@ -158,6 +158,39 @@ export async function getMemberSubmissionAlert(): Promise<MemberSubmissionAlert>
   return { periodMonth, state: submission ? submission.status : "MISSING" };
 }
 
+/**
+ * Closed months the current member still owes a CONFIRMED submission for
+ * (Phase 17b order gate). Empty unless a Super Admin has switched the gate on.
+ * Oldest month first, as `YYYY-MM-01`.
+ */
+export async function getMySubmissionDebt(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("my_submission_debt");
+  if (error) throw error;
+  return [...(data ?? [])].sort();
+}
+
+export type SubmissionGate = {
+  enabled: boolean;
+  /** First day of the reach-back month, `YYYY-MM-01`, or null when unset. */
+  startMonth: string | null;
+};
+
+/** The order-gate toggle + reach-back month (Super Admin control). */
+export async function getSubmissionGate(): Promise<SubmissionGate> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("organization_settings")
+    .select("submission_gate_enabled, submission_obligation_start_month")
+    .eq("id", true)
+    .single();
+  if (error) throw error;
+  return {
+    enabled: data.submission_gate_enabled,
+    startMonth: data.submission_obligation_start_month,
+  };
+}
+
 // ── admin: month grid ─────────────────────────────────────────────────────
 export type AdminMaterialColumn = {
   id: string;

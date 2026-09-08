@@ -122,7 +122,7 @@ export default async function CashPage({
             <MonthPicker value={month} max={nowMonth} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <KpiCard
               label="Income"
               value={formatMoney(summary.incomeTotal)}
@@ -135,6 +135,7 @@ export default async function CashPage({
             />
             <KpiCard
               label="Net"
+              className="col-span-2 sm:col-span-1"
               value={
                 <span className={cn(summary.net < 0 && "text-tone-error-fg")}>
                   {summary.net >= 0 ? "" : "−"}

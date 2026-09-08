@@ -1482,6 +1482,135 @@ await expect("member cannot write member_submissions directly", async () => {
 });
 await asRole(null);
 
+// ── submission order gate (0045) ────────────────────────────────────────
+console.log("\nSubmission order gate");
+await asRole(null);
+
+// give member_one some history, then lock the gate to the previous month
+await db.query(
+  `update members
+   set created_at = date_trunc('month', current_date) - interval '6 months'
+   where id = $1`,
+  [memberId.m1],
+);
+const gateStart = (
+  await one(
+    `select to_char(date_trunc('month', current_date) - interval '1 month', 'YYYY-MM-DD') d`,
+  )
+).d;
+const beforeStart = (
+  await one(
+    `select to_char(date_trunc('month', current_date) - interval '3 months', 'YYYY-MM-DD') d`,
+  )
+).d;
+const nextMonth = (
+  await one(
+    `select to_char(date_trunc('month', current_date) + interval '1 month', 'YYYY-MM-DD') d`,
+  )
+).d;
+const gateOrder = JSON.stringify([{ item_id: item.id, quantity: 1 }]);
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot flip the order gate",
+  () => db.query(`select set_submission_gate(true, $1::date)`, [gateStart]),
+  "Super Admin",
+);
+
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "enabling the gate needs a start month",
+  () => db.query(`select set_submission_gate(true, null)`),
+  "start from",
+);
+await expectThrows(
+  "the gate cannot start in the future",
+  () => db.query(`select set_submission_gate(true, $1::date)`, [nextMonth]),
+  "future",
+);
+await expect("admin enables the gate from last month", async () => {
+  const s = await one(`select * from set_submission_gate(true, $1::date)`, [
+    gateStart,
+  ]);
+  assert(s.submission_gate_enabled === true, "gate not enabled");
+  const start = (
+    await one(
+      `select to_char(submission_obligation_start_month, 'YYYY-MM-DD') d
+       from organization_settings where id = true`,
+    )
+  ).d;
+  assert(start === gateStart, `start month ${start}`);
+});
+
+await asRole("authenticated", m1.id);
+await expect("member_one owes exactly the previous month", async () => {
+  const r = await db.query(
+    `select to_char(my_submission_debt(), 'YYYY-MM-DD') as m`,
+  );
+  assert(r.rows.length === 1, `expected 1 owed month, got ${r.rows.length}`);
+  assert(r.rows[0].m === gateStart, `owed ${r.rows[0].m}`);
+});
+await expectThrows(
+  "create_order is blocked while a submission month is owed",
+  () => db.query(`select create_order($1::jsonb, null)`, [gateOrder]),
+  "monthly materials",
+);
+
+let lateSub;
+await expect("member hands in the owed month (stays PENDING)", async () => {
+  lateSub = await one(
+    `select * from submit_material_submission($1::jsonb, $2, $3::date)`,
+    [subLines(10, 0, 0), "late", gateStart],
+  );
+  assert(lateSub.status === "PENDING", `status ${lateSub.status}`);
+});
+await expectThrows(
+  "still blocked — the owed month is only PENDING",
+  () => db.query(`select create_order($1::jsonb, null)`, [gateOrder]),
+  "monthly materials",
+);
+await expectThrows(
+  "cannot hand in for a month before the start month",
+  () =>
+    db.query(`select submit_material_submission($1::jsonb, null, $2::date)`, [
+      subLines(1, 0, 0),
+      beforeStart,
+    ]),
+  "nothing outstanding",
+);
+await expectThrows(
+  "cannot hand in for a future month",
+  () =>
+    db.query(`select submit_material_submission($1::jsonb, null, $2::date)`, [
+      subLines(1, 0, 0),
+      nextMonth,
+    ]),
+  "has not started",
+);
+
+await asRole("authenticated", admin.id);
+await expect("confirming the owed month clears the debt", async () => {
+  await db.query(`select confirm_member_submission($1, null, null)`, [
+    lateSub.id,
+  ]);
+  await asRole("authenticated", m1.id);
+  const r = await db.query(`select my_submission_debt() as m`);
+  assert(r.rows.length === 0, `expected 0 owed months, got ${r.rows.length}`);
+});
+await expect("ordering works once every owed month is confirmed", async () => {
+  const o = await one(`select * from create_order($1::jsonb, null)`, [
+    gateOrder,
+  ]);
+  assert(o.id, "order was not created");
+});
+
+await asRole("authenticated", admin.id);
+await expect("admin can switch the gate back off", async () => {
+  const s = await one(`select * from set_submission_gate(false, null)`);
+  assert(s.submission_gate_enabled === false, "gate still on");
+});
+await asRole(null);
+
 printSummaryAndExit();
 
 function printSummaryAndExit() {

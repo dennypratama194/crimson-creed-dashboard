@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/production";
 import {
   getMemberSubmissionAlert,
+  getMySubmissionDebt,
   getSubmissionAttention,
   type MemberSubmissionAlert,
 } from "@/lib/db/submissions";
@@ -217,6 +218,8 @@ export type MemberDashboard = {
   trends: { completedOrders: KpiTrend };
   earnings: EarningsSummary;
   submissionAlert: MemberSubmissionAlert;
+  /** Closed months owing a confirmed submission — ordering is locked while non-empty. */
+  submissionDebt: string[];
   activeOrders: Order[];
   recentOrders: Order[];
   recentNotifications: Notification[];
@@ -235,6 +238,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
     earnings,
     completedThisPeriod,
     submissionAlert,
+    submissionDebt,
   ] = await Promise.all([
     getMemberOrderSummary(),
     getUnreadNotificationCount(),
@@ -247,6 +251,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
       .select("id", { count: "exact", head: true })
       .gte("completed_at", periodStart),
     getMemberSubmissionAlert(),
+    getMySubmissionDebt(),
   ]);
 
   const completedOrdersPrev =
@@ -266,6 +271,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
     },
     earnings,
     submissionAlert,
+    submissionDebt,
     activeOrders: active.rows.slice(0, 6),
     recentOrders: recent.rows.slice(0, 6),
     recentNotifications: notifications,

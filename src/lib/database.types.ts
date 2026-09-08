@@ -284,6 +284,8 @@ type OrganizationSettingsRow = {
   id: boolean;
   org_name: string;
   logo_url: string | null;
+  submission_gate_enabled: boolean;
+  submission_obligation_start_month: string | null;
   updated_at: string;
   updated_by: string | null;
 }
@@ -755,6 +757,14 @@ export interface Database {
         Args: { p_org_name: string; p_logo_url?: string | null };
         Returns: OrganizationSettingsRow;
       };
+      set_submission_gate: {
+        Args: { p_enabled: boolean; p_start_month?: string | null };
+        Returns: OrganizationSettingsRow;
+      };
+      my_submission_debt: {
+        Args: Record<string, never>;
+        Returns: string[];
+      };
       set_production_rate: {
         Args: { p_item_id: string; p_unit_rate: number };
         Returns: ProductionRateRow;
@@ -813,7 +823,11 @@ export interface Database {
         Returns: SubmissionPeriodRow;
       };
       submit_material_submission: {
-        Args: { p_lines: Json; p_note?: string | null };
+        Args: {
+          p_lines: Json;
+          p_note?: string | null;
+          p_period_month?: string | null;
+        };
         Returns: MemberSubmissionRow;
       };
       confirm_member_submission: {

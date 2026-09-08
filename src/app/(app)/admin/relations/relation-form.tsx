@@ -8,6 +8,7 @@ import type { Relation } from "@/lib/db/relations";
 import { IDLE_FORM_STATE } from "@/lib/forms";
 import { useActionToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,10 +67,9 @@ export function RelationForm({ relation }: { relation?: Relation }) {
         error={errors.joinedOn}
         hint="When this relation joined. Backdate if needed."
       >
-        <Input
+        <DatePicker
           id="joinedOn"
           name="joinedOn"
-          type="date"
           max={today()}
           defaultValue={relation?.joined_on ?? today()}
           aria-invalid={Boolean(errors.joinedOn)}

@@ -187,7 +187,7 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
                 {recentActivity.map((entry) => (
                   <li
                     key={entry.id}
-                    className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
+                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <span
                       className={cn(

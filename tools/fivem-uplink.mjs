@@ -39,7 +39,7 @@ import { lookup as systemLookup, Resolver } from "node:dns";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,6 +70,23 @@ const PORT = Number(process.env.FIVEM_RELAY_PORT) || 8787;
 const HEARTBEAT_MS = Number(process.env.FIVEM_HEARTBEAT_MS) || 60_000;
 const FIXED_URL = process.env.FIVEM_TUNNEL_URL?.trim() || null;
 
+/**
+ * Run the same uplink on two machines for redundancy. `fivem_uplink` is a single
+ * row, so both publishing on a timer would just overwrite each other every
+ * heartbeat — harmless (both tunnels reach the same server) but pointless churn,
+ * and it leaves a blind spot: when the machine whose URL is in the row dies, the
+ * app keeps hitting that dead tunnel until the other machine's next heartbeat.
+ *
+ * So: one machine is `primary` (always publishes, the default), the other is
+ * `standby` — it keeps its relay and tunnel warm but only writes the row once
+ * the primary's heartbeat has gone stale, and backs off again as soon as the
+ * primary resumes. `FIVEM_STANDBY_TAKEOVER_MS` is how long a stale row must sit
+ * before the standby steps in; default is three missed primary heartbeats.
+ */
+const ROLE = (process.env.FIVEM_UPLINK_ROLE || "primary").trim().toLowerCase();
+const STANDBY_TAKEOVER_MS =
+  Number(process.env.FIVEM_STANDBY_TAKEOVER_MS) || HEARTBEAT_MS * 3;
+
 // ── logging ─────────────────────────────────────────────────────────────────
 
 const logDir = join(process.env.LOCALAPPDATA || tmpdir(), "fivem-uplink");
@@ -99,11 +116,22 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const QUICK_TUNNEL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 
-/** cloudflared is not on PATH in a fresh shell after winget installs it. */
+/**
+ * cloudflared is routinely not on PATH for a process started at logon (winget on
+ * Windows, `curl` into `~/.local/bin` or Homebrew on macOS all install somewhere
+ * a login shell knows about but a launchd/Task Scheduler job does not). Check the
+ * usual spots, honour an explicit override, and fall back to PATH.
+ */
 function resolveCloudflared() {
+  const override = process.env.CLOUDFLARED_PATH?.trim();
+  if (override) return override;
+  const home = homedir();
   const candidates = [
     "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
     "C:\\Program Files\\cloudflared\\cloudflared.exe",
+    `${home}\\.cloudflared\\cloudflared.exe`,
+    `${home}/.local/bin/cloudflared`,
+    "/opt/homebrew/bin/cloudflared",
     "/usr/local/bin/cloudflared",
     "/usr/bin/cloudflared",
   ];
@@ -131,6 +159,27 @@ async function publish(endpoint) {
   if (!res.ok) {
     throw new Error(`supabase responded ${res.status}: ${await res.text()}`);
   }
+}
+
+/**
+ * Read the singleton row so a `standby` can tell whether the primary is still
+ * alive. Returns `{ endpoint, updatedAt }` or null. Throws on a transport/HTTP
+ * error so the caller can decide to publish anyway rather than sit idle on a
+ * hiccup.
+ */
+async function readPublishedRow() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/fivem_uplink?id=eq.true&select=endpoint,updated_at`,
+    {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!res.ok) throw new Error(`supabase responded ${res.status}`);
+  const [row] = await res.json();
+  return row?.endpoint
+    ? { endpoint: row.endpoint, updatedAt: row.updated_at }
+    : null;
 }
 
 /**
@@ -266,12 +315,26 @@ function startQuickTunnel() {
   proc.stdout.on("data", scan);
   proc.stderr.on("data", scan);
 
-  proc.on("exit", (code) => {
-    if (shuttingDown) return;
-    log(`[uplink] tunnel exited (${code}) - restarting in 5s.`);
+  // A spawn failure (cloudflared not found) emits `error` but never `exit`, so
+  // without this the process would sit with a relay and no tunnel forever.
+  let retried = false;
+  const retry = (why) => {
+    if (shuttingDown || retried) return;
+    retried = true;
+    log(`[uplink] tunnel ${why} - restarting in 5s.`);
     current = null;
     setTimeout(startQuickTunnel, 5000);
+  };
+  proc.on("error", (err) => {
+    if (err.code === "ENOENT") {
+      log(
+        "[uplink] cloudflared not found. Install it, put it on PATH, or set " +
+          "CLOUDFLARED_PATH to the binary.",
+      );
+    }
+    retry(`failed to start (${err.message})`);
   });
+  proc.on("exit", (code) => retry(`exited (${code})`));
 }
 
 /**
@@ -300,8 +363,39 @@ async function adopt(base, proc) {
   setTimeout(() => void adopt(base, proc), 15_000);
 }
 
+/**
+ * A standby holds off while the primary's heartbeat is fresh and someone else's
+ * URL is in the row. It publishes when the row is stale, empty, or already
+ * carries this machine's own URL (it has taken over and must keep the row warm).
+ * A read failure is treated as "publish anyway" — better a redundant write than
+ * a silent gap.
+ */
+async function standbyShouldPublish() {
+  try {
+    const row = await readPublishedRow();
+    if (!row || row.endpoint === current) return true;
+    const age = Date.now() - new Date(row.updatedAt).getTime();
+    if (Number.isFinite(age) && age < STANDBY_TAKEOVER_MS) {
+      log(
+        `[uplink] standby: primary healthy (${Math.round(age / 1000)}s ago) - holding`,
+      );
+      return false;
+    }
+    log(
+      `[uplink] standby: primary silent for ${Math.round(age / 1000)}s - taking over`,
+    );
+    return true;
+  } catch (err) {
+    log(
+      `[uplink] standby: row read failed (${err.message}) - publishing anyway`,
+    );
+    return true;
+  }
+}
+
 async function heartbeat() {
   if (!current) return;
+  if (ROLE === "standby" && !(await standbyShouldPublish())) return;
   try {
     await publish(current);
     log(`[uplink] published ${current}`);
@@ -334,4 +428,8 @@ if (FIXED_URL) {
   startQuickTunnel();
 }
 
-log(`[uplink] relay port ${PORT}, heartbeat ${HEARTBEAT_MS}ms, log ${logFile}`);
+log(
+  `[uplink] role ${ROLE}, relay port ${PORT}, heartbeat ${HEARTBEAT_MS}ms` +
+    (ROLE === "standby" ? `, takeover after ${STANDBY_TAKEOVER_MS}ms` : "") +
+    `, log ${logFile}`,
+);

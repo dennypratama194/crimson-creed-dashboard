@@ -21,6 +21,8 @@ export const submitMaterialSubmissionSchema = z.object({
     .trim()
     .max(300, "Keep the note under 300 characters")
     .nullish(),
+  /** Omit for the current month; set (`YYYY-MM`) to clear an owed debt month. */
+  periodMonth: isoMonth.nullish(),
 });
 export type SubmitMaterialSubmissionInput = z.infer<
   typeof submitMaterialSubmissionSchema
@@ -51,6 +53,13 @@ export const rejectMemberSubmissionSchema = z.object({
 export type RejectMemberSubmissionInput = z.infer<
   typeof rejectMemberSubmissionSchema
 >;
+
+export const setSubmissionGateSchema = z.object({
+  enabled: z.boolean(),
+  /** `YYYY-MM`; required by the RPC when enabling. */
+  startMonth: isoMonth.nullish(),
+});
+export type SetSubmissionGateInput = z.infer<typeof setSubmissionGateSchema>;
 
 export const setSubmissionTargetsSchema = z.object({
   periodMonth: isoMonth,

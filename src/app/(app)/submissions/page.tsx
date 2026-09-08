@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CircleAlert, CircleCheck, Clock, Recycle } from "lucide-react";
+import { CircleAlert, CircleCheck, Clock, Lock, Recycle } from "lucide-react";
 
 import { MEMBER_SUBMISSION_STATUS_LABEL } from "@/lib/constants/labels";
 import { MEMBER_SUBMISSION_STATUS_TONE } from "@/lib/constants/status-config";
@@ -8,6 +8,7 @@ import {
   getMaterialTypes,
   getMonthTargets,
   getMyMonthSubmission,
+  getMySubmissionDebt,
   listMyMemberSubmissions,
 } from "@/lib/db/submissions";
 import { formatDate, formatMonth, formatQuantity } from "@/lib/format";
@@ -33,12 +34,13 @@ export default async function SubmissionsPage() {
   const periodMonth = currentPeriodMonth();
   const monthLabel = formatMonth(periodMonth);
 
-  const [materials, { submission, quantities }, targets, history] =
+  const [materials, { submission, quantities }, targets, history, debtMonths] =
     await Promise.all([
       getMaterialTypes(),
       getMyMonthSubmission(periodMonth),
       getMonthTargets(periodMonth),
       listMyMemberSubmissions(),
+      getMySubmissionDebt(),
     ]);
 
   const state = submission ? submission.status : "MISSING";
@@ -95,6 +97,51 @@ export default async function SubmissionsPage() {
       />
 
       <div className="flex flex-col gap-6">
+        {debtMonths.length > 0 ? (
+          <Card className="flex flex-col gap-4 border-l-4 border-l-tone-error-fg p-5">
+            <div className="flex items-start gap-3">
+              <Lock
+                className="mt-0.5 size-5 shrink-0 text-tone-error-fg"
+                aria-hidden
+              />
+              <div className="flex flex-col gap-0.5">
+                <p className="font-medium">Ordering is locked</p>
+                <p className="text-sm text-muted-foreground">
+                  You have {debtMonths.length} earlier{" "}
+                  {debtMonths.length === 1 ? "month" : "months"} with no
+                  confirmed hand-in. Submit{" "}
+                  {debtMonths.length === 1 ? "it" : "them"} below — you can
+                  order again once a Super Admin confirms each one.
+                </p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {debtMonths.map((month) => (
+                <li
+                  key={month}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+                >
+                  <span className="font-medium">{formatMonth(month)}</span>
+                  <SubmitMaterialsDialog
+                    materials={materials}
+                    targets={{}}
+                    initialQuantities={{}}
+                    monthLabel={formatMonth(month)}
+                    mode="submit"
+                    periodMonth={month.slice(0, 7)}
+                    trigger={
+                      <Button size="sm" variant="secondary">
+                        <Recycle aria-hidden />
+                        Submit for {formatMonth(month)}
+                      </Button>
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
+
         <Card
           className={cn(
             "flex flex-col gap-3 border-l-4 p-5 sm:flex-row sm:items-center sm:justify-between",
@@ -136,46 +183,6 @@ export default async function SubmissionsPage() {
             />
           ) : null}
         </Card>
-
-        {submission ? (
-          <Card className="flex flex-col gap-4 p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-muted-foreground">
-                {monthLabel} — your figures
-              </h2>
-              <Badge tone={MEMBER_SUBMISSION_STATUS_TONE[submission.status]}>
-                {MEMBER_SUBMISSION_STATUS_LABEL[submission.status]}
-              </Badge>
-            </div>
-            <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {materials.map((m) => {
-                const target = targets[m.id] ?? 0;
-                const value = quantities[m.id] ?? 0;
-                const short = target > 0 && value < target;
-                return (
-                  <div key={m.id} className="flex flex-col gap-0.5">
-                    <dt className="text-xs text-muted-foreground">{m.name}</dt>
-                    <dd className="text-lg font-semibold tabular-nums">
-                      {formatQuantity(value)}
-                      {target > 0 ? (
-                        <span
-                          className={cn(
-                            "ml-1 text-xs font-normal",
-                            short
-                              ? "text-tone-warning-fg"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          / {formatQuantity(target)}
-                        </span>
-                      ) : null}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </Card>
-        ) : null}
 
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-muted-foreground">

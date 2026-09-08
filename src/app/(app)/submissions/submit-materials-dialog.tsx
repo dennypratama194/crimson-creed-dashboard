@@ -28,6 +28,7 @@ export function SubmitMaterialsDialog({
   initialQuantities,
   monthLabel,
   mode,
+  periodMonth,
   trigger,
 }: {
   materials: MaterialType[];
@@ -35,6 +36,8 @@ export function SubmitMaterialsDialog({
   initialQuantities: Record<string, number>;
   monthLabel: string;
   mode: "submit" | "update" | "resubmit";
+  /** `YYYY-MM` when submitting for a past debt month; omit for the current month. */
+  periodMonth?: string;
   trigger: ReactNode;
 }) {
   const router = useRouter();
@@ -87,6 +90,7 @@ export function SubmitMaterialsDialog({
       const result = await submitMaterialSubmissionAction({
         lines,
         note: note.trim() || null,
+        periodMonth: periodMonth ?? null,
       });
       if (!result.ok) {
         const message = result.error ?? "Could not send your submission.";

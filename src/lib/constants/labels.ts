@@ -141,3 +141,6 @@ export const MEMBER_SUBMISSION_STATUS_LABEL: Record<
   CONFIRMED: "Confirmed",
   REJECTED: "Rejected",
 };
+
+/** Shown where a member has no submission row for the month yet. */
+export const MEMBER_SUBMISSION_MISSING_LABEL = "Not submitted";

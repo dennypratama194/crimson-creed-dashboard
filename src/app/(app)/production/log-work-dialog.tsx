@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -159,12 +160,11 @@ export function LogWorkDialog({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={dateId}>Date processed</Label>
-          <Input
+          <DatePicker
             id={dateId}
-            type="date"
             max={todayIso()}
             value={occurredAt}
-            onChange={(e) => setOccurredAt(e.target.value)}
+            onChange={setOccurredAt}
           />
         </div>
 

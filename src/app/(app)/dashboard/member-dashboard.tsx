@@ -3,6 +3,7 @@ import {
   Bell,
   CheckCircle2,
   ChevronRight,
+  Lock,
   Package,
   Plus,
   Recycle,
@@ -40,6 +41,7 @@ export function MemberDashboardView({
     trends,
     earnings,
     submissionAlert,
+    submissionDebt,
     activeOrders,
     recentOrders,
     recentNotifications,
@@ -80,6 +82,24 @@ export function MemberDashboardView({
           </Button>
         }
       />
+
+      {submissionDebt.length > 0 ? (
+        <Link
+          href="/submissions"
+          className="mb-4 flex items-center gap-3 rounded-lg border border-l-4 border-l-tone-error-fg bg-tone-error-bg/40 px-4 py-3 text-sm transition-colors hover:bg-tone-error-bg/60"
+        >
+          <Lock className="size-4 shrink-0 text-tone-error-fg" aria-hidden />
+          <span className="flex-1 font-medium">
+            Ordering is locked — {submissionDebt.length} earlier{" "}
+            {submissionDebt.length === 1 ? "month" : "months"} still need a
+            confirmed material submission.
+          </span>
+          <ChevronRight
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        </Link>
+      ) : null}
 
       {submissionNag ? (
         <Link

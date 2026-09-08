@@ -3,7 +3,7 @@
 import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { Input } from "@/components/ui/input";
+import { MonthPicker as MonthPickerField } from "@/components/ui/month-picker";
 
 /**
  * Drives the `?month=YYYY-MM` param for the submissions grid. Picking the
@@ -15,15 +15,13 @@ export function MonthPicker({ value, max }: { value: string; max: string }) {
   const params = useSearchParams();
 
   return (
-    <Input
-      type="month"
+    <MonthPickerField
       aria-label="Submission month"
-      className="h-9 w-[10.5rem]"
+      className="w-[10.5rem]"
       value={value}
       max={max}
-      onChange={(e) => {
+      onChange={(v) => {
         const next = new URLSearchParams(params);
-        const v = e.target.value;
         if (!v || v === max) next.delete("month");
         else next.set("month", v);
         router.replace(`${pathname}?${next.toString()}` as Route);

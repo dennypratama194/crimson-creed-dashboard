@@ -40,12 +40,14 @@ const MEMBER_SECTIONS: NavSection[] = [
         icon: ShoppingCart,
         matchPrefix: true,
       },
-      {
-        label: "Production",
-        href: "/production",
-        icon: FlaskConical,
-        matchPrefix: true,
-      },
+      // Hidden from members for now — the production/piece-rate logic is still
+      // being worked out and we don't want members confused. Restore when asked.
+      // {
+      //   label: "Production",
+      //   href: "/production",
+      //   icon: FlaskConical,
+      //   matchPrefix: true,
+      // },
       {
         label: "Submissions",
         href: "/submissions",

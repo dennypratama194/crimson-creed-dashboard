@@ -8,6 +8,7 @@ import {
   FIVEM_DIRECTORY_MAX_AGE_MS,
   FIVEM_DIRECTORY_URL,
   FIVEM_FETCH_TIMEOUT_MS,
+  FIVEM_UPLINK_MAX_AGE_MS,
 } from "@/lib/constants/fivem";
 import { getFivemUplink } from "@/lib/db/fivem";
 import {
@@ -69,18 +70,29 @@ type ResolvedEndpoint = {
  * hosting dashboard and redeploying, with the monitor stuck on "Offline" until
  * someone noticed. Letting the database value take precedence means a long-dead
  * `FIVEM_SERVER_URL` is simply ignored instead of having to be cleared. The env
- * var still applies when no relay has ever published.
+ * var still applies when no relay has ever published — or when the last relay to
+ * publish went quiet long enough ago (`FIVEM_UPLINK_MAX_AGE_MS`) that its
+ * address, usually a since-recycled tunnel hostname, is dead weight. Without that
+ * cutoff a stale row shadows a working `FIVEM_SERVER_URL` forever.
  */
 async function resolveEndpoint(): Promise<ResolvedEndpoint> {
   const strip = (value: string) => value.replace(/\/+$/, "");
 
   const uplink = await getFivemUplink();
   if (uplink) {
-    return {
-      base: strip(uplink.endpoint),
-      source: "uplink",
+    const age = Date.now() - new Date(uplink.updatedAt).getTime();
+    if (Number.isFinite(age) && age <= FIVEM_UPLINK_MAX_AGE_MS) {
+      return {
+        base: strip(uplink.endpoint),
+        source: "uplink",
+        publishedAt: uplink.updatedAt,
+      };
+    }
+    console.warn("[fivem] ignoring stale uplink row", {
       publishedAt: uplink.updatedAt,
-    };
+      ageMs: Number.isFinite(age) ? age : null,
+      maxAgeMs: FIVEM_UPLINK_MAX_AGE_MS,
+    });
   }
 
   const fromEnv = process.env.FIVEM_SERVER_URL?.trim();
