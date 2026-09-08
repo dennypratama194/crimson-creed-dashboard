@@ -520,6 +520,7 @@ async function main() {
 
     for (const m of activeMembers) {
       const client = await clientFor(m.person.username);
+      const receiver = admins[Math.floor(Math.random() * admins.length)]!;
       const { data: sub, error } = await client.rpc(
         "submit_material_submission",
         {
@@ -533,6 +534,7 @@ async function main() {
                   : 0,
           })),
           p_note: chance(0.2) ? "Dropped at the lock-up" : null,
+          p_received_by: receiver.memberId,
         },
       );
       if (error) throw error;

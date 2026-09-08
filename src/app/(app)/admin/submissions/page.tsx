@@ -15,9 +15,14 @@ import {
   MEMBER_SUBMISSION_STATUS_LABEL,
 } from "@/lib/constants/labels";
 import { MEMBER_SUBMISSION_STATUS_TONE } from "@/lib/constants/status-config";
+import { requireSuperAdmin } from "@/lib/auth/session";
+import { listSuperAdmins } from "@/lib/db/members";
 import {
   currentPeriodMonth,
   getAdminSubmissionMonth,
+  getMaterialTypes,
+  getMonthTargets,
+  getMyMonthSubmission,
   getSubmissionGate,
   monthParamToPeriod,
 } from "@/lib/db/submissions";
@@ -36,6 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SubmitMaterialsDialog } from "@/app/(app)/submissions/submit-materials-dialog";
 import { EditGateDialog } from "@/app/(app)/admin/submissions/edit-gate-dialog";
 import { EditTargetsDialog } from "@/app/(app)/admin/submissions/edit-targets-dialog";
 import { MonthPicker } from "@/app/(app)/admin/submissions/month-picker";
@@ -64,10 +70,33 @@ export default async function AdminSubmissionsPage({
 
   const periodMonth = monthParamToPeriod(monthParam);
   const monthLabel = formatMonth(periodMonth);
-  const [data, gate] = await Promise.all([
-    getAdminSubmissionMonth(periodMonth),
-    getSubmissionGate(),
-  ]);
+  const thisPeriodMonth = currentPeriodMonth();
+  const me = await requireSuperAdmin();
+  const [data, gate, receivers, materials, myTargets, mySubmission] =
+    await Promise.all([
+      getAdminSubmissionMonth(periodMonth),
+      getSubmissionGate(),
+      listSuperAdmins(),
+      getMaterialTypes(),
+      getMonthTargets(thisPeriodMonth),
+      getMyMonthSubmission(thisPeriodMonth, me.id),
+    ]);
+
+  // The Super Admin's own hand-in for the *current* month — a personal action,
+  // independent of which month the grid is showing.
+  const myState = mySubmission.submission
+    ? mySubmission.submission.status
+    : "MISSING";
+  const myMode =
+    myState === "MISSING"
+      ? "submit"
+      : myState === "REJECTED"
+        ? "resubmit"
+        : "update";
+  const receiverOptions = receivers.map((r) => ({
+    id: r.id,
+    displayName: r.display_name,
+  }));
 
   const editTargetsTrigger = (
     <Button variant="secondary">
@@ -111,11 +140,31 @@ export default async function AdminSubmissionsPage({
       />
 
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">
             {monthParam === nowMonth ? "This month" : monthLabel}
           </h2>
-          <MonthPicker value={monthParam} max={nowMonth} />
+          <div className="flex items-center gap-2">
+            {myState !== "CONFIRMED" ? (
+              <SubmitMaterialsDialog
+                materials={materials}
+                targets={myTargets}
+                initialQuantities={mySubmission.quantities}
+                receivers={receiverOptions}
+                initialReceivedById={
+                  mySubmission.submission?.received_by ?? undefined
+                }
+                monthLabel={formatMonth(thisPeriodMonth)}
+                mode={myMode}
+                trigger={
+                  <Button variant="primary" size="sm">
+                    Submit
+                  </Button>
+                }
+              />
+            ) : null}
+            <MonthPicker value={monthParam} max={nowMonth} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -164,6 +213,7 @@ export default async function AdminSubmissionsPage({
                     ) : null}
                   </TableHead>
                 ))}
+                <TableHead>Received by</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
@@ -207,6 +257,9 @@ export default async function AdminSubmissionsPage({
                         </TableCell>
                       );
                     })}
+                    <TableCell className="whitespace-nowrap">
+                      {row.receivedByName ?? "—"}
+                    </TableCell>
                     <TableCell>
                       {row.status ? (
                         <Badge tone={MEMBER_SUBMISSION_STATUS_TONE[row.status]}>
@@ -228,6 +281,8 @@ export default async function AdminSubmissionsPage({
                           monthLabel={monthLabel}
                           materials={data.materials}
                           quantities={row.quantities}
+                          receivers={receivers}
+                          initialReceivedById={row.receivedById}
                           alreadyConfirmed={row.status === "CONFIRMED"}
                           trigger={
                             <Button variant="ghost" size="sm">
@@ -252,6 +307,7 @@ export default async function AdminSubmissionsPage({
                     {formatQuantity(data.totals[m.id] ?? 0)}
                   </TableCell>
                 ))}
+                <TableCell />
                 <TableCell />
                 <TableCell />
               </TableRow>

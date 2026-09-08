@@ -1461,12 +1461,37 @@ const subLines = (ms, eb, ec) =>
 
 await asRole("authenticated", m1.id);
 let submission;
+await expectThrows(
+  "submit requires a receiver (PIC)",
+  () =>
+    db.query(`select submit_material_submission($1::jsonb, null, null, null)`, [
+      subLines(1, 0, 0),
+    ]),
+  "received your submission",
+);
+await expectThrows(
+  "submit rejects a receiver who is not a Super Admin",
+  () =>
+    db.query(
+      `select submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+      [subLines(1, 0, 0), memberId.m1],
+    ),
+  "cannot receive submissions",
+);
 await expect("member submits materials for the current month", async () => {
   submission = await one(
-    `select * from submit_material_submission($1::jsonb, $2)`,
-    [subLines(400, 1000, 1000), "May haul"],
+    `select * from submit_material_submission($1::jsonb, $2, null, $3::uuid)`,
+    [subLines(400, 1000, 1000), "May haul", memberId.admin],
   );
   assert(submission.status === "PENDING", `status ${submission.status}`);
+  assert(
+    submission.received_by === memberId.admin,
+    `received_by ${submission.received_by}`,
+  );
+  assert(
+    submission.received_by_name === "Admin Boss",
+    `received_by_name ${submission.received_by_name}`,
+  );
   const lines = await db.query(
     `select name_snapshot, unit_snapshot, quantity from member_submission_lines
      where member_submission_id = $1 order by name_snapshot`,
@@ -1488,8 +1513,8 @@ await expect("submit lazily created the month period", async () => {
 });
 await expect("re-submitting overwrites the pending lines", async () => {
   const again = await one(
-    `select * from submit_material_submission($1::jsonb, null)`,
-    [subLines(420, 1000, 1000)],
+    `select * from submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+    [subLines(420, 1000, 1000), memberId.admin],
   );
   assert(again.id === submission.id, "resubmit created a second row");
   const scrap = await one(
@@ -1502,10 +1527,26 @@ await expect("re-submitting overwrites the pending lines", async () => {
 await expectThrows(
   "submit rejects an unknown material id",
   () =>
-    db.query(`select submit_material_submission($1::jsonb, null)`, [
-      JSON.stringify([{ material_type_id: admin.id, quantity: 5 }]),
-    ]),
+    db.query(
+      `select submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+      [
+        JSON.stringify([{ material_type_id: admin.id, quantity: 5 }]),
+        memberId.admin,
+      ],
+    ),
   "not being collected",
+);
+await expect(
+  "member can list Super Admins as submission receivers",
+  async () => {
+    const rows = (await db.query(`select * from list_submission_receivers()`))
+      .rows;
+    assert(rows.length === 1, `expected 1 receiver, got ${rows.length}`);
+    assert(
+      rows[0].id === memberId.admin && rows[0].display_name === "Admin Boss",
+      "receiver list did not return the Super Admin",
+    );
+  },
 );
 
 await asRole("authenticated", m2.id);
@@ -1538,10 +1579,15 @@ let scrapBefore;
 await expect("admin confirms — stock posted for each material", async () => {
   scrapBefore = await invQty(scrapItem);
   const confirmed = await one(
-    `select * from confirm_member_submission($1, null, $2)`,
-    [submission.id, "counted"],
+    `select * from confirm_member_submission($1, null, $2, $3::uuid)`,
+    [submission.id, "counted", memberId.admin],
   );
   assert(confirmed.status === "CONFIRMED", `status ${confirmed.status}`);
+  assert(
+    confirmed.received_by === memberId.admin &&
+      confirmed.received_by_name === "Admin Boss",
+    `receiver not carried onto confirm: ${confirmed.received_by_name}`,
+  );
   assert(
     (await invQty(scrapItem)) === scrapBefore + 420,
     "metal scrap stock not posted",
@@ -1568,9 +1614,10 @@ await expect("member cannot submit once the month is confirmed", async () => {
   await asRole("authenticated", m1.id);
   let blocked = false;
   try {
-    await db.query(`select submit_material_submission($1::jsonb, null)`, [
-      subLines(1, 1, 1),
-    ]);
+    await db.query(
+      `select submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+      [subLines(1, 1, 1), memberId.admin],
+    );
   } catch {
     blocked = true;
   }
@@ -1595,8 +1642,8 @@ await expect(
 await expect("member can resubmit after a rejection", async () => {
   await asRole("authenticated", m1.id);
   const r = await one(
-    `select * from submit_material_submission($1::jsonb, null)`,
-    [subLines(250, 0, 0)],
+    `select * from submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+    [subLines(250, 0, 0), memberId.admin],
   );
   assert(r.status === "PENDING", `status ${r.status}`);
   await asRole("authenticated", admin.id);
@@ -1738,8 +1785,8 @@ await expectThrows(
 let lateSub;
 await expect("member hands in the owed month (stays PENDING)", async () => {
   lateSub = await one(
-    `select * from submit_material_submission($1::jsonb, $2, $3::date)`,
-    [subLines(10, 0, 0), "late", gateStart],
+    `select * from submit_material_submission($1::jsonb, $2, $3::date, $4::uuid)`,
+    [subLines(10, 0, 0), "late", gateStart, memberId.admin],
   );
   assert(lateSub.status === "PENDING", `status ${lateSub.status}`);
 });
@@ -1751,19 +1798,19 @@ await expectThrows(
 await expectThrows(
   "cannot hand in for a month before the start month",
   () =>
-    db.query(`select submit_material_submission($1::jsonb, null, $2::date)`, [
-      subLines(1, 0, 0),
-      beforeStart,
-    ]),
+    db.query(
+      `select submit_material_submission($1::jsonb, null, $2::date, $3::uuid)`,
+      [subLines(1, 0, 0), beforeStart, memberId.admin],
+    ),
   "nothing outstanding",
 );
 await expectThrows(
   "cannot hand in for a future month",
   () =>
-    db.query(`select submit_material_submission($1::jsonb, null, $2::date)`, [
-      subLines(1, 0, 0),
-      nextMonth,
-    ]),
+    db.query(
+      `select submit_material_submission($1::jsonb, null, $2::date, $3::uuid)`,
+      [subLines(1, 0, 0), nextMonth, memberId.admin],
+    ),
   "has not started",
 );
 

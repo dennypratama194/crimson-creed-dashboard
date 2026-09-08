@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CircleAlert, CircleCheck, Clock, Lock, Recycle } from "lucide-react";
 
+import { requireActiveMember } from "@/lib/auth/session";
 import { MEMBER_SUBMISSION_STATUS_LABEL } from "@/lib/constants/labels";
 import { MEMBER_SUBMISSION_STATUS_TONE } from "@/lib/constants/status-config";
 import {
@@ -10,6 +11,7 @@ import {
   getMyMonthSubmission,
   getMySubmissionDebt,
   listMyMemberSubmissions,
+  listSubmissionReceivers,
 } from "@/lib/db/submissions";
 import { formatDate, formatMonth, formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
@@ -33,15 +35,23 @@ export const metadata: Metadata = { title: "Monthly submissions" };
 export default async function SubmissionsPage() {
   const periodMonth = currentPeriodMonth();
   const monthLabel = formatMonth(periodMonth);
+  const member = await requireActiveMember();
 
-  const [materials, { submission, quantities }, targets, history, debtMonths] =
-    await Promise.all([
-      getMaterialTypes(),
-      getMyMonthSubmission(periodMonth),
-      getMonthTargets(periodMonth),
-      listMyMemberSubmissions(),
-      getMySubmissionDebt(),
-    ]);
+  const [
+    materials,
+    { submission, quantities },
+    targets,
+    history,
+    debtMonths,
+    receivers,
+  ] = await Promise.all([
+    getMaterialTypes(),
+    getMyMonthSubmission(periodMonth, member.id),
+    getMonthTargets(periodMonth),
+    listMyMemberSubmissions(member.id),
+    getMySubmissionDebt(),
+    listSubmissionReceivers(),
+  ]);
 
   const state = submission ? submission.status : "MISSING";
   const canEdit = state !== "CONFIRMED";
@@ -126,6 +136,7 @@ export default async function SubmissionsPage() {
                     materials={materials}
                     targets={{}}
                     initialQuantities={{}}
+                    receivers={receivers}
                     monthLabel={formatMonth(month)}
                     mode="submit"
                     periodMonth={month.slice(0, 7)}
@@ -172,6 +183,8 @@ export default async function SubmissionsPage() {
               materials={materials}
               targets={targets}
               initialQuantities={quantities}
+              receivers={receivers}
+              initialReceivedById={submission?.received_by ?? undefined}
               monthLabel={monthLabel}
               mode={mode}
               trigger={
@@ -195,7 +208,7 @@ export default async function SubmissionsPage() {
               description="Your monthly hand-ins will show up here once you submit."
             />
           ) : (
-            <Table className="min-w-[560px]">
+            <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Month</TableHead>
@@ -205,6 +218,7 @@ export default async function SubmissionsPage() {
                     </TableHead>
                   ))}
                   <TableHead>Status</TableHead>
+                  <TableHead>Received by</TableHead>
                   <TableHead>Submitted</TableHead>
                 </TableRow>
               </TableHeader>
@@ -227,6 +241,9 @@ export default async function SubmissionsPage() {
                       >
                         {MEMBER_SUBMISSION_STATUS_LABEL[row.submission.status]}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {row.submission.received_by_name ?? "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {formatDate(row.submission.submitted_at)}

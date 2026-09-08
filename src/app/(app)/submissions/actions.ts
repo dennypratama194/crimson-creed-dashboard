@@ -35,7 +35,7 @@ export async function submitMaterialSubmissionAction(
     };
   }
 
-  const { lines, note, periodMonth } = parsed.data;
+  const { lines, note, periodMonth, receivedBy } = parsed.data;
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("submit_material_submission", {
     p_lines: lines.map((l) => ({
@@ -44,6 +44,7 @@ export async function submitMaterialSubmissionAction(
     })),
     p_note: note?.trim() ? note.trim() : null,
     p_period_month: periodMonth ? `${periodMonth}-01` : null,
+    p_received_by: receivedBy,
   });
 
   if (error || !data) {
@@ -54,6 +55,7 @@ export async function submitMaterialSubmissionAction(
   }
 
   revalidatePath("/submissions");
+  revalidatePath("/admin/submissions");
   revalidatePath("/dashboard");
   revalidatePath("/orders/new");
   return { ok: true, data: { submissionId: data.id } };

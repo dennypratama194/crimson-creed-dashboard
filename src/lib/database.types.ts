@@ -451,6 +451,8 @@ type MemberSubmissionRow = {
   confirmed_by: string | null;
   confirmed_at: string | null;
   review_note: string | null;
+  received_by: string | null;
+  received_by_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -851,6 +853,7 @@ export interface Database {
           p_lines: Json;
           p_note?: string | null;
           p_period_month?: string | null;
+          p_received_by?: string | null;
         };
         Returns: MemberSubmissionRow;
       };
@@ -859,8 +862,13 @@ export interface Database {
           p_submission_id: string;
           p_lines?: Json | null;
           p_note?: string | null;
+          p_received_by?: string | null;
         };
         Returns: MemberSubmissionRow;
+      };
+      list_submission_receivers: {
+        Args: Record<string, never>;
+        Returns: { id: string; display_name: string }[];
       };
       reject_member_submission: {
         Args: { p_submission_id: string; p_reason: string };

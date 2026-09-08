@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
+import type { MemberOption } from "@/lib/db/members";
 import type { AdminMaterialColumn } from "@/lib/db/submissions";
 import { formatQuantity } from "@/lib/format";
 import { toast } from "@/lib/toast";
@@ -19,6 +20,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   confirmMemberSubmissionAction,
@@ -31,6 +39,8 @@ export function ReviewSubmissionDialog({
   monthLabel,
   materials,
   quantities,
+  receivers,
+  initialReceivedById,
   alreadyConfirmed,
   trigger,
 }: {
@@ -39,11 +49,15 @@ export function ReviewSubmissionDialog({
   monthLabel: string;
   materials: AdminMaterialColumn[];
   quantities: Record<string, number>;
+  receivers: MemberOption[];
+  /** The PIC the member recorded, if any. */
+  initialReceivedById: string | null;
   alreadyConfirmed: boolean;
   trigger: ReactNode;
 }) {
   const router = useRouter();
   const noteId = useId();
+  const receivedById = useId();
 
   const initial = () =>
     Object.fromEntries(
@@ -53,12 +67,14 @@ export function ReviewSubmissionDialog({
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(initial);
   const [note, setNote] = useState("");
+  const [receivedBy, setReceivedBy] = useState(initialReceivedById ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function reset() {
     setValues(initial());
     setNote("");
+    setReceivedBy(initialReceivedById ?? "");
     setError(null);
   }
 
@@ -85,6 +101,7 @@ export function ReviewSubmissionDialog({
         submissionId,
         lines,
         note: note.trim() || null,
+        receivedBy: receivedBy || null,
       });
       if (!result.ok) {
         const message = result.error ?? "Could not confirm.";
@@ -170,6 +187,22 @@ export function ReviewSubmissionDialog({
               />
             </div>
           ))}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={receivedById}>Received by</Label>
+            <Select value={receivedBy} onValueChange={setReceivedBy}>
+              <SelectTrigger id={receivedById} aria-label="Received by">
+                <SelectValue placeholder="Not recorded" />
+              </SelectTrigger>
+              <SelectContent>
+                {receivers.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={noteId}>

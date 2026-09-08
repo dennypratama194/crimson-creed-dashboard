@@ -23,6 +23,8 @@ export const submitMaterialSubmissionSchema = z.object({
     .nullish(),
   /** Omit for the current month; set (`YYYY-MM`) to clear an owed debt month. */
   periodMonth: isoMonth.nullish(),
+  /** The Super Admin the materials were handed to (PIC) — required. */
+  receivedBy: z.uuid("Choose who received your submission"),
 });
 export type SubmitMaterialSubmissionInput = z.infer<
   typeof submitMaterialSubmissionSchema
@@ -37,6 +39,8 @@ export const confirmMemberSubmissionSchema = z.object({
     .trim()
     .max(300, "Keep the note under 300 characters")
     .nullish(),
+  /** Provide to correct the PIC; omit to keep whatever the member set. */
+  receivedBy: z.uuid().nullish(),
 });
 export type ConfirmMemberSubmissionInput = z.infer<
   typeof confirmMemberSubmissionSchema

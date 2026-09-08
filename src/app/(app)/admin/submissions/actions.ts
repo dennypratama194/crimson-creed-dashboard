@@ -32,7 +32,7 @@ export async function confirmMemberSubmissionAction(
     };
   }
 
-  const { submissionId, lines, note } = parsed.data;
+  const { submissionId, lines, note, receivedBy } = parsed.data;
   const supabase = await createClient();
   const { error } = await supabase.rpc("confirm_member_submission", {
     p_submission_id: submissionId,
@@ -43,6 +43,7 @@ export async function confirmMemberSubmissionAction(
         }))
       : null,
     p_note: note?.trim() ? note.trim() : null,
+    p_received_by: receivedBy ?? null,
   });
 
   if (error) {

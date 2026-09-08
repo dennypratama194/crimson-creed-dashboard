@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
-import type { MaterialType } from "@/lib/db/submissions";
+import type { MaterialType, SubmissionReceiver } from "@/lib/db/submissions";
 import { formatQuantity } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { submitMaterialSubmissionAction } from "@/app/(app)/submissions/actions";
 
@@ -26,6 +33,8 @@ export function SubmitMaterialsDialog({
   materials,
   targets,
   initialQuantities,
+  receivers,
+  initialReceivedById,
   monthLabel,
   mode,
   periodMonth,
@@ -34,6 +43,9 @@ export function SubmitMaterialsDialog({
   materials: MaterialType[];
   targets: Record<string, number>;
   initialQuantities: Record<string, number>;
+  receivers: SubmissionReceiver[];
+  /** The PIC already recorded on this submission, if any. */
+  initialReceivedById?: string;
   monthLabel: string;
   mode: "submit" | "update" | "resubmit";
   /** `YYYY-MM` when submitting for a past debt month; omit for the current month. */
@@ -42,6 +54,7 @@ export function SubmitMaterialsDialog({
 }) {
   const router = useRouter();
   const noteId = useId();
+  const receivedById = useId();
 
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -53,6 +66,7 @@ export function SubmitMaterialsDialog({
     ),
   );
   const [note, setNote] = useState("");
+  const [receivedBy, setReceivedBy] = useState(initialReceivedById ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -68,6 +82,7 @@ export function SubmitMaterialsDialog({
       ),
     );
     setNote("");
+    setReceivedBy(initialReceivedById ?? "");
     setError(null);
   }
 
@@ -86,11 +101,17 @@ export function SubmitMaterialsDialog({
       }
     }
 
+    if (!receivedBy) {
+      setError("Choose who received your submission.");
+      return;
+    }
+
     startTransition(async () => {
       const result = await submitMaterialSubmissionAction({
         lines,
         note: note.trim() || null,
         periodMonth: periodMonth ?? null,
+        receivedBy,
       });
       if (!result.ok) {
         const message = result.error ?? "Could not send your submission.";
@@ -156,6 +177,22 @@ export function SubmitMaterialsDialog({
               </div>
             );
           })}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={receivedById}>Received by</Label>
+            <Select value={receivedBy} onValueChange={setReceivedBy}>
+              <SelectTrigger id={receivedById} aria-label="Received by">
+                <SelectValue placeholder="Who took your hand-in" />
+              </SelectTrigger>
+              <SelectContent>
+                {receivers.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={noteId}>

@@ -22,6 +22,20 @@ export function monthParamToPeriod(month: string): string {
   return `${month}-01`;
 }
 
+export type SubmissionReceiver = { id: string; displayName: string };
+
+/**
+ * Active Super Admins a member can name as the PIC on a submission. Backed by
+ * the `list_submission_receivers` RPC because RLS hides other members' rows from
+ * a regular member.
+ */
+export async function listSubmissionReceivers(): Promise<SubmissionReceiver[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_submission_receivers");
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: r.id, displayName: r.display_name }));
+}
+
 export async function getMaterialTypes(): Promise<MaterialType[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -85,6 +99,7 @@ export type MyMonthSubmission = {
 
 export async function getMyMonthSubmission(
   periodMonth: string,
+  memberId: string,
 ): Promise<MyMonthSubmission> {
   const supabase = await createClient();
 
@@ -95,10 +110,13 @@ export async function getMyMonthSubmission(
     .maybeSingle();
   if (!period) return { submission: null, quantities: {} };
 
+  // Scope to the caller explicitly: RLS lets a Super Admin see every member's
+  // row for the period, so `.maybeSingle()` would throw without this filter.
   const { data: submission, error } = await supabase
     .from("member_submissions")
     .select("*")
     .eq("period_id", period.id)
+    .eq("member_id", memberId)
     .maybeSingle();
   if (error) throw error;
   if (!submission) return { submission: null, quantities: {} };
@@ -113,13 +131,17 @@ export type MyHistoryRow = {
   quantities: Record<string, number>;
 };
 
-export async function listMyMemberSubmissions(): Promise<MyHistoryRow[]> {
+export async function listMyMemberSubmissions(
+  memberId: string,
+): Promise<MyHistoryRow[]> {
   const supabase = await createClient();
 
-  // RLS scopes member_submissions to the caller's own rows.
+  // Scope to the caller explicitly — a Super Admin's RLS view is every member's
+  // rows, not just their own.
   const { data: submissions, error } = await supabase
     .from("member_submissions")
     .select("*")
+    .eq("member_id", memberId)
     .order("submitted_at", { ascending: false });
   if (error) throw error;
   if (!submissions || submissions.length === 0) return [];
@@ -152,9 +174,11 @@ export type MemberSubmissionAlert = {
 };
 
 /** Current-month status for the logged-in member — drives the dashboard nag. */
-export async function getMemberSubmissionAlert(): Promise<MemberSubmissionAlert> {
+export async function getMemberSubmissionAlert(
+  memberId: string,
+): Promise<MemberSubmissionAlert> {
   const periodMonth = currentPeriodMonth();
-  const { submission } = await getMyMonthSubmission(periodMonth);
+  const { submission } = await getMyMonthSubmission(periodMonth, memberId);
   return { periodMonth, state: submission ? submission.status : "MISSING" };
 }
 
@@ -211,6 +235,8 @@ export type AdminSubmissionRow = {
   confirmedAt: string | null;
   note: string | null;
   reviewNote: string | null;
+  receivedById: string | null;
+  receivedByName: string | null;
   quantities: Record<string, number>;
 };
 
@@ -262,7 +288,7 @@ export async function getAdminSubmissionMonth(
       ? supabase
           .from("member_submissions")
           .select(
-            "id, member_id, status, submitted_at, confirmed_at, note, review_note",
+            "id, member_id, status, submitted_at, confirmed_at, note, review_note, received_by, received_by_name",
           )
           .eq("period_id", period.id)
       : Promise.resolve({ data: null }),
@@ -302,6 +328,8 @@ export async function getAdminSubmissionMonth(
       confirmedAt: s?.confirmed_at ?? null,
       note: s?.note ?? null,
       reviewNote: s?.review_note ?? null,
+      receivedById: s?.received_by ?? null,
+      receivedByName: s?.received_by_name ?? null,
       quantities: s ? (quantities.get(s.id) ?? {}) : {},
     };
   });
@@ -319,6 +347,8 @@ export async function getAdminSubmissionMonth(
       confirmedAt: s.confirmed_at,
       note: s.note,
       reviewNote: s.review_note,
+      receivedById: s.received_by ?? null,
+      receivedByName: s.received_by_name ?? null,
       quantities: quantities.get(s.id) ?? {},
     });
   }

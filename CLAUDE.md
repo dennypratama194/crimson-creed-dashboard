@@ -72,12 +72,18 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   (auto-open on the 1st, **no finalize/lock**), informational per-month
   `submission_period_targets`, `member_submissions` PENDING→CONFIRMED/REJECTED
   with snapshot lines. Under `/submissions` (member) and `/admin/submissions`
-  (Super Admin grid). Members submit for the **current month only** (plus owed
+  (Super Admin grid — which also carries a "Submit my hand-in" button so a
+  Super Admin can file their own current-month submission without leaving the
+  admin view; no separate nav entry). Members submit for the **current month
+  only** (plus owed
   past months once the gate below is on); a CONFIRMED submission **posts
   inventory movements** (`movement_type='SUBMISSION'`) for the signed delta, and
   rejecting a confirmed one reverses that stock. Targets never block a
-  submission. Do not add material-type CRUD UI or any pay/cash valuation of
-  materials without agreeing it first (17a).
+  submission. Every submission records a **PIC** —
+  `member_submissions.received_by` (a Super Admin) + `received_by_name` snapshot,
+  required at submit, correctable at confirm; the member picker is fed by the
+  `list_submission_receivers()` RPC. Do not add material-type CRUD UI or any
+  pay/cash valuation of materials without agreeing it first (17a).
 - The **submission order gate** (Phase 17b) is implemented but ships **off**.
   `organization_settings.submission_gate_enabled` + `submission_obligation_start_month`
   (Super-Admin `set_submission_gate` RPC, control on `/admin/submissions`). When
