@@ -1,5 +1,7 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
+
 import type {
   DistributionStatus,
   OrderStatus,
@@ -7,6 +9,7 @@ import type {
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { OrderListScope } from "@/lib/validation/order";
 
@@ -177,19 +180,40 @@ export type OrderableItem = Pick<
   "id" | "name" | "category" | "unit" | "price" | "description" | "image_url"
 >;
 
+/** Bump this to drop the cached catalogue; item write actions call it. */
+export const ORDERABLE_ITEMS_CACHE_TAG = "orderable-items";
+
+/**
+ * The member-facing catalogue is read on every visit to `/orders/new` by every
+ * member, but only changes when a Super Admin edits an item — so it is cached
+ * and invalidated on write (`revalidateTag(ORDERABLE_ITEMS_CACHE_TAG)` in the
+ * item actions), with a 5-minute floor as a backstop.
+ *
+ * `unstable_cache` forbids `cookies()` in its scope, so this uses the
+ * service-role client. The WHERE clause is exactly the set any active member is
+ * allowed to see, so bypassing RLS here exposes nothing extra.
+ */
+const cachedOrderableItems = unstable_cache(
+  async (): Promise<OrderableItem[]> => {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, name, category, unit, price, description, image_url")
+      .eq("stock_type", "CATALOGUE")
+      .eq("active", true)
+      .eq("orderable", true)
+      .is("archived_at", null)
+      .order("category", { ascending: true })
+      .order("name", { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+  ["orderable-items"],
+  { tags: [ORDERABLE_ITEMS_CACHE_TAG], revalidate: 300 },
+);
+
 export async function getOrderableItems(): Promise<OrderableItem[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("items")
-    .select("id, name, category, unit, price, description, image_url")
-    .eq("stock_type", "CATALOGUE")
-    .eq("active", true)
-    .eq("orderable", true)
-    .is("archived_at", null)
-    .order("category", { ascending: true })
-    .order("name", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+  return cachedOrderableItems();
 }
 
 /** Counts for the member dashboard (Phase 11 uses these too). */

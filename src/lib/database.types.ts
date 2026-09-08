@@ -765,8 +765,16 @@ export interface Database {
         Args: Record<string, never>;
         Returns: string[];
       };
+      member_dashboard: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
       set_production_rate: {
         Args: { p_item_id: string; p_unit_rate: number };
+        Returns: ProductionRateRow;
+      };
+      create_production_product: {
+        Args: { p_name: string; p_unit: ItemUnit; p_unit_rate: number };
         Returns: ProductionRateRow;
       };
       submit_production_log: {

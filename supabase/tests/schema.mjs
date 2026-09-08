@@ -632,6 +632,15 @@ await expect("member cannot update another member's row (RLS)", async () => {
     `expected 0 rows affected, got ${res.affectedRows}`,
   );
 });
+await expectThrows(
+  "member cannot store an over-long display_name (0046 guard)",
+  () =>
+    db.query(
+      `update members set display_name = repeat('x', 200) where user_id = $1`,
+      [m1.id],
+    ),
+  "members_display_name_max_len",
+);
 
 // ── production & payroll ───────────────────────────────────────────────
 console.log("\nProduction & payroll");
@@ -658,6 +667,47 @@ await expect("admin sets a production pay rate", async () => {
     12.5,
   ]);
   assert(Number(r.unit_rate) === 12.5, `rate ${r.unit_rate}`);
+});
+await expect(
+  "create_production_product makes item + rate in one call (0048)",
+  async () => {
+    const r = await one(`select * from create_production_product($1, $2, $3)`, [
+      "Cut Cocaine",
+      "GRAM",
+      8.25,
+    ]);
+    assert(Number(r.unit_rate) === 8.25, `rate ${r.unit_rate}`);
+    await asRole(null);
+    const it = await one(
+      `select category, orderable, price from items where id = $1`,
+      [r.item_id],
+    );
+    assert(
+      it.category === "PRODUCT" &&
+        it.orderable === false &&
+        Number(it.price) === 0,
+      `item shape wrong: ${JSON.stringify(it)}`,
+    );
+    await asRole("authenticated", admin.id);
+  },
+);
+await expectThrows(
+  "create_production_product rolls back the item when the rate is invalid",
+  () =>
+    db.query(`select create_production_product($1, $2, $3)`, [
+      "Bad Batch",
+      "GRAM",
+      -1,
+    ]),
+  "zero or more",
+);
+await expect("…and left no orphan item behind", async () => {
+  await asRole(null);
+  const r = await one(
+    `select count(*)::int n from items where name = 'Bad Batch'`,
+  );
+  assert(r.n === 0, `expected 0 orphan items, got ${r.n}`);
+  await asRole("authenticated", admin.id);
 });
 
 await asRole("authenticated", m1.id);
@@ -1609,6 +1659,70 @@ await expect("admin can switch the gate back off", async () => {
   const s = await one(`select * from set_submission_gate(false, null)`);
   assert(s.submission_gate_enabled === false, "gate still on");
 });
+
+// ── member_dashboard() single-round-trip RPC (0050) ────────────────────────
+console.log("\nMember dashboard RPC");
+await asRole("authenticated", m1.id);
+const asObj = (v) => (typeof v === "string" ? JSON.parse(v) : v);
+await expect(
+  "member_dashboard() returns the whole payload in one call",
+  async () => {
+    const r = await one(`select member_dashboard() as d`);
+    const d = asObj(r.d);
+    assert(typeof d.open === "number" && d.open >= 1, `open ${d.open}`);
+    assert(
+      typeof d.completed === "number" && d.completed >= 1,
+      `completed ${d.completed}`,
+    );
+    assert(typeof d.completed7d === "number", `completed7d ${d.completed7d}`);
+    assert(typeof d.unread === "number", `unread ${d.unread}`);
+    // plog (40 * 12.5 = 500) was approved and locked into a paid run.
+    assert(
+      Number(d.earnings.paidAmount) === 500,
+      `earnings.paidAmount ${JSON.stringify(d.earnings)}`,
+    );
+    assert(
+      typeof d.submissionState === "string",
+      `submissionState ${d.submissionState}`,
+    );
+    assert(
+      /^\d{4}-\d{2}-01$/.test(d.periodMonth),
+      `periodMonth ${d.periodMonth}`,
+    );
+    assert(
+      Array.isArray(d.recentOrders) && d.recentOrders.length >= 1,
+      `recentOrders ${JSON.stringify(d.recentOrders)?.slice(0, 80)}`,
+    );
+    assert(Array.isArray(d.activeOrders), "activeOrders not an array");
+    assert(
+      Array.isArray(d.recentNotifications),
+      "recentNotifications not an array",
+    );
+    assert(Array.isArray(d.submissionDebt), "submissionDebt not an array");
+    // order rows come through as full records
+    assert(
+      d.recentOrders[0].order_number?.startsWith("CC-"),
+      "order row not a full record",
+    );
+  },
+);
+await asRole("authenticated", m2.id);
+await expect("member_dashboard() is scoped to the caller", async () => {
+  const d = asObj((await one(`select member_dashboard() as d`)).d);
+  // m2 never completed an order; its one approved log (10 * 12.5) is in the
+  // finalized run, so it counts as paid — and m1's 500 must not leak in.
+  assert(d.completed === 0, `m2 completed ${d.completed}`);
+  assert(
+    Number(d.earnings.paidAmount) === 125,
+    `m2 paid ${d.earnings.paidAmount}`,
+  );
+});
+await asRole("authenticated", inactive.id);
+await expectThrows(
+  "member_dashboard() rejects a non-active member",
+  () => db.query(`select member_dashboard()`),
+  "active members",
+);
 await asRole(null);
 
 printSummaryAndExit();

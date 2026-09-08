@@ -29,37 +29,19 @@ export async function createProductionProductAction(
   const { name, unit, unitRate } = parsed.data;
   const supabase = await createClient();
 
-  // A production "product" is just a PRODUCT-category item. Create it not
-  // orderable / zero price — those are managed on the Items page if the org
-  // also sells it — then attach the pay rate.
-  const { data: item, error: itemError } = await supabase.rpc("create_item", {
+  // A production "product" is a PRODUCT-category item plus a pay rate. One RPC
+  // creates both in a single transaction, so a rate failure can't leave an
+  // orphan zero-rate item behind.
+  const { error } = await supabase.rpc("create_production_product", {
     p_name: name,
-    p_category: "PRODUCT",
     p_unit: unit,
-    p_price: 0,
-    p_orderable: false,
-    p_active: true,
-  });
-
-  if (itemError || !item) {
-    return {
-      ok: false,
-      error: rpcErrorMessage(itemError, "Could not create the product."),
-    };
-  }
-
-  const { error: rateError } = await supabase.rpc("set_production_rate", {
-    p_item_id: item.id,
     p_unit_rate: unitRate,
   });
 
-  if (rateError) {
+  if (error) {
     return {
       ok: false,
-      error: rpcErrorMessage(
-        rateError,
-        "Product created, but the pay rate did not save. Set it on the row.",
-      ),
+      error: rpcErrorMessage(error, "Could not create the product."),
     };
   }
 

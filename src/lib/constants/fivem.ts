@@ -27,6 +27,13 @@ export const FIVEM_FETCH_TIMEOUT_MS = 4000;
 /** Client auto-refresh cadence when the toggle is on. */
 export const FIVEM_REFRESH_INTERVAL_MS = 10_000;
 
+/**
+ * How long a computed snapshot is reused before `/api/fivem` fetches again.
+ * Kept well under the client poll cadence so the monitor never feels stale, but
+ * enough to collapse a burst of Super Admin tabs into one upstream round-trip.
+ */
+export const FIVEM_SNAPSHOT_CACHE_MS = 5_000;
+
 /** How many player rows to render before the "Show more" control. */
 export const FIVEM_PLAYERS_PER_PAGE = 20;
 

@@ -1,11 +1,21 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
+import { ORDERABLE_ITEMS_CACHE_TAG } from "@/lib/db/orders";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
 import { parseItemForm } from "@/lib/validation/item";
+
+/** Paths + the cached-catalogue tag every item write needs to refresh. */
+function revalidateItemViews() {
+  revalidatePath("/admin/items");
+  revalidatePath("/admin/inventory");
+  // `{ expire: 0 }` = drop it now, so the next /orders/new load rebuilds the
+  // catalogue rather than serving a stale copy.
+  revalidateTag(ORDERABLE_ITEMS_CACHE_TAG, { expire: 0 });
+}
 
 export async function createItemAction(
   _prev: FormState,
@@ -41,8 +51,7 @@ export async function createItemAction(
     };
   }
 
-  revalidatePath("/admin/items");
-  revalidatePath("/admin/inventory");
+  revalidateItemViews();
   return { ok: true };
 }
 
@@ -86,8 +95,7 @@ export async function updateItemAction(
     };
   }
 
-  revalidatePath("/admin/items");
-  revalidatePath("/admin/inventory");
+  revalidateItemViews();
   return { ok: true };
 }
 
@@ -103,8 +111,7 @@ export async function archiveItemAction(
       error: rpcErrorMessage(error, "Could not archive the item."),
     };
   }
-  revalidatePath("/admin/items");
-  revalidatePath("/admin/inventory");
+  revalidateItemViews();
   return { ok: true };
 }
 
@@ -120,7 +127,6 @@ export async function restoreItemAction(
       error: rpcErrorMessage(error, "Could not restore the item."),
     };
   }
-  revalidatePath("/admin/items");
-  revalidatePath("/admin/inventory");
+  revalidateItemViews();
   return { ok: true };
 }

@@ -5,26 +5,17 @@ import { getCashBalance, getCashSummary } from "@/lib/db/cash";
 import { listInventory, type InventoryLine } from "@/lib/db/inventory";
 import { getPayrollAttention } from "@/lib/db/payroll";
 import {
-  getMyEarningsSummary,
   getPendingProductionCount,
   type EarningsSummary,
 } from "@/lib/db/production";
 import {
-  getMemberSubmissionAlert,
-  getMySubmissionDebt,
   getSubmissionAttention,
   type MemberSubmissionAlert,
 } from "@/lib/db/submissions";
+import type { Notification } from "@/lib/db/notifications";
 import {
-  getRecentNotifications,
-  getUnreadNotificationCount,
-  type Notification,
-} from "@/lib/db/notifications";
-import {
-  getMemberOrderSummary,
   getOrdersNeedingAttention,
   listAdminOrders,
-  listOrders,
   type AdminOrderRow,
   type Order,
 } from "@/lib/db/orders";
@@ -225,55 +216,50 @@ export type MemberDashboard = {
   recentNotifications: Notification[];
 };
 
+/** Raw shape of the `member_dashboard()` RPC's jsonb payload. */
+type MemberDashboardPayload = {
+  open: number;
+  completed: number;
+  completed7d: number;
+  unread: number;
+  earnings: EarningsSummary;
+  submissionState: MemberSubmissionAlert["state"];
+  periodMonth: string;
+  activeOrders: Order[];
+  recentOrders: Order[];
+  recentNotifications: Notification[];
+  submissionDebt: string[];
+};
+
+/**
+ * One round-trip: `member_dashboard()` returns every count and row list in a
+ * single jsonb payload. The period-over-period baseline is derived here — the
+ * only piece the RPC leaves to the caller.
+ */
 export async function getMemberDashboard(): Promise<MemberDashboard> {
   const supabase = await createClient();
-  const periodStart = utcDaysAgo(7).toISOString();
+  const { data, error } = await supabase.rpc("member_dashboard");
+  if (error) throw error;
 
-  const [
-    summary,
-    unread,
-    active,
-    recent,
-    notifications,
-    earnings,
-    completedThisPeriod,
-    submissionAlert,
-    submissionDebt,
-  ] = await Promise.all([
-    getMemberOrderSummary(),
-    getUnreadNotificationCount(),
-    listOrders({ scope: "open", page: 1 }),
-    listOrders({ page: 1 }),
-    getRecentNotifications(5),
-    getMyEarningsSummary(),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("completed_at", periodStart),
-    getMemberSubmissionAlert(),
-    getMySubmissionDebt(),
-  ]);
-
-  const completedOrdersPrev =
-    summary.completed - (completedThisPeriod.count ?? 0);
+  const d = data as unknown as MemberDashboardPayload;
+  const completedOrdersPrev = d.completed - d.completed7d;
 
   return {
-    counts: {
-      open: summary.open,
-      completed: summary.completed,
-      unread,
-    },
+    counts: { open: d.open, completed: d.completed, unread: d.unread },
     trends: {
       completedOrders: {
         previous: completedOrdersPrev,
-        delta: pctDelta(summary.completed, completedOrdersPrev),
+        delta: pctDelta(d.completed, completedOrdersPrev),
       },
     },
-    earnings,
-    submissionAlert,
-    submissionDebt,
-    activeOrders: active.rows.slice(0, 6),
-    recentOrders: recent.rows.slice(0, 6),
-    recentNotifications: notifications,
+    earnings: d.earnings,
+    submissionAlert: {
+      periodMonth: d.periodMonth,
+      state: d.submissionState,
+    },
+    submissionDebt: [...d.submissionDebt].sort(),
+    activeOrders: d.activeOrders,
+    recentOrders: d.recentOrders,
+    recentNotifications: d.recentNotifications,
   };
 }

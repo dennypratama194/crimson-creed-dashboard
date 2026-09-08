@@ -8,6 +8,7 @@ import {
   FIVEM_DIRECTORY_MAX_AGE_MS,
   FIVEM_DIRECTORY_URL,
   FIVEM_FETCH_TIMEOUT_MS,
+  FIVEM_SNAPSHOT_CACHE_MS,
   FIVEM_UPLINK_MAX_AGE_MS,
 } from "@/lib/constants/fivem";
 import { getFivemUplink } from "@/lib/db/fivem";
@@ -320,12 +321,39 @@ function shouldTryDirectory(err: unknown): boolean {
   return !(err instanceof HttpStatusError && err.status === 502);
 }
 
+// Warm-instance cache. `/api/fivem` is force-dynamic and every Super Admin tab
+// polls it every 10s, so without this each poll fans three live fetches at the
+// game server. Shared across all callers on the instance; concurrent misses are
+// coalesced into one computation.
+let snapshotCache: { at: number; value: FivemSnapshot } | null = null;
+let snapshotInFlight: Promise<FivemSnapshot> | null = null;
+
 /**
- * Live snapshot of the configured FiveM server, read from its own public HTTP
- * endpoints. Never throws — a failure (server down, timeout, unexpected
- * payload) resolves to an offline snapshot carrying a human-readable `error`.
+ * Live snapshot of the configured FiveM server, cached for
+ * `FIVEM_SNAPSHOT_CACHE_MS`. Never throws — a failure (server down, timeout,
+ * unexpected payload) resolves to an offline snapshot carrying a human-readable
+ * `error`.
  */
 export async function getServerSnapshot(): Promise<FivemSnapshot> {
+  const now = Date.now();
+  if (snapshotCache && now - snapshotCache.at < FIVEM_SNAPSHOT_CACHE_MS) {
+    return snapshotCache.value;
+  }
+  if (snapshotInFlight) return snapshotInFlight;
+
+  snapshotInFlight = (async () => {
+    try {
+      const value = await computeServerSnapshot();
+      snapshotCache = { at: Date.now(), value };
+      return value;
+    } finally {
+      snapshotInFlight = null;
+    }
+  })();
+  return snapshotInFlight;
+}
+
+async function computeServerSnapshot(): Promise<FivemSnapshot> {
   const { candidates, source, publishedAt } = await candidateEndpoints();
   const host = resolvePublicHost(candidates[0], source);
   const startedAt = Date.now();

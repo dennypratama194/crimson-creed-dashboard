@@ -7,7 +7,12 @@ import { redirect } from "next/navigation";
 import { usernameToEmail } from "@/lib/auth/member-credentials";
 import { getUser } from "@/lib/auth/session";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
-import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  rateLimitClear,
+  rateLimitHit,
+  retryAfterMessage,
+  type RateLimitRule,
+} from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import {
   REMEMBER_COOKIE,
@@ -17,8 +22,12 @@ import { changePasswordSchema, signInSchema } from "@/lib/validation/auth";
 
 const GENERIC_SIGNIN_ERROR = "That username and password did not match.";
 
-const THROTTLE_WINDOW_SECONDS = 15 * 60;
-const THROTTLE_BLOCK_SECONDS = 15 * 60;
+// Auth counters use a long window: a 15-minute lockout on a burst of bad
+// attempts, versus the 60s default the mutating actions run with.
+const AUTH_THROTTLE: Omit<RateLimitRule, "limit"> = {
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60,
+};
 
 /** Best-effort client IP. On Vercel `x-real-ip` is set by the platform. */
 async function clientIp(): Promise<string> {
@@ -28,40 +37,6 @@ async function clientIp(): Promise<string> {
     h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "unknown"
   );
-}
-
-/**
- * Records an attempt against `key`; returns seconds to wait (0 = allowed).
- * Best-effort: any failure (RPC not migrated yet, service key missing, network)
- * fails open so a broken limiter never locks everyone out.
- */
-async function throttleWait(key: string, limit: number): Promise<number> {
-  try {
-    const { data, error } = await createAdminClient().rpc("hit_auth_throttle", {
-      p_key: key,
-      p_limit: limit,
-      p_window_seconds: THROTTLE_WINDOW_SECONDS,
-      p_block_seconds: THROTTLE_BLOCK_SECONDS,
-    });
-    if (error || typeof data !== "number") return 0;
-    return data;
-  } catch {
-    return 0;
-  }
-}
-
-/** Resets a counter after a legitimate success. Best-effort. */
-async function clearThrottle(key: string): Promise<void> {
-  try {
-    await createAdminClient().rpc("clear_auth_throttle", { p_key: key });
-  } catch {
-    // ignore — the counter expires on its own window
-  }
-}
-
-function retryMessage(prefix: string, waitSeconds: number): string {
-  const minutes = Math.max(1, Math.ceil(waitSeconds / 60));
-  return `${prefix} Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
 
 export async function signIn(
@@ -81,17 +56,19 @@ export async function signIn(
   // Rate limit before touching the auth provider. A generous per-IP ceiling
   // (members share in-game NATs) plus a tight per-username limit that is the
   // real brute-force guard.
+  // `parsed.data.username` is already trimmed + lower-cased by signInSchema, so
+  // the per-username counter cannot be dodged by varying case.
   const ipKey = `signin:ip:${await clientIp()}`;
   const userKey = `signin:user:${parsed.data.username}`;
   const [ipWait, userWait] = await Promise.all([
-    throttleWait(ipKey, 50),
-    throttleWait(userKey, 8),
+    rateLimitHit(ipKey, { ...AUTH_THROTTLE, limit: 50 }),
+    rateLimitHit(userKey, { ...AUTH_THROTTLE, limit: 8 }),
   ]);
   const wait = Math.max(ipWait, userWait);
   if (wait > 0) {
     return {
       ok: false,
-      error: retryMessage("Too many sign-in attempts.", wait),
+      error: retryAfterMessage("Too many sign-in attempts.", wait),
     };
   }
 
@@ -133,7 +110,7 @@ export async function signIn(
 
   // Clear the per-username counter so a few typos before a correct password
   // don't leave the account locked.
-  await clearThrottle(userKey);
+  await rateLimitClear(userKey);
 
   const next = parsed.data.next;
   const target: Route =
@@ -168,11 +145,11 @@ export async function changePassword(
   }
 
   const throttleKey = `pwchange:${user.id}`;
-  const wait = await throttleWait(throttleKey, 5);
+  const wait = await rateLimitHit(throttleKey, { ...AUTH_THROTTLE, limit: 5 });
   if (wait > 0) {
     return {
       ok: false,
-      error: retryMessage("Too many password-change attempts.", wait),
+      error: retryAfterMessage("Too many password-change attempts.", wait),
     };
   }
 
@@ -191,6 +168,6 @@ export async function changePassword(
     };
   }
 
-  await clearThrottle(throttleKey);
+  await rateLimitClear(throttleKey);
   return { ok: true };
 }

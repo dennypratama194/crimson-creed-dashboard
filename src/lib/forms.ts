@@ -19,20 +19,34 @@ export function fieldErrorsFrom(
 }
 
 /**
+ * SQLSTATE codes our RPCs raise on purpose — either a bare `RAISE EXCEPTION`
+ * (P0001) or an explicit `USING ERRCODE`. Anything outside this set is an
+ * unexpected DB error whose text can name internal schema objects.
+ */
+const INTENTIONAL_ERROR_CODES = new Set([
+  "P0001", // raise_exception (plain RAISE)
+  "P0002", // no_data_found
+  "23514", // check_violation
+  "23503", // foreign_key_violation
+  "42501", // insufficient_privilege
+]);
+
+/** System-generated phrasings that leak constraint / column / type internals. */
+const LEAKY_MESSAGE =
+  /violates (?:check|foreign key|not-null|unique) constraint|column .+ does not exist|relation .+ does not exist|function .+ does not exist|syntax error|permission denied|invalid input (?:syntax|value)|value .+ out of range|numeric field overflow/i;
+
+/**
  * Surface a Supabase/Postgres error. Our RPCs raise human-readable messages, so
- * pass those through; fall back for anything unexpected or oversized.
+ * pass those through; fall back for anything unexpected, oversized, or carrying
+ * a code / phrasing that marks it as a raw database error.
  */
 export function rpcErrorMessage(
-  error: { message?: string } | null | undefined,
+  error: { message?: string; code?: string } | null | undefined,
   fallback: string,
 ): string {
   const message = error?.message?.trim();
   if (!message) return fallback;
-  if (
-    message.length > 180 ||
-    /syntax error|permission denied for/i.test(message)
-  ) {
-    return fallback;
-  }
+  if (error?.code && !INTENTIONAL_ERROR_CODES.has(error.code)) return fallback;
+  if (message.length > 180 || LEAKY_MESSAGE.test(message)) return fallback;
   return message;
 }

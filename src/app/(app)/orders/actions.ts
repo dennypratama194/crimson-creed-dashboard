@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireActiveMember } from "@/lib/auth/session";
 import { rpcErrorMessage } from "@/lib/forms";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { createOrderSchema } from "@/lib/validation/order";
 
@@ -16,7 +17,16 @@ export type ActionResult<T = undefined> = {
 export async function createOrderAction(
   input: unknown,
 ): Promise<ActionResult<{ orderId: string }>> {
-  await requireActiveMember();
+  const member = await requireActiveMember();
+
+  // Order creation notifies every Super Admin and writes ~5 rows; cap the rate
+  // so a scripted member cannot flood the queue.
+  const limited = await checkRateLimit(
+    `order:create:${member.id}`,
+    { limit: 15 },
+    "You're placing orders too fast.",
+  );
+  if (limited) return { ok: false, error: limited };
 
   const parsed = createOrderSchema.safeParse(input);
   if (!parsed.success) {
@@ -47,7 +57,10 @@ export async function createOrderAction(
 export async function submitPaymentAction(
   orderId: string,
 ): Promise<ActionResult> {
-  await requireActiveMember();
+  const member = await requireActiveMember();
+
+  const limited = await checkRateLimit(`order:pay:${member.id}`, { limit: 20 });
+  if (limited) return { ok: false, error: limited };
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("submit_order_payment", {
@@ -70,7 +83,12 @@ export async function cancelOrderAction(
   orderId: string,
   reason?: string,
 ): Promise<ActionResult> {
-  await requireActiveMember();
+  const member = await requireActiveMember();
+
+  const limited = await checkRateLimit(`order:cancel:${member.id}`, {
+    limit: 20,
+  });
+  if (limited) return { ok: false, error: limited };
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("cancel_order", {

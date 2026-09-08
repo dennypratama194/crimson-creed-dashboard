@@ -37,6 +37,21 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   `--tone-*`), never raw palette hex.
 - Server data access lives in `src/lib/db/*`; orchestration in
   `src/lib/services/*`; Zod schemas in `src/lib/validation/*`.
+- Rate limiting goes through `src/lib/rate-limit.ts` (`checkRateLimit` /
+  `rateLimitHit`), backed by the `hit_auth_throttle` RPC. Member-facing mutating
+  server actions that fan out notifications (orders, production, submissions) are
+  capped per member; auth endpoints use a 15-minute window. The limiter fails
+  open — never rely on it as an authorization boundary.
+- Free-text columns writable from the browser carry a length ceiling
+  (`*_max_len` CHECK constraints, migration 0046). Add one for any new
+  user-supplied text column.
+- The member dashboard is one round-trip: `public.member_dashboard()` (migration 0050) returns every count + row list as jsonb; `getMemberDashboard` only
+  derives the trend baseline. Changing what the member dashboard shows means
+  editing that RPC, not adding a query. The admin dashboard is still
+  query-per-widget in `getAdminDashboard` (few callers, no herd pressure).
+- `getOrderableItems` is `unstable_cache`d (tag `ORDERABLE_ITEMS_CACHE_TAG`);
+  the four item write actions call `revalidateTag(tag, { expire: 0 })`. Any new
+  path that mutates `items` visibility/price must do the same.
 - Every list has an intentional empty state; every async view has skeletons;
   errors are non-technical. Dangerous actions use a confirm dialog.
 - Production & piece-rate wages ARE implemented (Phase 14) — `production_rates`,

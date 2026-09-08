@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireActiveMember } from "@/lib/auth/session";
 import { rpcErrorMessage } from "@/lib/forms";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { submitProductionLogSchema } from "@/lib/validation/production";
 
@@ -16,7 +17,14 @@ export type ActionResult<T = undefined> = {
 export async function submitProductionLogAction(
   input: unknown,
 ): Promise<ActionResult<{ logId: string }>> {
-  await requireActiveMember();
+  const member = await requireActiveMember();
+
+  const limited = await checkRateLimit(
+    `prod:log:${member.id}`,
+    { limit: 20 },
+    "You're logging production too fast.",
+  );
+  if (limited) return { ok: false, error: limited };
 
   const parsed = submitProductionLogSchema.safeParse(input);
   if (!parsed.success) {
@@ -50,7 +58,12 @@ export async function submitProductionLogAction(
 export async function cancelProductionLogAction(
   logId: string,
 ): Promise<ActionResult> {
-  await requireActiveMember();
+  const member = await requireActiveMember();
+
+  const limited = await checkRateLimit(`prod:cancel:${member.id}`, {
+    limit: 20,
+  });
+  if (limited) return { ok: false, error: limited };
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("cancel_production_log", {
