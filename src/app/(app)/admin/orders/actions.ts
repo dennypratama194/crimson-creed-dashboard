@@ -40,12 +40,14 @@ export async function startProcessingAction(
 export async function recordOrderPaymentAction(
   orderId: string,
   note: string,
+  paidTo?: string,
 ): Promise<ActionResult> {
   await requireSuperAdmin();
   const supabase = await createClient();
   const { error } = await supabase.rpc("record_order_payment", {
     p_order_id: orderId,
     p_note: note || null,
+    p_paid_to: paidTo || null,
   });
   return finish(orderId, error, "Could not record the payment.");
 }
@@ -53,12 +55,14 @@ export async function recordOrderPaymentAction(
 export async function verifyPaymentAction(
   orderId: string,
   note: string,
+  paidTo?: string,
 ): Promise<ActionResult> {
   await requireSuperAdmin();
   const supabase = await createClient();
   const { error } = await supabase.rpc("verify_order_payment", {
     p_order_id: orderId,
     p_note: note || null,
+    p_paid_to: paidTo || null,
   });
   return finish(orderId, error, "Could not verify the payment.");
 }

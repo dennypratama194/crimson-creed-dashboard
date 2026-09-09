@@ -306,9 +306,19 @@ await expect("member cannot see inventory", async () => {
 // ── payment + workflow ──────────────────────────────────────────────────
 console.log("\nWorkflow");
 await asRole("authenticated", m1.id);
-await expect("member submits payment", async () => {
-  const o = await one(`select * from submit_order_payment($1)`, [order.id]);
+await expectThrows(
+  "submit_order_payment requires a recipient",
+  () => db.query(`select submit_order_payment($1, null)`, [order.id]),
+  "Choose who you paid",
+);
+await expect("member submits payment naming the recipient", async () => {
+  const o = await one(`select * from submit_order_payment($1, $2)`, [
+    order.id,
+    memberId.admin,
+  ]);
   assert(o.payment_status === "PAYMENT_SUBMITTED", o.payment_status);
+  assert(o.paid_to === memberId.admin, `paid_to ${o.paid_to}`);
+  assert(o.paid_to_name === "Admin Boss", `paid_to_name ${o.paid_to_name}`);
 });
 await expectThrows(
   "member cannot verify payment",
@@ -413,13 +423,22 @@ await expectThrows(
   "Super Admin",
 );
 await asRole("authenticated", admin.id);
+await expectThrows(
+  "record_order_payment needs a recipient when none is on the order",
+  () =>
+    db.query(`select record_order_payment($1, $2)`, [order2.id, "no payee"]),
+  "Choose who was paid",
+);
 await expect("admin records payment straight to PAID from UNPAID", async () => {
-  const o = await one(`select * from record_order_payment($1, $2)`, [
+  const o = await one(`select * from record_order_payment($1, $2, $3)`, [
     order2.id,
     "Cash at the lock-up",
+    memberId.admin,
   ]);
   assert(o.payment_status === "PAID", o.payment_status);
   assert(o.payment_note === "Cash at the lock-up", o.payment_note);
+  assert(o.paid_to === memberId.admin, `paid_to ${o.paid_to}`);
+  assert(o.paid_to_name === "Admin Boss", `paid_to_name ${o.paid_to_name}`);
 });
 await expect("recording payment wrote an audit row", async () => {
   const r = await one(

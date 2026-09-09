@@ -16,7 +16,7 @@ import {
 
 export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
   return (
-    <Table className="min-w-[760px] table-fixed">
+    <Table className="min-w-[900px] table-fixed">
       <TableHeader>
         <TableRow>
           <TableHead className="w-32">Order</TableHead>
@@ -28,6 +28,7 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
             </span>
           </TableHead>
           <TableHead className="w-36">Status</TableHead>
+          <TableHead className="w-36">Paid to</TableHead>
           <TableHead className="w-12">
             <span className="sr-only">Open</span>
           </TableHead>
@@ -53,6 +54,15 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
             </TableCell>
             <TableCell>
               <OrderStatusBadge status={order.status} />
+            </TableCell>
+            <TableCell
+              className={
+                order.paid_to_name
+                  ? "truncate text-foreground"
+                  : "truncate text-muted-foreground"
+              }
+            >
+              {order.paid_to_name ?? "—"}
             </TableCell>
             <TableCell className="text-right">
               <ChevronRight

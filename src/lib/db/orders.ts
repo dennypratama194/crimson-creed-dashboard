@@ -216,6 +216,20 @@ export async function getOrderableItems(): Promise<OrderableItem[]> {
   return cachedOrderableItems();
 }
 
+export type PaymentRecipient = { id: string; displayName: string };
+
+/**
+ * Active Super Admins a member can name as the recipient when reporting an
+ * order payment. Backed by the `list_payment_recipients` RPC because RLS hides
+ * other members' rows from a regular member.
+ */
+export async function listPaymentRecipients(): Promise<PaymentRecipient[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_payment_recipients");
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: r.id, displayName: r.display_name }));
+}
+
 /** Counts for the member dashboard (Phase 11 uses these too). */
 export async function getMemberOrderSummary(): Promise<{
   open: number;

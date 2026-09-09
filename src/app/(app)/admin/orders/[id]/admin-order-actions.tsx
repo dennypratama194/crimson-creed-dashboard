@@ -7,6 +7,7 @@ import type {
   OrderStatus,
   PaymentStatus,
 } from "@/lib/constants/enums";
+import type { MemberOption } from "@/lib/db/members";
 import { ActionDialog } from "@/components/patterns/action-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,17 +26,27 @@ export function AdminOrderActions({
   status,
   paymentStatus,
   distributionStatus,
+  recipients,
+  paidToId,
 }: {
   orderId: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   distributionStatus: DistributionStatus;
+  recipients: MemberOption[];
+  /** The recipient the member already named on this order, if any. */
+  paidToId: string | null;
 }) {
   const router = useRouter();
   const after = (r: { ok: boolean; error?: string }) => {
     if (r.ok) router.refresh();
     return r;
   };
+
+  const paidToOptions = recipients.map((r) => ({
+    value: r.id,
+    label: r.display_name,
+  }));
 
   const isOpen = status === "PENDING" || status === "PROCESSING";
   const canProcess = status === "PENDING";
@@ -69,12 +80,19 @@ export function AdminOrderActions({
           description="Mark this order as paid. Use this when the member has handed over the fictional in-game payment but has not reported it themselves."
           confirmLabel="Mark as paid"
           successMessage="Payment recorded."
+          select={{
+            label: "Paid to",
+            placeholder: "Which Super Admin received it",
+            required: true,
+            options: paidToOptions,
+            defaultValue: paidToId ?? undefined,
+          }}
           field={{
             label: "Note",
             placeholder: "e.g. Cash handed over at the lock-up",
           }}
-          onConfirm={async (note) =>
-            after(await recordOrderPaymentAction(orderId, note))
+          onConfirm={async (note, paidTo) =>
+            after(await recordOrderPaymentAction(orderId, note, paidTo))
           }
         />
       ) : null}
@@ -97,12 +115,18 @@ export function AdminOrderActions({
           description="Confirm you have received the fictional in-game payment for this order."
           confirmLabel="Mark as paid"
           successMessage="Payment verified."
+          select={{
+            label: "Paid to",
+            placeholder: "Which Super Admin received it",
+            options: paidToOptions,
+            defaultValue: paidToId ?? undefined,
+          }}
           field={{
             label: "Confirmation note",
             placeholder: "e.g. Confirmed in-game",
           }}
-          onConfirm={async (note) =>
-            after(await verifyPaymentAction(orderId, note))
+          onConfirm={async (note, paidTo) =>
+            after(await verifyPaymentAction(orderId, note, paidTo))
           }
         />
       ) : null}

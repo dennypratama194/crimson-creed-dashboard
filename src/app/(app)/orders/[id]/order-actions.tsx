@@ -3,21 +3,22 @@
 import { useRouter } from "next/navigation";
 
 import type { OrderStatus, PaymentStatus } from "@/lib/constants/enums";
+import type { PaymentRecipient } from "@/lib/db/orders";
 import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  cancelOrderAction,
-  submitPaymentAction,
-} from "@/app/(app)/orders/actions";
+import { cancelOrderAction } from "@/app/(app)/orders/actions";
+import { MarkPaidDialog } from "@/app/(app)/orders/[id]/mark-paid-dialog";
 
 export function OrderActions({
   orderId,
   status,
   paymentStatus,
+  recipients,
 }: {
   orderId: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  recipients: PaymentRecipient[];
 }) {
   const router = useRouter();
 
@@ -33,17 +34,10 @@ export function OrderActions({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {canSubmitPayment ? (
-        <ConfirmDialog
+        <MarkPaidDialog
+          orderId={orderId}
+          recipients={recipients}
           trigger={<Button>I&apos;ve paid</Button>}
-          title="Confirm the in-game payment"
-          description="Only do this once you have actually sent the payment in-game. A Super Admin will verify it."
-          confirmLabel="Yes, I've paid"
-          successMessage="Payment reported — a Super Admin will verify it."
-          onConfirm={async () => {
-            const result = await submitPaymentAction(orderId);
-            if (result.ok) router.refresh();
-            return result;
-          }}
         />
       ) : null}
 

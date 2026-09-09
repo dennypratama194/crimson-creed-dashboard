@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { MEMBER_RANK_LABEL } from "@/lib/constants/labels";
 import { getOrderDetail } from "@/lib/db/orders";
-import { getMember } from "@/lib/db/members";
+import { getMember, listSuperAdmins } from "@/lib/db/members";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/patterns/page-header";
 import {
@@ -36,7 +36,10 @@ export default async function AdminOrderDetailPage({
   if (!detail) notFound();
 
   const { order, items, timeline } = detail;
-  const member = await getMember(order.member_id);
+  const [member, recipients] = await Promise.all([
+    getMember(order.member_id),
+    listSuperAdmins(),
+  ]);
 
   return (
     <>
@@ -68,6 +71,8 @@ export default async function AdminOrderDetailPage({
                 status={order.status}
                 paymentStatus={order.payment_status}
                 distributionStatus={order.distribution_status}
+                recipients={recipients}
+                paidToId={order.paid_to}
               />
             </CardContent>
           </Card>
@@ -150,6 +155,12 @@ export default async function AdminOrderDetailPage({
                 <span className="text-muted-foreground">Payment</span>
                 <PaymentStatusBadge status={order.payment_status} />
               </div>
+              {order.paid_to_name ? (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Paid to</span>
+                  <span className="font-medium">{order.paid_to_name}</span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-muted-foreground">Distribution</span>
                 <DistributionStatusBadge status={order.distribution_status} />

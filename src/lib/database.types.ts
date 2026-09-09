@@ -197,6 +197,8 @@ type OrderRow = {
   payment_note: string | null;
   distribution_note: string | null;
   cancel_reason: string | null;
+  paid_to: string | null;
+  paid_to_name: string | null;
   submitted_at: string;
   processing_at: string | null;
   completed_at: string | null;
@@ -626,14 +628,29 @@ export interface Database {
         Args: { p_items: Json; p_note?: string | null };
         Returns: OrderRow;
       };
-      submit_order_payment: { Args: { p_order_id: string }; Returns: OrderRow };
+      submit_order_payment: {
+        Args: { p_order_id: string; p_paid_to?: string | null };
+        Returns: OrderRow;
+      };
       verify_order_payment: {
-        Args: { p_order_id: string; p_note?: string | null };
+        Args: {
+          p_order_id: string;
+          p_note?: string | null;
+          p_paid_to?: string | null;
+        };
         Returns: OrderRow;
       };
       record_order_payment: {
-        Args: { p_order_id: string; p_note?: string | null };
+        Args: {
+          p_order_id: string;
+          p_note?: string | null;
+          p_paid_to?: string | null;
+        };
         Returns: OrderRow;
+      };
+      list_payment_recipients: {
+        Args: Record<string, never>;
+        Returns: { id: string; display_name: string }[];
       };
       reject_order_payment: {
         Args: { p_order_id: string; p_reason: string };

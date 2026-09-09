@@ -23,5 +23,12 @@ export const createOrderSchema = z.object({
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
+export const submitOrderPaymentSchema = z.object({
+  orderId: z.uuid(),
+  paidTo: z.uuid({ error: "Choose who you paid" }),
+});
+
+export type SubmitOrderPaymentInput = z.infer<typeof submitOrderPaymentSchema>;
+
 export const ORDER_LIST_SCOPES = ["all", "open", "closed"] as const;
 export type OrderListScope = (typeof ORDER_LIST_SCOPES)[number];

@@ -42,9 +42,10 @@ export function Pagination({
           size="sm"
           onClick={() => go(page - 1)}
           disabled={page <= 1}
+          aria-label="Previous page"
         >
           <ChevronLeft aria-hidden />
-          Previous
+          <span className="hidden sm:inline">Previous</span>
         </Button>
         <span className="text-muted-foreground tabular-nums">
           Page {page} of {totalPages}
@@ -54,8 +55,9 @@ export function Pagination({
           size="sm"
           onClick={() => go(page + 1)}
           disabled={page >= totalPages}
+          aria-label="Next page"
         >
-          Next
+          <span className="hidden sm:inline">Next</span>
           <ChevronRight aria-hidden />
         </Button>
       </div>

@@ -6,7 +6,10 @@ import { requireActiveMember } from "@/lib/auth/session";
 import { rpcErrorMessage } from "@/lib/forms";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
-import { createOrderSchema } from "@/lib/validation/order";
+import {
+  createOrderSchema,
+  submitOrderPaymentSchema,
+} from "@/lib/validation/order";
 
 export type ActionResult<T = undefined> = {
   ok: boolean;
@@ -55,16 +58,26 @@ export async function createOrderAction(
 }
 
 export async function submitPaymentAction(
-  orderId: string,
+  input: unknown,
 ): Promise<ActionResult> {
   const member = await requireActiveMember();
 
   const limited = await checkRateLimit(`order:pay:${member.id}`, { limit: 20 });
   if (limited) return { ok: false, error: limited };
 
+  const parsed = submitOrderPaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Check the payment details.",
+    };
+  }
+  const { orderId, paidTo } = parsed.data;
+
   const supabase = await createClient();
   const { error } = await supabase.rpc("submit_order_payment", {
     p_order_id: orderId,
+    p_paid_to: paidTo,
   });
 
   if (error) {

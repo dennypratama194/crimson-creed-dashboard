@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { ITEM_UNIT_LABEL } from "@/lib/constants/labels";
-import { getOrderDetail } from "@/lib/db/orders";
+import { getOrderDetail, listPaymentRecipients } from "@/lib/db/orders";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/patterns/page-header";
 import {
@@ -35,6 +35,7 @@ export default async function OrderDetailPage({
   if (!detail) notFound();
 
   const { order, items, timeline } = detail;
+  const recipients = await listPaymentRecipients();
 
   return (
     <>
@@ -55,6 +56,7 @@ export default async function OrderDetailPage({
             orderId={order.id}
             status={order.status}
             paymentStatus={order.payment_status}
+            recipients={recipients}
           />
         }
       />
@@ -77,6 +79,11 @@ export default async function OrderDetailPage({
                   Payment
                 </span>
                 <PaymentStatusBadge status={order.payment_status} />
+                {order.paid_to_name ? (
+                  <span className="text-xs text-muted-foreground">
+                    Paid to {order.paid_to_name}
+                  </span>
+                ) : null}
                 {order.payment_note ? (
                   <span className="text-xs text-muted-foreground">
                     {order.payment_note}
