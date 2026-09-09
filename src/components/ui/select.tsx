@@ -42,8 +42,11 @@ export function SelectContent({
       <SelectPrimitive.Content
         position={position}
         className={cn(
-          "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-          position === "popper" && "w-[--radix-select-trigger-width]",
+          "relative z-50 max-h-[min(18rem,var(--radix-select-content-available-height))] min-w-[8rem] overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          // always-visible minimal scrollbar so a long list reads as scrollable
+          // (overrides the app-wide near-invisible thumb; scrollbar-width:thin is inherited)
+          "[scrollbar-color:var(--muted-foreground)_transparent]",
+          position === "popper" && "w-(--radix-select-trigger-width)",
           className,
         )}
         {...props}
