@@ -16,6 +16,7 @@ import {
   recordDistributionAction,
   rejectPaymentAction,
   startProcessingAction,
+  submitOrderPaymentAction,
   verifyPaymentAction,
 } from "@/app/(app)/admin/orders/actions";
 
@@ -24,11 +25,14 @@ export function AdminOrderActions({
   status,
   paymentStatus,
   distributionStatus,
+  isOwnOrder,
 }: {
   orderId: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   distributionStatus: DistributionStatus;
+  /** True when the signed-in Super Admin placed this order themselves. */
+  isOwnOrder: boolean;
 }) {
   const router = useRouter();
   const after = (r: { ok: boolean; error?: string }) => {
@@ -38,6 +42,10 @@ export function AdminOrderActions({
 
   const isOpen = status === "PENDING" || status === "PROCESSING";
   const canProcess = status === "PENDING";
+  const canReportPayment =
+    isOwnOrder &&
+    isOpen &&
+    (paymentStatus === "UNPAID" || paymentStatus === "PAYMENT_REJECTED");
   const canVerifyPayment = paymentStatus === "PAYMENT_SUBMITTED";
   const canDistribute =
     status === "PROCESSING" &&
@@ -58,6 +66,17 @@ export function AdminOrderActions({
 
   return (
     <div className="flex flex-wrap gap-2">
+      {canReportPayment ? (
+        <ActionDialog
+          trigger={<Button>Mark payment sent</Button>}
+          title="Mark the in-game payment as sent"
+          description="Confirm you have sent the fictional in-game payment for this order. You can then verify it to continue."
+          confirmLabel="Mark as sent"
+          successMessage="Payment reported — verify it to continue."
+          onConfirm={async () => after(await submitOrderPaymentAction(orderId))}
+        />
+      ) : null}
+
       {canProcess ? (
         <ActionDialog
           trigger={<Button>Start processing</Button>}
