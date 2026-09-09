@@ -400,6 +400,49 @@ await expect("full timeline was recorded", async () => {
   assert(r.n >= 6, `expected >= 6 timeline entries, got ${r.n}`);
 });
 
+// ── record_order_payment: one-step admin payment ───────────────────────
+console.log("\nrecord_order_payment");
+await asRole("authenticated", m1.id);
+const order2 = await one(`select * from create_order($1::jsonb, $2)`, [
+  JSON.stringify([{ item_id: item.id, quantity: 1 }]),
+  null,
+]);
+await expectThrows(
+  "member cannot record payment",
+  () => db.query(`select record_order_payment($1, null)`, [order2.id]),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+await expect("admin records payment straight to PAID from UNPAID", async () => {
+  const o = await one(`select * from record_order_payment($1, $2)`, [
+    order2.id,
+    "Cash at the lock-up",
+  ]);
+  assert(o.payment_status === "PAID", o.payment_status);
+  assert(o.payment_note === "Cash at the lock-up", o.payment_note);
+});
+await expect("recording payment wrote an audit row", async () => {
+  const r = await one(
+    `select count(*)::int n from audit_logs where action = 'PAYMENT_VERIFIED' and entity_id = $1`,
+    [order2.id],
+  );
+  assert(r.n === 1, `expected 1 audit row, got ${r.n}`);
+});
+await expectThrows(
+  "cannot record payment on an already-paid order",
+  () => db.query(`select record_order_payment($1, null)`, [order2.id]),
+  "already paid",
+);
+await asRole(null);
+await expect("member_one was notified the payment was recorded", async () => {
+  const r = await one(
+    `select count(*)::int n from notifications where recipient_id = $1 and type = 'PAYMENT_CONFIRMED'`,
+    [memberId.m1],
+  );
+  assert(r.n === 2, `expected 2, got ${r.n}`);
+});
+await asRole("authenticated", admin.id);
+
 // ── low stock notification ──────────────────────────────────────────────
 console.log("\nLow stock");
 await expect("dropping below threshold notifies admins", async () => {

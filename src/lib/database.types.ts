@@ -631,6 +631,10 @@ export interface Database {
         Args: { p_order_id: string; p_note?: string | null };
         Returns: OrderRow;
       };
+      record_order_payment: {
+        Args: { p_order_id: string; p_note?: string | null };
+        Returns: OrderRow;
+      };
       reject_order_payment: {
         Args: { p_order_id: string; p_reason: string };
         Returns: OrderRow;

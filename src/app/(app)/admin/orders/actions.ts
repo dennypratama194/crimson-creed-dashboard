@@ -31,31 +31,21 @@ export async function startProcessingAction(
 }
 
 /**
- * Self-service only: a Super Admin reports the in-game payment for an order they
- * placed themselves. Members report their own from `/orders/[id]`; this never
- * touches another member's order (guarded here, and `submit_order_payment` only
- * lets the owner or an admin through anyway).
+ * One-step payment for a Super Admin: moves an open order straight to PAID,
+ * whatever its current payment state. Covers orders the member never marked
+ * "I've paid" (self-placed orders, or processing started before payment).
+ * Backed by the `record_order_payment` RPC (Super-Admin-only, its own audit
+ * trail — not a fake "member reported the payment").
  */
-export async function submitOrderPaymentAction(
+export async function recordOrderPaymentAction(
   orderId: string,
+  note: string,
 ): Promise<ActionResult> {
-  const admin = await requireSuperAdmin();
+  await requireSuperAdmin();
   const supabase = await createClient();
-
-  const { data: order } = await supabase
-    .from("orders")
-    .select("member_id")
-    .eq("id", orderId)
-    .maybeSingle();
-  if (!order || order.member_id !== admin.id) {
-    return {
-      ok: false,
-      error: "You can only report payment for your own orders.",
-    };
-  }
-
-  const { error } = await supabase.rpc("submit_order_payment", {
+  const { error } = await supabase.rpc("record_order_payment", {
     p_order_id: orderId,
+    p_note: note || null,
   });
   return finish(orderId, error, "Could not record the payment.");
 }

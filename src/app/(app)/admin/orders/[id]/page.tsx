@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { getCurrentMember } from "@/lib/auth/session";
 import { MEMBER_RANK_LABEL } from "@/lib/constants/labels";
 import { getOrderDetail } from "@/lib/db/orders";
 import { getMember } from "@/lib/db/members";
@@ -37,10 +36,7 @@ export default async function AdminOrderDetailPage({
   if (!detail) notFound();
 
   const { order, items, timeline } = detail;
-  const [member, viewer] = await Promise.all([
-    getMember(order.member_id),
-    getCurrentMember(),
-  ]);
+  const member = await getMember(order.member_id);
 
   return (
     <>
@@ -72,7 +68,6 @@ export default async function AdminOrderDetailPage({
                 status={order.status}
                 paymentStatus={order.payment_status}
                 distributionStatus={order.distribution_status}
-                isOwnOrder={viewer?.id === order.member_id}
               />
             </CardContent>
           </Card>
