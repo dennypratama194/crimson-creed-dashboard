@@ -56,13 +56,18 @@ export function KpiCard({
   const caption = comparison ?? hint;
 
   return (
-    <Card className={cn("flex flex-col gap-2 p-4 sm:p-5", className)}>
+    <Card
+      className={cn(
+        "@container/kpi flex flex-col gap-2 overflow-hidden p-4 sm:p-5",
+        className,
+      )}
+    >
       <div className="flex items-start justify-between gap-2 text-sm text-muted-foreground">
-        <span>{label}</span>
+        <span className="min-w-0 truncate">{label}</span>
         {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-3xl font-semibold tracking-tight tabular-nums">
+        <span className="min-w-0 text-[clamp(1.25rem,12cqi,1.875rem)] leading-tight font-semibold tracking-tight break-words tabular-nums">
           {value}
         </span>
         {delta ? <DeltaPill delta={delta} /> : null}
