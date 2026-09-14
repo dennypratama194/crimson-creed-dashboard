@@ -1963,6 +1963,788 @@ await expectThrows(
 );
 await asRole(null);
 
+// ── admin_dashboard() single-round-trip RPC (0056) ─────────────────────────
+console.log("\nAdmin dashboard RPC");
+const utcMidnightDaysAgo = (n) => {
+  const d = new Date();
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - n),
+  );
+};
+const isLow = (qty, threshold) =>
+  qty <= 0 || (threshold > 0 && qty <= threshold);
+
+// Regression fixture: the old "Low stock" card listed the first five items by
+// name whatever their stock. A well-stocked item that sorts first must not show.
+const stockedItem = await one(
+  `insert into items (name, category, unit, price, low_stock_threshold)
+   values ('AAA Well Stocked','AMMO','ROUND',1,5) returning id`,
+);
+await asRole("authenticated", admin.id);
+await db.query(`select record_inventory_movement($1,'IN',100,'fixture')`, [
+  stockedItem.id,
+]);
+
+let adminDash;
+await expect("admin_dashboard() returns the whole payload", async () => {
+  adminDash = asObj((await one(`select admin_dashboard() as d`)).d);
+  for (const key of [
+    "kpis",
+    "attention",
+    "orderTrend",
+    "recentActivity",
+    "lowStockItems",
+    "recentOrders",
+  ]) {
+    assert(key in adminDash, `missing ${key}`);
+  }
+});
+
+await asRole(null);
+await expect("admin_dashboard() KPIs match ground truth", async () => {
+  const k = adminDash.kpis;
+  const periodStart = utcMidnightDaysAgo(7).toISOString();
+  const prevStart = utcMidnightDaysAgo(14).toISOString();
+  const truth = await one(
+    `select
+       (select count(*)::int from members where status = 'ACTIVE') active,
+       (select count(*)::int from members
+          where status = 'ACTIVE' and created_at >= $1) new_active,
+       (select count(*)::int from orders where created_at >= $1) orders7d,
+       (select count(*)::int from orders
+          where created_at >= $2 and created_at < $1) prev7d,
+       (select count(*)::int from orders where status = 'COMPLETED') completed,
+       (select count(*)::int from orders where completed_at >= $1) completed7d,
+       (select balance from cash_account) cash,
+       (select coalesce(sum(case when direction = 'IN' then amount else -amount end), 0)
+          from cash_entries where occurred_at >= $1) cash_net`,
+    [periodStart, prevStart],
+  );
+  const stock = await db.query(
+    `select i.id, i.name, i.low_stock_threshold t,
+            coalesce(inv.current_quantity, 0) q
+     from items i left join inventory inv on inv.item_id = i.id
+     where i.archived_at is null`,
+  );
+  const lowCount = stock.rows.filter((r) => isLow(r.q, r.t)).length;
+  const pairs = [
+    ["activeMembers", truth.active],
+    ["newActiveMembers7d", truth.new_active],
+    ["orders7d", truth.orders7d],
+    ["ordersPrev7d", truth.prev7d],
+    ["completedOrders", truth.completed],
+    ["completedOrders7d", truth.completed7d],
+    ["lowStock", lowCount],
+    ["companyCash", Number(truth.cash)],
+    ["cashNet7d", Number(truth.cash_net)],
+  ];
+  for (const [key, expected] of pairs) {
+    assert(Number(k[key]) === expected, `${key}: ${k[key]} != ${expected}`);
+  }
+});
+
+await expect(
+  "admin_dashboard() attention counts match ground truth",
+  async () => {
+    const a = adminDash.attention;
+    const t = await one(
+      `select
+       (select count(*)::int from orders
+          where payment_status = 'PAYMENT_SUBMITTED') verify,
+       (select count(*)::int from orders where status = 'PENDING') process,
+       (select count(*)::int from orders where status = 'PROCESSING'
+          and payment_status = 'PAID'
+          and distribution_status = 'NOT_DISTRIBUTED') distribute,
+       (select count(*)::int from production_logs where status = 'PENDING') prod,
+       (select count(*)::int from payroll_runs where status = 'DRAFT') drafts,
+       (select coalesce(sum(total_amount), 0) from payroll_runs
+          where status = 'FINALIZED') unpaid,
+       (select count(*)::int from member_submissions where status = 'PENDING') subs,
+       greatest(0,
+         (select count(*)::int from members where status = 'ACTIVE')
+         - (select count(*)::int from member_submissions ms
+              join submission_periods sp on sp.id = ms.period_id
+              where sp.period_month = date_trunc('month', (now() at time zone 'utc'))::date
+                and ms.status = 'CONFIRMED')) missing`,
+    );
+    const pairs = [
+      ["paymentsToVerify", t.verify],
+      ["toProcess", t.process],
+      ["toDistribute", t.distribute],
+      ["productionToReview", t.prod],
+      ["draftPayrollRuns", t.drafts],
+      ["unpaidPayrollTotal", Number(t.unpaid)],
+      ["submissionsToReview", t.subs],
+      ["membersNotSubmitted", t.missing],
+    ];
+    for (const [key, expected] of pairs) {
+      assert(Number(a[key]) === expected, `${key}: ${a[key]} != ${expected}`);
+    }
+  },
+);
+
+await expect("admin_dashboard() trend is 90 contiguous UTC days", async () => {
+  const trend = adminDash.orderTrend;
+  assert(trend.length === 90, `length ${trend.length}`);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  assert(
+    trend[0].date === iso(utcMidnightDaysAgo(89)),
+    `first ${trend[0].date}`,
+  );
+  assert(
+    trend[89].date === iso(utcMidnightDaysAgo(0)),
+    `last ${trend[89].date}`,
+  );
+  for (let i = 1; i < trend.length; i++) {
+    assert(trend[i - 1].date < trend[i].date, `unsorted at ${i}`);
+  }
+  const sum = trend.reduce((s, p) => s + Number(p.count), 0);
+  const expected = await one(
+    `select count(*)::int n from orders where created_at >= $1`,
+    [utcMidnightDaysAgo(89).toISOString()],
+  );
+  assert(sum === expected.n, `trend total ${sum} != ${expected.n}`);
+});
+
+await expect(
+  "admin_dashboard() low-stock list holds only low items",
+  async () => {
+    const items = adminDash.lowStockItems;
+    assert(items.length <= 5, `length ${items.length}`);
+    assert(
+      !items.some((i) => i.id === stockedItem.id),
+      "well-stocked item listed as low",
+    );
+    for (const i of items) {
+      assert(
+        isLow(Number(i.current_quantity), Number(i.low_stock_threshold)),
+        `${i.name} is not low (${i.current_quantity}/${i.low_stock_threshold})`,
+      );
+    }
+    const names = items.map((i) => i.name);
+    assert(
+      names.join("|") === [...names].sort().join("|"),
+      `not name-ordered: ${names}`,
+    );
+  },
+);
+
+await expect(
+  "admin_dashboard() row lists are narrow and newest first",
+  async () => {
+    const { recentActivity, recentOrders } = adminDash;
+    const activityTotal = await one(
+      `select count(*)::int n from activity_logs`,
+    );
+    assert(
+      recentActivity.length === Math.min(8, activityTotal.n),
+      `activity length ${recentActivity.length}`,
+    );
+    assert(
+      Object.keys(recentActivity[0]).sort().join() ===
+        "created_at,id,summary,verb",
+      `activity keys ${Object.keys(recentActivity[0])}`,
+    );
+    const orderTotal = await one(`select count(*)::int n from orders`);
+    assert(
+      recentOrders.length === Math.min(6, orderTotal.n),
+      `orders length ${recentOrders.length}`,
+    );
+    assert(
+      Object.keys(recentOrders[0]).sort().join() ===
+        "created_at,id,member_name,order_number,paid_to_name,status,total",
+      `order keys ${Object.keys(recentOrders[0])}`,
+    );
+    for (const list of [recentActivity, recentOrders]) {
+      for (let i = 1; i < list.length; i++) {
+        assert(
+          new Date(list[i - 1].created_at) >= new Date(list[i].created_at),
+          "not newest first",
+        );
+      }
+    }
+    assert(
+      recentOrders.every(
+        (o) => typeof o.member_name === "string" && o.member_name,
+      ),
+      "member_name missing",
+    );
+  },
+);
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot call admin_dashboard()",
+  () => db.query(`select admin_dashboard()`),
+  "Super Admin",
+);
+await asRole("authenticated", inactive.id);
+await expectThrows(
+  "inactive member cannot call admin_dashboard()",
+  () => db.query(`select admin_dashboard()`),
+  "Super Admin",
+);
+await asRole("anon", null);
+await expectThrows(
+  "anon cannot execute admin_dashboard()",
+  () => db.query(`select admin_dashboard()`),
+  "permission denied",
+);
+await asRole(null);
+
+// ── SQL-side aggregation RPCs (0057) ───────────────────────────────────────
+console.log("\nAggregate read RPCs");
+await asRole("authenticated", admin.id);
+await expect("cash_summary() matches the ledger", async () => {
+  const s = asObj((await one(`select cash_summary() s`)).s);
+  await asRole(null);
+  const t = await one(
+    `select coalesce(sum(amount) filter (where direction = 'IN'), 0) i,
+            coalesce(sum(amount) filter (where direction = 'OUT'), 0) o,
+            count(*)::int n
+     from cash_entries`,
+  );
+  await asRole("authenticated", admin.id);
+  assert(Number(s.incomeTotal) === Number(t.i), `income ${s.incomeTotal}`);
+  assert(Number(s.expenseTotal) === Number(t.o), `expense ${s.expenseTotal}`);
+  assert(
+    Number(s.net) === Math.round((Number(t.i) - Number(t.o)) * 100) / 100,
+    `net ${s.net}`,
+  );
+  assert(s.entryCount === t.n && t.n > 0, `count ${s.entryCount} / ${t.n}`);
+});
+await expect("cash_summary() honours the [from, to) window", async () => {
+  const future = asObj(
+    (await one(`select cash_summary(now() + interval '1 day', null) s`)).s,
+  );
+  assert(future.entryCount === 0 && Number(future.net) === 0, "future window");
+  const past = asObj(
+    (await one(`select cash_summary(null, '2000-01-01'::timestamptz) s`)).s,
+  );
+  assert(past.entryCount === 0, "past window");
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot call cash_summary()",
+  () => db.query(`select cash_summary()`),
+  "Super Admin",
+);
+
+await expect("my_earnings_summary() is the caller's own totals", async () => {
+  const e = asObj((await one(`select my_earnings_summary() e`)).e);
+  assert(Number(e.paidAmount) === 500, `m1 paid ${e.paidAmount}`);
+  await asRole(null);
+  const t = await one(
+    `select count(*) filter (where status = 'PENDING')::int pc,
+            coalesce(sum(payout_amount) filter (where status = 'PENDING'), 0) pa
+     from production_logs where member_id = $1`,
+    [memberId.m1],
+  );
+  await asRole("authenticated", m1.id);
+  assert(e.pendingCount === t.pc, `pendingCount ${e.pendingCount}`);
+  assert(
+    Number(e.pendingAmount) === Number(t.pa),
+    `pending ${e.pendingAmount}`,
+  );
+});
+await asRole("authenticated", admin.id);
+await expect(
+  "my_earnings_summary() does not leak the org to a Super Admin",
+  async () => {
+    const e = asObj((await one(`select my_earnings_summary() e`)).e);
+    await asRole(null);
+    const own = await one(
+      `select coalesce(sum(payout_amount) filter (where status = 'APPROVED'
+                and payroll_run_id is not null), 0) paid
+       from production_logs where member_id = $1`,
+      [memberId.admin],
+    );
+    await asRole("authenticated", admin.id);
+    assert(
+      Number(e.paidAmount) === Number(own.paid),
+      `admin paid ${e.paidAmount} != own ${own.paid}`,
+    );
+  },
+);
+
+await asRole("authenticated", m1.id);
+await expect("my_payslips() returns only the caller's lines", async () => {
+  const lines = asObj((await one(`select my_payslips() p`)).p);
+  assert(lines.length >= 1, "m1 has no payslips");
+  assert(
+    lines.every((l) => l.member_id === memberId.m1),
+    "foreign payslip line",
+  );
+  assert(
+    typeof lines[0].run_number === "string" &&
+      typeof lines[0].run_status === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(lines[0].period_start),
+    `run header missing ${JSON.stringify(lines[0])}`,
+  );
+});
+await asRole("authenticated", admin.id);
+await expect("my_payslips() is caller-scoped for a Super Admin", async () => {
+  const lines = asObj((await one(`select my_payslips() p`)).p);
+  assert(
+    lines.every((l) => l.member_id === memberId.admin),
+    "admin saw another member's payslip",
+  );
+});
+await asRole("authenticated", inactive.id);
+await expectThrows(
+  "my_payslips() rejects a non-active member",
+  () => db.query(`select my_payslips()`),
+  "active members",
+);
+await expectThrows(
+  "my_earnings_summary() rejects a non-active member",
+  () => db.query(`select my_earnings_summary()`),
+  "active members",
+);
+
+await asRole("authenticated", admin.id);
+await expect("member_order_counts() matches per-member counts", async () => {
+  const res = await db.query(
+    `select * from member_order_counts(array[$1, $2, $3]::uuid[])`,
+    [memberId.m1, memberId.m2, memberId.admin],
+  );
+  await asRole(null);
+  const truth = await db.query(
+    `select member_id, count(*)::int n from orders
+     where member_id = any (array[$1, $2, $3]::uuid[]) group by member_id`,
+    [memberId.m1, memberId.m2, memberId.admin],
+  );
+  await asRole("authenticated", admin.id);
+  const got = new Map(res.rows.map((r) => [r.member_id, r.order_count]));
+  assert(got.size === truth.rows.length, `rows ${got.size}`);
+  for (const r of truth.rows) {
+    assert(got.get(r.member_id) === r.n, `count for ${r.member_id}`);
+  }
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot call member_order_counts()",
+  () => db.query(`select * from member_order_counts(array[]::uuid[])`),
+  "Super Admin",
+);
+await asRole(null);
+
+// ── indexes (0058) + re-applying 0056–0058 ─────────────────────────────────
+console.log("\nQuery indexes + idempotency");
+await expect("composite list indexes exist", async () => {
+  const r = await db.query(
+    `select indexname from pg_indexes where indexname = any ($1::text[])`,
+    [
+      [
+        "orders_member_created_at_idx",
+        "notifications_recipient_created_at_idx",
+        "inventory_movements_item_created_at_idx",
+      ],
+    ],
+  );
+  assert(r.rows.length === 3, `found ${r.rows.map((x) => x.indexname)}`);
+});
+await expect("0056–0058 re-apply cleanly", async () => {
+  for (const file of files.filter((f) => /^005[6-8]_/.test(f))) {
+    await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+  }
+});
+
+// ── security boundaries ─────────────────────────────────────────────────────
+console.log("\nSecurity boundaries");
+
+// Every public SECURITY DEFINER function that a signed-in MEMBER may call. Any
+// definer function NOT listed here must refuse a member with
+// insufficient_privilege — so a new admin RPC that forgets
+// app.require_super_admin() fails this suite.
+const MEMBER_CALLABLE = new Set([
+  "cancel_order",
+  "cancel_production_log",
+  "create_order",
+  "list_payment_recipients",
+  "list_submission_receivers",
+  "member_dashboard",
+  "my_earnings_summary",
+  "my_payslips",
+  "my_submission_debt",
+  "submit_material_submission",
+  "submit_order_payment",
+  "submit_production_log",
+]);
+
+await asRole(null);
+const publicFns = (
+  await db.query(
+    `select p.proname as name, oidvectortypes(p.proargtypes) as args,
+            p.prosecdef as definer
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+     order by p.proname`,
+  )
+).rows;
+const nullCall = (fn) =>
+  `select public.${fn.name}(${
+    fn.args
+      ? fn.args
+          .split(", ")
+          .map((t) => `null::${t}`)
+          .join(", ")
+      : ""
+  })`;
+/** Runs `sql` in a rolled-back transaction; returns the error, or null. */
+async function callRolledBack(sql, params) {
+  await db.exec("begin");
+  try {
+    await db.query(sql, params);
+    return null;
+  } catch (err) {
+    return err;
+  } finally {
+    await db.exec("rollback");
+  }
+}
+/** Swallows a denied write so the caller can assert nothing changed. */
+async function attempt(sql, params) {
+  try {
+    await db.query(sql, params);
+  } catch {
+    // denied outright is as good as a no-op
+  }
+}
+
+await expect("SECURITY DEFINER functions all pin search_path", async () => {
+  const r = await db.query(
+    `select p.proname from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname in ('public', 'app') and p.prosecdef
+       and not exists (
+         select 1 from unnest(coalesce(p.proconfig, '{}')) c
+         where c like 'search_path=%'
+       )`,
+  );
+  assert(r.rows.length === 0, `unpinned: ${r.rows.map((x) => x.proname)}`);
+});
+await expect("member-callable allowlist names real functions", async () => {
+  const names = new Set(publicFns.map((f) => f.name));
+  const stale = [...MEMBER_CALLABLE].filter((n) => !names.has(n));
+  assert(stale.length === 0, `stale allowlist entries: ${stale}`);
+});
+
+await asRole("anon", null);
+await expect("anon can execute no public function", async () => {
+  const leaks = [];
+  for (const fn of publicFns) {
+    const err = await callRolledBack(nullCall(fn));
+    if (err?.code !== "42501") {
+      leaks.push(`${fn.name}: ${err?.message ?? "succeeded"}`);
+    }
+  }
+  assert(leaks.length === 0, leaks.join("; "));
+});
+
+await asRole("authenticated", m1.id);
+await expect(
+  "a member is refused every admin-only definer function",
+  async () => {
+    const leaks = [];
+    for (const fn of publicFns) {
+      if (!fn.definer || MEMBER_CALLABLE.has(fn.name)) continue;
+      const err = await callRolledBack(nullCall(fn));
+      if (err?.code !== "42501") {
+        leaks.push(`${fn.name}: ${err?.message ?? "succeeded"}`);
+      }
+    }
+    assert(leaks.length === 0, leaks.join("; "));
+  },
+);
+
+await asRole("service_role", null);
+await expect("service_role can drive the auth throttle", async () => {
+  const r = await one(
+    `select hit_auth_throttle('test:security:svc', 5, 60, 60) as wait`,
+  );
+  assert(Number(r.wait) === 0, `wait ${r.wait}`);
+});
+
+// Order ownership + server-side money
+await asRole("authenticated", m1.id);
+const secOrder = await one(`select * from create_order($1::jsonb, null)`, [
+  JSON.stringify([{ item_id: item.id, quantity: 2 }]),
+]);
+await asRole("authenticated", m2.id);
+await expectThrows("a member cannot cancel another member's order", () =>
+  db.query(`select cancel_order($1, 'not mine')`, [secOrder.id]),
+);
+await expectThrows(
+  "a member cannot report payment on another member's order",
+  () =>
+    db.query(`select submit_order_payment($1, $2)`, [
+      secOrder.id,
+      memberId.admin,
+    ]),
+);
+await expect(
+  "a member cannot rewrite order totals or price snapshots",
+  async () => {
+    await attempt(
+      `update orders set total = 0, status = 'COMPLETED' where id = $1`,
+      [secOrder.id],
+    );
+    await asRole("authenticated", m1.id);
+    await attempt(`update orders set total = 0 where id = $1`, [secOrder.id]);
+    await attempt(
+      `update order_items set unit_price_snapshot = 0, line_total = 0
+       where order_id = $1`,
+      [secOrder.id],
+    );
+    await asRole(null);
+    const o = await one(
+      `select status, payment_status, total from orders where id = $1`,
+      [secOrder.id],
+    );
+    const oi = await one(
+      `select unit_price_snapshot from order_items where order_id = $1`,
+      [secOrder.id],
+    );
+    assert(o.status === "PENDING", `status ${o.status}`);
+    assert(o.payment_status === "UNPAID", `payment ${o.payment_status}`);
+    assert(Number(o.total) === Number(secOrder.total), `total ${o.total}`);
+    assert(Number(oi.unit_price_snapshot) > 0, "price snapshot rewritten");
+  },
+);
+await asRole("authenticated", m1.id);
+await expectThrows("a member cannot insert an order for someone else", () =>
+  db.query(
+    `insert into orders (member_id, order_number, subtotal, total)
+       values ($1, 'CC-FORGED', 0, 0)`,
+    [memberId.m2],
+  ),
+);
+await expectThrows(
+  "payment recipient must be a Super Admin, not a member",
+  () =>
+    db.query(`select submit_order_payment($1, $2)`, [secOrder.id, memberId.m2]),
+);
+await expectThrows("payment recipient must be a real member", () =>
+  db.query(`select submit_order_payment($1, gen_random_uuid())`, [secOrder.id]),
+);
+
+// Inventory integrity
+await expectThrows(
+  "a member cannot record a stock movement",
+  () =>
+    db.query(`select record_inventory_movement($1, 'IN', 5, null)`, [item.id]),
+  "Super Admin",
+);
+await expect("a member cannot write stock levels directly", async () => {
+  await asRole(null);
+  const before = await one(
+    `select current_quantity q from inventory where item_id = $1`,
+    [item.id],
+  );
+  await asRole("authenticated", m1.id);
+  await attempt(
+    `update inventory set current_quantity = 999999 where item_id = $1`,
+    [item.id],
+  );
+  await attempt(
+    `insert into inventory_movements (item_id, quantity, movement_type, reference_type)
+     values ($1, 999999, 'IN', 'MANUAL')`,
+    [item.id],
+  );
+  await asRole(null);
+  const after = await one(
+    `select current_quantity q from inventory where item_id = $1`,
+    [item.id],
+  );
+  assert(after.q === before.q, `stock moved ${before.q} -> ${after.q}`);
+});
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "order-workflow movement types cannot be posted by hand",
+  () =>
+    db.query(`select record_inventory_movement($1, 'ORDER', -1, null)`, [
+      item.id,
+    ]),
+  "order workflow",
+);
+await expectThrows(
+  "a zero-quantity stock movement is rejected",
+  () =>
+    db.query(`select record_inventory_movement($1, 'IN', 0, null)`, [item.id]),
+  "non-zero",
+);
+
+// Production + payroll integrity
+await asRole(null);
+const secRate = await one(`select item_id from production_rates limit 1`);
+await asRole("authenticated", m1.id);
+const secLog = await one(
+  `select * from submit_production_log($1, 2, null, null)`,
+  [secRate.item_id],
+);
+await expectThrows(
+  "a member cannot approve their own production log",
+  () => db.query(`select review_production_log($1, true, null)`, [secLog.id]),
+  "Super Admin",
+);
+await expect(
+  "a member cannot rewrite a payout or approve directly",
+  async () => {
+    await attempt(
+      `update production_logs set payout_amount = 999999, status = 'APPROVED'
+     where id = $1`,
+      [secLog.id],
+    );
+    await asRole(null);
+    const l = await one(
+      `select status, payout_amount from production_logs where id = $1`,
+      [secLog.id],
+    );
+    await asRole("authenticated", m1.id);
+    assert(l.status === "PENDING", `status ${l.status}`);
+    assert(
+      Number(l.payout_amount) === Number(secLog.payout_amount),
+      `payout ${l.payout_amount}`,
+    );
+  },
+);
+await asRole("authenticated", m2.id);
+await expectThrows(
+  "a member cannot cancel another member's production log",
+  () => db.query(`select cancel_production_log($1)`, [secLog.id]),
+);
+await expectThrows(
+  "a member cannot finalize a payroll run",
+  () => db.query(`select finalize_payroll_run(gen_random_uuid())`),
+  "Super Admin",
+);
+await expectThrows(
+  "a member cannot mark a payroll run paid",
+  () => db.query(`select mark_payroll_run_paid(gen_random_uuid())`),
+  "Super Admin",
+);
+await asRole(null);
+const lockedLog = await one(
+  `select id from production_logs where payroll_run_id is not null limit 1`,
+);
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "a log locked into a payroll run cannot be reviewed again",
+  () =>
+    db.query(`select review_production_log($1, false, 'too late')`, [
+      lockedLog.id,
+    ]),
+);
+
+// RLS visibility
+await asRole("authenticated", m2.id);
+await expect("a member sees only their own member-scoped rows", async () => {
+  for (const [table, col] of [
+    ["orders", "member_id"],
+    ["production_logs", "member_id"],
+    ["payroll_run_lines", "member_id"],
+    ["member_submissions", "member_id"],
+    ["notifications", "recipient_id"],
+  ]) {
+    const r = await one(
+      `select count(*) filter (where ${col} <> $1)::int n from ${table}`,
+      [memberId.m2],
+    );
+    assert(r.n === 0, `${table}: ${r.n} foreign rows visible`);
+  }
+  const items = await one(
+    `select count(*)::int n from order_items oi
+     where not exists (
+       select 1 from orders o where o.id = oi.order_id and o.member_id = $1
+     )`,
+    [memberId.m2],
+  );
+  assert(items.n === 0, `order_items: ${items.n} foreign rows visible`);
+});
+const SUPER_ADMIN_ONLY_TABLES = [
+  "cash_entries",
+  "cash_account",
+  "audit_logs",
+  "activity_logs",
+  "suppliers",
+  "supplier_items",
+  "relations",
+  "inventory",
+  "inventory_movements",
+  "auth_throttle",
+];
+async function visibleRows(table) {
+  try {
+    return (await one(`select count(*)::int n from ${table}`)).n;
+  } catch {
+    return 0; // no grant at all
+  }
+}
+await expect("a member sees none of the Super-Admin-only tables", async () => {
+  for (const table of SUPER_ADMIN_ONLY_TABLES) {
+    const n = await visibleRows(table);
+    assert(n === 0, `${table}: ${n} rows visible to a member`);
+  }
+});
+// items_select (0037) shows active CATALOGUE items to any signed-in user; the
+// company stash and archived items stay Super-Admin-only.
+for (const [label, who] of [
+  ["a member", m2],
+  ["an inactive member", inactive],
+]) {
+  await asRole("authenticated", who.id);
+  await expect(`${label} sees only active catalogue items`, async () => {
+    const r = await one(
+      `select count(*)::int total,
+              count(*) filter (where stock_type <> 'CATALOGUE'
+                               or not active
+                               or archived_at is not null)::int hidden
+       from items`,
+    );
+    assert(r.hidden === 0, `${r.hidden} stash/inactive/archived items visible`);
+  });
+}
+await asRole("anon", null);
+await expect("anon reads no application table", async () => {
+  for (const table of [
+    "members",
+    "items",
+    "orders",
+    "order_items",
+    "notifications",
+    "production_logs",
+    "payroll_runs",
+    "member_submissions",
+    ...SUPER_ADMIN_ONLY_TABLES,
+  ]) {
+    const n = await visibleRows(table);
+    assert(n === 0, `${table}: ${n} rows visible to anon`);
+  }
+});
+
+// Append-only audit, even for a Super Admin
+await asRole(null);
+const auditBefore = await one(`select count(*)::int n from audit_logs`);
+await asRole("authenticated", admin.id);
+await expect("a Super Admin cannot delete or rewrite audit_logs", async () => {
+  await attempt(`delete from audit_logs`);
+  await attempt(`update audit_logs set action = 'ITEM_CREATED'`);
+  await asRole(null);
+  const after = await one(
+    `select count(*)::int n,
+            count(*) filter (where action <> 'ITEM_CREATED')::int other
+     from audit_logs`,
+  );
+  await asRole("authenticated", admin.id);
+  assert(
+    after.n === auditBefore.n,
+    `audit rows ${auditBefore.n} -> ${after.n}`,
+  );
+  assert(after.other > 0, "audit actions were rewritten");
+});
+await asRole(null);
+
 printSummaryAndExit();
 
 function printSummaryAndExit() {

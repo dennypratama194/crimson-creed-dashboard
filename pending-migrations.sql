@@ -1,4 +1,13 @@
 -- ============================================================================
+-- !!! SUPERSEDED — DO NOT RUN !!!
+-- One-off catch-up script (September 2026) that bundled 0046 → 0052 for a
+-- single paste into the production SQL editor. Those migrations live in
+-- supabase/migrations/ and production has since moved on to 0053+. Running this
+-- again re-applies old function bodies outside the migration history and then
+-- fails on the schema_migrations insert at the bottom. Kept as a record only —
+-- use `supabase db push` (see DEPLOYMENT.md → Migration rules).
+-- ============================================================================
+--
 -- pending-migrations.sql  —  applies migrations 0046 → 0051
 --
 -- Idempotent: safe to run against a database that already has some of 0046

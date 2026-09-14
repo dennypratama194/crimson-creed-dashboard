@@ -470,6 +470,65 @@ type MemberSubmissionLineRow = {
   updated_at: string;
 }
 
+// ── jsonb RPC payloads ──────────────────────────────────────────────────────
+/** `admin_dashboard()` (migration 0056). */
+export type AdminDashboardPayload = {
+  kpis: {
+    activeMembers: number;
+    newActiveMembers7d: number;
+    orders7d: number;
+    ordersPrev7d: number;
+    completedOrders: number;
+    completedOrders7d: number;
+    lowStock: number;
+    companyCash: number;
+    cashNet7d: number;
+  };
+  attention: {
+    paymentsToVerify: number;
+    toProcess: number;
+    toDistribute: number;
+    productionToReview: number;
+    draftPayrollRuns: number;
+    unpaidPayrollTotal: number;
+    submissionsToReview: number;
+    membersNotSubmitted: number;
+  };
+  orderTrend: { date: string; count: number }[];
+  recentActivity: Pick<ActivityLogRow, "id" | "verb" | "summary" | "created_at">[];
+  lowStockItems: (Pick<ItemRow, "id" | "name" | "low_stock_threshold"> & {
+    current_quantity: number;
+  })[];
+  recentOrders: (Pick<
+    OrderRow,
+    "id" | "order_number" | "created_at" | "total" | "status" | "paid_to_name"
+  > & { member_name: string })[];
+};
+
+/** `cash_summary()` (migration 0057). */
+export type CashSummaryPayload = {
+  incomeTotal: number;
+  expenseTotal: number;
+  net: number;
+  entryCount: number;
+};
+
+/** `my_earnings_summary()` (migration 0057). */
+export type EarningsSummaryPayload = {
+  pendingCount: number;
+  pendingAmount: number;
+  approvedUnpaidAmount: number;
+  paidAmount: number;
+};
+
+/** One element of `my_payslips()` (migration 0057). */
+export type PayslipPayload = PayrollRunLineRow & {
+  run_number: string;
+  period_start: string;
+  period_end: string;
+  run_status: PayrollRunStatus;
+};
+
 type TableShape<Row, Insert, Update> = {
   Row: Row;
   Insert: Insert;
@@ -807,6 +866,26 @@ export interface Database {
       member_dashboard: {
         Args: Record<string, never>;
         Returns: Json;
+      };
+      admin_dashboard: {
+        Args: Record<string, never>;
+        Returns: AdminDashboardPayload;
+      };
+      cash_summary: {
+        Args: { p_from?: string | null; p_to?: string | null };
+        Returns: CashSummaryPayload;
+      };
+      my_earnings_summary: {
+        Args: Record<string, never>;
+        Returns: EarningsSummaryPayload;
+      };
+      my_payslips: {
+        Args: Record<string, never>;
+        Returns: PayslipPayload[];
+      };
+      member_order_counts: {
+        Args: { p_member_ids: string[] };
+        Returns: { member_id: string; order_count: number }[];
       };
       set_production_rate: {
         Args: { p_item_id: string; p_unit_rate: number };

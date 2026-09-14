@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { usernameToEmail } from "@/lib/auth/member-credentials";
-import { getCurrentMember, requireSuperAdmin } from "@/lib/auth/session";
+import { requireActiveMember, requireSuperAdmin } from "@/lib/auth/session";
 import type { MemberStatus } from "@/lib/constants/enums";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -374,8 +374,9 @@ export async function updateOwnDisplayNameAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const member = await getCurrentMember();
-  if (!member) redirect("/login");
+  // Active members only — a deactivated account with a live session must not
+  // keep editing its profile by calling the action directly.
+  const member = await requireActiveMember();
 
   const value = formData.get("displayName");
   const displayName = typeof value === "string" ? value.trim() : "";

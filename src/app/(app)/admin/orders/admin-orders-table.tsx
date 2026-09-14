@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-import type { AdminOrderRow } from "@/lib/db/orders";
+import type { AdminOrderListRow } from "@/lib/db/orders";
 import { formatDate, formatMoney } from "@/lib/format";
 import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { OrderStatusBadge } from "@/components/patterns/status-badge";
@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export function AdminOrdersTable({ rows }: { rows: AdminOrderRow[] }) {
+export function AdminOrdersTable({ rows }: { rows: AdminOrderListRow[] }) {
   return (
     <Table className="min-w-[900px] table-fixed">
       <TableHeader>

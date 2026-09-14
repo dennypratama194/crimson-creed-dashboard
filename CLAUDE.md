@@ -40,15 +40,22 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
 - Rate limiting goes through `src/lib/rate-limit.ts` (`checkRateLimit` /
   `rateLimitHit`), backed by the `hit_auth_throttle` RPC. Member-facing mutating
   server actions that fan out notifications (orders, production, submissions) are
-  capped per member; auth endpoints use a 15-minute window. The limiter fails
-  open — never rely on it as an authorization boundary.
+  capped per member; auth endpoints use a 15-minute window. If the RPC is
+  unreachable, member actions fail open and auth endpoints
+  (`rateLimitHit(…, "local")`) fall back to an in-process limiter; the per-IP
+  sign-in key trusts platform headers only (`src/lib/client-ip.ts`). Never rely
+  on the limiter as an authorization boundary.
 - Free-text columns writable from the browser carry a length ceiling
   (`*_max_len` CHECK constraints, migration 0046). Add one for any new
   user-supplied text column.
 - The member dashboard is one round-trip: `public.member_dashboard()` (migration 0050) returns every count + row list as jsonb; `getMemberDashboard` only
   derives the trend baseline. Changing what the member dashboard shows means
-  editing that RPC, not adding a query. The admin dashboard is still
-  query-per-widget in `getAdminDashboard` (few callers, no herd pressure).
+  editing that RPC, not adding a query. The admin dashboard is also one
+  round-trip: `public.admin_dashboard()` (migration 0056, gated by
+  `app.require_super_admin()`); `getAdminDashboard` only derives the % deltas.
+  SQL-side aggregates live in 0057 (`cash_summary`, `my_earnings_summary`,
+  `my_payslips`, `member_order_counts`) — the `my_*` ones are caller-scoped even
+  for a Super Admin.
 - `getOrderableItems` is `unstable_cache`d (tag `ORDERABLE_ITEMS_CACHE_TAG`);
   the four item write actions call `revalidateTag(tag, { expire: 0 })`. Any new
   path that mutates `items` visibility/price must do the same.

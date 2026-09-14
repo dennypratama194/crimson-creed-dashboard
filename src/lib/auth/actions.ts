@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { usernameToEmail } from "@/lib/auth/member-credentials";
 import { getUser } from "@/lib/auth/session";
+import { clientIpFromHeaders } from "@/lib/client-ip";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
 import {
   rateLimitClear,
@@ -29,14 +30,12 @@ const AUTH_THROTTLE: Omit<RateLimitRule, "limit"> = {
   blockSeconds: 15 * 60,
 };
 
-/** Best-effort client IP. On Vercel `x-real-ip` is set by the platform. */
-async function clientIp(): Promise<string> {
-  const h = await headers();
-  return (
-    h.get("x-real-ip") ??
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
+/** Platform-set client IP, or null when forwarding headers are not trusted. */
+async function clientIp(): Promise<string | null> {
+  return clientIpFromHeaders(await headers(), {
+    VERCEL: process.env.VERCEL,
+    TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS,
+  });
 }
 
 export async function signIn(
@@ -55,14 +54,22 @@ export async function signIn(
 
   // Rate limit before touching the auth provider. A generous per-IP ceiling
   // (members share in-game NATs) plus a tight per-username limit that is the
-  // real brute-force guard.
+  // real brute-force guard. The per-IP limit only runs when the IP comes from a
+  // trusted platform header (see clientIpFromHeaders). Both fall back to an
+  // in-process limiter if the database limiter is down.
   // `parsed.data.username` is already trimmed + lower-cased by signInSchema, so
   // the per-username counter cannot be dodged by varying case.
-  const ipKey = `signin:ip:${await clientIp()}`;
+  const ip = await clientIp();
   const userKey = `signin:user:${parsed.data.username}`;
   const [ipWait, userWait] = await Promise.all([
-    rateLimitHit(ipKey, { ...AUTH_THROTTLE, limit: 50 }),
-    rateLimitHit(userKey, { ...AUTH_THROTTLE, limit: 8 }),
+    ip
+      ? rateLimitHit(
+          `signin:ip:${ip}`,
+          { ...AUTH_THROTTLE, limit: 50 },
+          "local",
+        )
+      : 0,
+    rateLimitHit(userKey, { ...AUTH_THROTTLE, limit: 8 }, "local"),
   ]);
   const wait = Math.max(ipWait, userWait);
   if (wait > 0) {
@@ -145,7 +152,11 @@ export async function changePassword(
   }
 
   const throttleKey = `pwchange:${user.id}`;
-  const wait = await rateLimitHit(throttleKey, { ...AUTH_THROTTLE, limit: 5 });
+  const wait = await rateLimitHit(
+    throttleKey,
+    { ...AUTH_THROTTLE, limit: 5 },
+    "local",
+  );
   if (wait > 0) {
     return {
       ok: false,

@@ -17,7 +17,7 @@ const RANGES = [
 const DEFAULT_RANGE = "14D";
 
 /** Sums daily points into fixed 7-day buckets, oldest first. */
-function toWeekly(points: TrendPoint[]): TrendPoint[] {
+export function toWeekly(points: TrendPoint[]): TrendPoint[] {
   const weeks: TrendPoint[] = [];
   for (let i = 0; i < points.length; i += 7) {
     const chunk = points.slice(i, i + 7);

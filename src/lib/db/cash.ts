@@ -30,32 +30,21 @@ export type CashSummary = {
   entryCount: number;
 };
 
-/** Income / expense totals over an optional [from, to) window (ISO strings). */
+/**
+ * Income / expense totals over an optional [from, to) window (ISO strings),
+ * summed in SQL by the Super-Admin-gated `cash_summary()` RPC (0057).
+ */
 export async function getCashSummary(range?: {
   from?: string;
   to?: string;
 }): Promise<CashSummary> {
   const supabase = await createClient();
-  let query = supabase.from("cash_entries").select("direction, amount");
-  if (range?.from) query = query.gte("occurred_at", range.from);
-  if (range?.to) query = query.lt("occurred_at", range.to);
-
-  const { data, error } = await query;
+  const { data, error } = await supabase.rpc("cash_summary", {
+    p_from: range?.from ?? null,
+    p_to: range?.to ?? null,
+  });
   if (error) throw error;
-
-  const summary: CashSummary = {
-    incomeTotal: 0,
-    expenseTotal: 0,
-    net: 0,
-    entryCount: (data ?? []).length,
-  };
-  for (const row of data ?? []) {
-    if (row.direction === "IN") summary.incomeTotal += row.amount;
-    else summary.expenseTotal += row.amount;
-  }
-  summary.net =
-    Math.round((summary.incomeTotal - summary.expenseTotal) * 100) / 100;
-  return summary;
+  return data;
 }
 
 export type CashEntryRow = CashEntry & {

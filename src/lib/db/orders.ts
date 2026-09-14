@@ -56,7 +56,11 @@ export async function listOrders(options: {
   return { rows: data ?? [], total: count ?? 0, page, pageSize };
 }
 
-export type AdminOrderRow = Order & { member_name: string };
+/** The columns the admin orders table renders — also fed by the dashboard. */
+export type AdminOrderListRow = Pick<
+  Order,
+  "id" | "order_number" | "created_at" | "total" | "status" | "paid_to_name"
+> & { member_name: string };
 
 /** Admin order list with the three status filters + order-number search. */
 export async function listAdminOrders(options: {
@@ -66,7 +70,7 @@ export async function listAdminOrders(options: {
   distributionStatus?: DistributionStatus;
   search?: string;
 }): Promise<{
-  rows: AdminOrderRow[];
+  rows: AdminOrderListRow[];
   total: number;
   page: number;
   pageSize: number;
@@ -76,10 +80,15 @@ export async function listAdminOrders(options: {
   const pageSize = ORDER_PAGE_SIZE;
   const offset = (page - 1) * pageSize;
 
+  // Only what the table renders: order rows carry up to four 1000-char notes.
   let query = supabase
     .from("orders")
-    .select("*", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .select(
+      "id, order_number, member_id, created_at, total, status, paid_to_name",
+      { count: "exact" },
+    )
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.status) query = query.eq("status", options.status);
   if (options.paymentStatus)
@@ -103,43 +112,13 @@ export async function listAdminOrders(options: {
   const names = await getMemberNames(rows.map((r) => r.member_id));
 
   return {
-    rows: rows.map((r) => ({
+    rows: rows.map(({ member_id, ...r }) => ({
       ...r,
-      member_name: names.get(r.member_id) ?? "Unknown member",
+      member_name: names.get(member_id) ?? "Unknown member",
     })),
     total: count ?? 0,
     page,
     pageSize,
-  };
-}
-
-/** Orders that need a Super Admin's attention, for the admin dashboard. */
-export async function getOrdersNeedingAttention(): Promise<{
-  paymentsToVerify: number;
-  toProcess: number;
-  toDistribute: number;
-}> {
-  const supabase = await createClient();
-  const [paymentsToVerify, toProcess, toDistribute] = await Promise.all([
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("payment_status", "PAYMENT_SUBMITTED"),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "PENDING"),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "PROCESSING")
-      .eq("payment_status", "PAID")
-      .eq("distribution_status", "NOT_DISTRIBUTED"),
-  ]);
-  return {
-    paymentsToVerify: paymentsToVerify.count ?? 0,
-    toProcess: toProcess.count ?? 0,
-    toDistribute: toDistribute.count ?? 0,
   };
 }
 
@@ -228,23 +207,4 @@ export async function listPaymentRecipients(): Promise<PaymentRecipient[]> {
   const { data, error } = await supabase.rpc("list_payment_recipients");
   if (error) throw error;
   return (data ?? []).map((r) => ({ id: r.id, displayName: r.display_name }));
-}
-
-/** Counts for the member dashboard (Phase 11 uses these too). */
-export async function getMemberOrderSummary(): Promise<{
-  open: number;
-  completed: number;
-}> {
-  const supabase = await createClient();
-  const [open, completed] = await Promise.all([
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .in("status", [...OPEN_STATUSES]),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "COMPLETED"),
-  ]);
-  return { open: open.count ?? 0, completed: completed.count ?? 0 };
 }

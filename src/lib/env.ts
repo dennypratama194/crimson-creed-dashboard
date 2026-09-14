@@ -47,5 +47,3 @@ export function serverEnv() {
   }
   return cachedServerEnv;
 }
-
-export const appUrl = publicEnv.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";

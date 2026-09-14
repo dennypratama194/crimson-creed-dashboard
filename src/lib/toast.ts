@@ -55,23 +55,3 @@ export function useActionToast(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, successMessage]);
 }
-
-/** Standard result shape returned by our server actions. */
-export type ActionOutcome = { ok: boolean; error?: string } | undefined;
-
-/**
- * Toast the outcome of an action result. Returns the same `ok` boolean so
- * callers can branch (`if (reportOutcome(res, "Saved")) router.refresh()`).
- */
-export function reportOutcome(
-  result: ActionOutcome,
-  successMessage: string,
-  fallbackError = "Something went wrong.",
-): boolean {
-  if (result && result.ok) {
-    toast.success(successMessage);
-    return true;
-  }
-  toast.error(result?.error ?? fallbackError);
-  return false;
-}

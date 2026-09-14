@@ -1,54 +1,15 @@
 import "server-only";
 
-import { getRecentActivity, type ActivityEntry } from "@/lib/db/activity";
-import { getCashBalance, getCashSummary } from "@/lib/db/cash";
-import { listInventory, type InventoryLine } from "@/lib/db/inventory";
-import { getPayrollAttention } from "@/lib/db/payroll";
-import {
-  getPendingProductionCount,
-  type EarningsSummary,
-} from "@/lib/db/production";
-import {
-  getSubmissionAttention,
-  type MemberSubmissionAlert,
-} from "@/lib/db/submissions";
+import type { AdminDashboardPayload } from "@/lib/database.types";
+import type { EarningsSummary } from "@/lib/db/production";
+import type { MemberSubmissionAlert } from "@/lib/db/submissions";
 import type { Notification } from "@/lib/db/notifications";
-import {
-  getOrdersNeedingAttention,
-  listAdminOrders,
-  type AdminOrderRow,
-  type Order,
-} from "@/lib/db/orders";
+import type { Order } from "@/lib/db/orders";
 import { pctDelta, type KpiTrend } from "@/lib/kpi";
 import { createClient } from "@/lib/supabase/server";
 
-// Widest window the dashboard chart can show. The client-side range toggle
-// (7 / 14 / 30 / 90 days) slices this down, so one query covers every option.
-const TREND_DAYS = 90;
-
-/** UTC midnight `n` days before today. */
-function utcDaysAgo(n: number): Date {
-  const now = new Date();
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - n),
-  );
-}
-
-export type TrendPoint = { date: string; count: number };
-
-/** Buckets order timestamps into one entry per day for the last TREND_DAYS. */
-function bucketByDay(rows: { created_at: string }[]): TrendPoint[] {
-  const buckets = new Map<string, number>();
-  for (let i = TREND_DAYS - 1; i >= 0; i--) {
-    buckets.set(utcDaysAgo(i).toISOString().slice(0, 10), 0);
-  }
-  for (const row of rows) {
-    const key = row.created_at.slice(0, 10);
-    const current = buckets.get(key);
-    if (current !== undefined) buckets.set(key, current + 1);
-  }
-  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
-}
+/** One UTC day of the 90-day order trend; the chart slices it per range. */
+export type TrendPoint = AdminDashboardPayload["orderTrend"][number];
 
 export type AdminDashboard = {
   kpis: {
@@ -69,138 +30,59 @@ export type AdminDashboard = {
       completedOrders: KpiTrend;
     };
   };
-  attention: {
-    paymentsToVerify: number;
-    toProcess: number;
-    toDistribute: number;
-    productionToReview: number;
-    draftPayrollRuns: number;
-    unpaidPayrollTotal: number;
-    submissionsToReview: number;
-    membersNotSubmitted: number;
-  };
+  attention: AdminDashboardPayload["attention"];
   orderTrend: TrendPoint[];
-  recentActivity: ActivityEntry[];
-  lowStockItems: InventoryLine[];
-  recentOrders: AdminOrderRow[];
+  recentActivity: AdminDashboardPayload["recentActivity"];
+  lowStockItems: AdminDashboardPayload["lowStockItems"];
+  recentOrders: AdminDashboardPayload["recentOrders"];
 };
 
+/**
+ * One round-trip: `admin_dashboard()` (migration 0056) returns every count,
+ * the 90-day trend and the small row lists, Super Admin-gated inside the RPC.
+ * Only the percentage deltas are derived here.
+ */
 export async function getAdminDashboard(): Promise<AdminDashboard> {
   const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_dashboard");
+  if (error) throw error;
 
-  // "This period" is the last 7 days; "last period" the 7 days before that.
-  const periodStart = utcDaysAgo(7).toISOString();
-  const prevPeriodStart = utcDaysAgo(14).toISOString();
-
-  const [
-    activeMembers,
-    orders7d,
-    completedOrders,
-    trendRows,
-    attention,
-    recentActivity,
-    inventory,
-    recent,
-    productionToReview,
-    payrollAttention,
-    companyCash,
-    submissionAttention,
-    ordersPrev7d,
-    completedThisPeriod,
-    newActiveThisPeriod,
-    cashThisPeriod,
-  ] = await Promise.all([
-    supabase
-      .from("members")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE"),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", periodStart),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "COMPLETED"),
-    supabase
-      .from("orders")
-      .select("created_at")
-      .gte("created_at", utcDaysAgo(TREND_DAYS - 1).toISOString())
-      .order("created_at", { ascending: true }),
-    getOrdersNeedingAttention(),
-    getRecentActivity(8),
-    listInventory({ page: 1 }),
-    listAdminOrders({ page: 1 }),
-    getPendingProductionCount(),
-    getPayrollAttention(),
-    getCashBalance(),
-    getSubmissionAttention(),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", prevPeriodStart)
-      .lt("created_at", periodStart),
-    supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("completed_at", periodStart),
-    supabase
-      .from("members")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE")
-      .gte("created_at", periodStart),
-    getCashSummary({ from: periodStart }),
-  ]);
-
-  const activeMembersNow = activeMembers.count ?? 0;
-  const orders7dNow = orders7d.count ?? 0;
-  const completedOrdersNow = completedOrders.count ?? 0;
-
-  const companyCashPrev =
-    Math.round((companyCash - cashThisPeriod.net) * 100) / 100;
-  const activeMembersPrev = activeMembersNow - (newActiveThisPeriod.count ?? 0);
-  const completedOrdersPrev =
-    completedOrdersNow - (completedThisPeriod.count ?? 0);
-  const ordersPrev7dCount = ordersPrev7d.count ?? 0;
+  const k = data.kpis;
+  const companyCashPrev = Math.round((k.companyCash - k.cashNet7d) * 100) / 100;
+  const activeMembersPrev = k.activeMembers - k.newActiveMembers7d;
+  const completedOrdersPrev = k.completedOrders - k.completedOrders7d;
 
   return {
     kpis: {
-      activeMembers: activeMembersNow,
-      orders7d: orders7dNow,
-      completedOrders: completedOrdersNow,
-      lowStock: inventory.lowStockCount,
-      companyCash,
+      activeMembers: k.activeMembers,
+      orders7d: k.orders7d,
+      completedOrders: k.completedOrders,
+      lowStock: k.lowStock,
+      companyCash: k.companyCash,
       trends: {
         companyCash: {
           previous: companyCashPrev,
-          delta: pctDelta(companyCash, companyCashPrev),
+          delta: pctDelta(k.companyCash, companyCashPrev),
         },
         activeMembers: {
           previous: activeMembersPrev,
-          delta: pctDelta(activeMembersNow, activeMembersPrev),
+          delta: pctDelta(k.activeMembers, activeMembersPrev),
         },
         orders7d: {
-          previous: ordersPrev7dCount,
-          delta: pctDelta(orders7dNow, ordersPrev7dCount),
+          previous: k.ordersPrev7d,
+          delta: pctDelta(k.orders7d, k.ordersPrev7d),
         },
         completedOrders: {
           previous: completedOrdersPrev,
-          delta: pctDelta(completedOrdersNow, completedOrdersPrev),
+          delta: pctDelta(k.completedOrders, completedOrdersPrev),
         },
       },
     },
-    attention: {
-      ...attention,
-      productionToReview,
-      draftPayrollRuns: payrollAttention.draftRuns,
-      unpaidPayrollTotal: payrollAttention.unpaidFinalizedTotal,
-      submissionsToReview: submissionAttention.toReview,
-      membersNotSubmitted: submissionAttention.notSubmittedThisMonth,
-    },
-    orderTrend: bucketByDay(trendRows.data ?? []),
-    recentActivity,
-    lowStockItems: inventory.rows.slice(0, 5),
-    recentOrders: recent.rows.slice(0, 6),
+    attention: data.attention,
+    orderTrend: data.orderTrend,
+    recentActivity: data.recentActivity,
+    lowStockItems: data.lowStockItems,
+    recentOrders: data.recentOrders,
   };
 }
 

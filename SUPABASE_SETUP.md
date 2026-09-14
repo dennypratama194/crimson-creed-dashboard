@@ -89,72 +89,55 @@ npx supabase login
 #       when prompted (or pass it: --password "<db password>").
 npx supabase link --project-ref <your-ref>
 
-# 4A.3  Push all migrations. It prints the list of 17 files and asks to
+# 4A.3  Push all migrations. It prints the list of pending files and asks to
 #       confirm — type "y".
 npx supabase db push
 ```
 
 Expected: `Applying migration 0001_init_helpers.sql...` … through
-`0017_item_images.sql`, ending with `Finished supabase db push.`
+`0058_query_indexes.sql`, ending with `Finished supabase db push.`
 
-Optional — regenerate the typed schema (the committed
-`src/lib/database.types.ts` already matches the migrations, so this is only
-needed if you later change a migration):
-
-```bash
-npm run db:types
-```
+The committed `src/lib/database.types.ts` is hand-maintained and already matches
+the migrations — you do not need `npm run db:types` for setup (see
+`DEPLOYMENT.md` → Database types before regenerating it).
 
 ### Method B — SQL Editor (no CLI)
 
 Dashboard → **SQL Editor** → **New query**. Open each file in
-`supabase/migrations/` **in numeric order** and run them one at a time:
-
-```
-0001_init_helpers.sql
-0002_enums.sql
-0003_members.sql
-0004_items.sql
-0005_orders.sql
-0006_order_items.sql
-0007_inventory.sql
-0008_notifications.sql
-0009_order_timeline.sql
-0010_activity_audit.sql
-0011_settings.sql
-0012_auth_helpers.sql
-0013_rpc.sql
-0014_rls.sql
-0015_item_rpc.sql
-0016_settings_rpc.sql
-0017_item_images.sql
-```
+`supabase/migrations/` **in numeric order** (`0001_init_helpers.sql` →
+`0058_query_indexes.sql`; `ls supabase/migrations` lists them) and run them one
+at a time.
 
 Each should report **Success**. If one fails, stop and fix before continuing —
-they depend on each other. (With this method you skip `npm run db:types`; the
-committed types file is correct.)
+they depend on each other. This method does not record migration history; if
+you later switch to the CLI, mark them applied first with
+`npx supabase migration repair --status applied <version>`.
+
+Do **not** run `pending-migrations.sql` — it is a superseded one-off script
+(see `DEPLOYMENT.md`).
 
 ---
 
 ## 5. Seed development data
 
-This creates ~15 fictional member accounts (through the Supabase Auth admin
-API), ~17 catalogue items, opening stock, and a spread of orders across every
-status. **It wipes existing seeded data first** — only run it against a throwaway
-dev project.
+This creates fictional member accounts (through the Supabase Auth admin API),
+catalogue items, opening stock, and a spread of orders across every status.
+**It wipes existing seeded data first** and refuses to run unless
+`SUPABASE_ENV="development"` — only run it against a throwaway dev project.
 
 ```bash
 npm run db:seed
 ```
 
-At the end it prints a credentials table. Keep it. The important ones:
+At the end it prints a credentials table. Keep it. Sign-in is by **username**
+(no email in the UI). The important ones:
 
-| Login                           | Password           | Role                                             |
-| ------------------------------- | ------------------ | ------------------------------------------------ |
-| `vincent_crane@crimson.local`   | `Crimson#vincent1` | Super Admin                                      |
-| `marlow_dietrich@crimson.local` | `Crimson#marlow1`  | Super Admin                                      |
-| `sable_ruiz@crimson.local`      | `Crimson#sable1`   | Member                                           |
-| `hugo_marsh@crimson.local`      | `Crimson#hugo1`    | Member — **inactive** (login blocked on purpose) |
+| Username          | Password           | Role                                             |
+| ----------------- | ------------------ | ------------------------------------------------ |
+| `vincent_crane`   | `Crimson#vincent1` | Super Admin                                      |
+| `marlow_dietrich` | `Crimson#marlow1`  | Super Admin                                      |
+| `sable_ruiz`      | `Crimson#sable1`   | Member                                           |
+| `hugo_marsh`      | `Crimson#hugo1`    | Member — **inactive** (login blocked on purpose) |
 
 Password pattern for the rest: `Crimson#<first-name>1`.
 
@@ -166,8 +149,7 @@ Password pattern for the rest: `Crimson#<first-name>1`.
 npm run dev
 ```
 
-Open <http://localhost:3000>, sign in as `vincent_crane@crimson.local` /
-`Crimson#vincent1`.
+Open <http://localhost:3000>, sign in as `vincent_crane` / `Crimson#vincent1`.
 
 ---
 
@@ -175,16 +157,15 @@ Open <http://localhost:3000>, sign in as `vincent_crane@crimson.local` /
 
 - **Admin dashboard** shows non-zero KPIs and a "needs attention" list.
 - **Orders** (`/admin/orders`) has ~30–50 rows with mixed statuses.
-- Sign out, sign in as `sable_ruiz@crimson.local` / `Crimson#sable1`:
+- Sign out, sign in as `sable_ruiz` / `Crimson#sable1`:
   - **New order** → add an item, place it → lands on the order page as
     `PENDING` / `Unpaid`.
-  - Click **I've paid**.
+  - Click **I've paid** and choose the Super Admin you paid.
 - Sign back in as the admin, open that order, run
   **Verify payment → Start processing → Record distribution → Complete**.
-- Try signing in as `hugo_marsh@crimson.local` — should be refused
-  ("account is inactive").
+- Try signing in as `hugo_marsh` — should be refused ("account is inactive").
 
-The Playwright spec `e2e/acceptance.spec.ts` automates this exact flow — see
+The Playwright specs in `e2e/` automate this flow and the access checks — see
 `e2e/README.md`.
 
 ---

@@ -11,7 +11,15 @@ import { ItemThumb } from "@/components/patterns/item-thumb";
 
 const BUCKET = "item-images";
 const MAX_BYTES = 2 * 1024 * 1024;
-const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+// The object key's extension comes from the validated MIME type, never the
+// user-supplied filename. The bucket enforces the same type + size list.
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+const ACCEPTED = Object.keys(EXTENSION_BY_TYPE);
 
 export function ImageUploadField({
   name = "imageUrl",
@@ -29,7 +37,8 @@ export function ImageUploadField({
 
   async function onFile(file: File) {
     setError(null);
-    if (!ACCEPTED.includes(file.type)) {
+    const ext = EXTENSION_BY_TYPE[file.type];
+    if (!ext) {
       setError("Use a PNG, JPEG, WebP or GIF image.");
       return;
     }
@@ -41,7 +50,6 @@ export function ImageUploadField({
     setBusy(true);
     try {
       const supabase = createClient();
-      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
       const path = `${crypto.randomUUID()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from(BUCKET)

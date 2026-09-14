@@ -124,58 +124,14 @@ export type Payslip = PayrollRunLine & {
   run_status: PayrollRunStatus;
 };
 
-/** The current member's payroll lines across every run (RLS scopes to self). */
+/**
+ * The calling member's own payroll lines across every run, newest first, joined
+ * to their run in SQL by `my_payslips()` (0057). Scoped to the caller even for
+ * a Super Admin, whose RLS view would otherwise be every member's lines.
+ */
 export async function listMyPayslips(): Promise<Payslip[]> {
   const supabase = await createClient();
-
-  const { data: lines } = await supabase
-    .from("payroll_run_lines")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (!lines || lines.length === 0) return [];
-
-  const { data: runs } = await supabase
-    .from("payroll_runs")
-    .select("id, run_number, period_start, period_end, status")
-    .in("id", [...new Set(lines.map((l) => l.payroll_run_id))]);
-
-  const byRun = new Map((runs ?? []).map((r) => [r.id, r]));
-
-  return lines
-    .map((l) => {
-      const run = byRun.get(l.payroll_run_id);
-      if (!run) return null;
-      return {
-        ...l,
-        run_number: run.run_number,
-        period_start: run.period_start,
-        period_end: run.period_end,
-        run_status: run.status,
-      } satisfies Payslip;
-    })
-    .filter((v): v is Payslip => v !== null);
-}
-
-export async function getPayrollAttention(): Promise<{
-  draftRuns: number;
-  unpaidFinalizedTotal: number;
-}> {
-  const supabase = await createClient();
-  const [draft, finalized] = await Promise.all([
-    supabase
-      .from("payroll_runs")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "DRAFT"),
-    supabase
-      .from("payroll_runs")
-      .select("total_amount")
-      .eq("status", "FINALIZED"),
-  ]);
-  return {
-    draftRuns: draft.count ?? 0,
-    unpaidFinalizedTotal: (finalized.data ?? []).reduce(
-      (sum, r) => sum + r.total_amount,
-      0,
-    ),
-  };
+  const { data, error } = await supabase.rpc("my_payslips");
+  if (error) throw error;
+  return data ?? [];
 }

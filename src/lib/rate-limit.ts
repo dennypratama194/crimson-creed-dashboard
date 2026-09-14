@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createLocalLimiter, type RateLimitRule } from "@/lib/rate-limit-local";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+export type { RateLimitRule };
 
 /**
  * Shared sliding-window rate limiter, backed by the `hit_auth_throttle` /
@@ -10,27 +13,31 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * notification out to every Super Admin, so they are the abuse paths worth
  * bounding.
  *
- * Best-effort by design: any failure (RPC missing, service key absent, network)
- * fails OPEN so a broken limiter never blocks legitimate work. Failures are
- * logged so an outage is visible in platform logs.
+ * When the RPC is unavailable (network, service key absent, migration missing)
+ * the caller picks what happens, and the failure is logged either way:
+ *  - `"open"` (default, member actions): allow. These actions are already
+ *    authenticated and RLS/RPC-authorized; the limiter only bounds spam.
+ *  - `"local"` (auth endpoints): fall back to an in-process limiter so a
+ *    database outage does not silently remove brute-force protection. It is
+ *    deliberately not fail-closed — that would lock every member out of the
+ *    app for the length of the outage.
+ * The limiter is never an authorization boundary.
  */
 
-export type RateLimitRule = {
-  /** Max attempts allowed inside the window before the block kicks in. */
-  limit: number;
-  /** Rolling window, seconds. Default 60. */
-  windowSeconds?: number;
-  /** How long a tripped limiter stays blocked, seconds. Default = windowSeconds. */
-  blockSeconds?: number;
-};
+export type RateLimitFallback = "open" | "local";
+
+const localLimiter = createLocalLimiter();
 
 /** Records one hit against `key`. Returns seconds to wait (0 = allowed). */
 export async function rateLimitHit(
   key: string,
   rule: RateLimitRule,
+  onUnavailable: RateLimitFallback = "open",
 ): Promise<number> {
   const windowSeconds = rule.windowSeconds ?? 60;
   const blockSeconds = rule.blockSeconds ?? windowSeconds;
+  const fallback = () =>
+    onUnavailable === "local" ? localLimiter.hit(key, rule) : 0;
   try {
     const { data, error } = await createAdminClient().rpc("hit_auth_throttle", {
       p_key: key,
@@ -39,18 +46,19 @@ export async function rateLimitHit(
       p_block_seconds: blockSeconds,
     });
     if (error || typeof data !== "number") {
-      if (error) console.error("[rate-limit] limiter unavailable", error);
-      return 0;
+      console.error("[rate-limit] limiter unavailable", error ?? "no result");
+      return fallback();
     }
     return data;
   } catch (err) {
     console.error("[rate-limit] limiter threw", err);
-    return 0;
+    return fallback();
   }
 }
 
 /** Resets a counter after a legitimate success. Best-effort. */
 export async function rateLimitClear(key: string): Promise<void> {
+  localLimiter.clear(key);
   try {
     await createAdminClient().rpc("clear_auth_throttle", { p_key: key });
   } catch {

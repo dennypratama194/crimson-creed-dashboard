@@ -55,15 +55,3 @@ export async function getUnreadNotificationCount(): Promise<number> {
     .is("read_at", null);
   return count ?? 0;
 }
-
-export async function getRecentNotifications(
-  limit = 5,
-): Promise<Notification[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("notifications")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  return data ?? [];
-}

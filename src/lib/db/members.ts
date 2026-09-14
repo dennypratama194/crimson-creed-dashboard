@@ -53,18 +53,17 @@ export async function listMembers(options: {
 
   const rows = data ?? [];
 
-  // Order counts only for the members on this page — not a whole-table scan.
+  // Order counts only for the members on this page, grouped in SQL by
+  // `member_order_counts()` (0057) instead of pulling every order row.
   const counts = new Map<string, number>();
   if (rows.length > 0) {
-    const { data: orderRows } = await supabase
-      .from("orders")
-      .select("member_id")
-      .in(
-        "member_id",
-        rows.map((m) => m.id),
-      );
-    for (const row of orderRows ?? []) {
-      counts.set(row.member_id, (counts.get(row.member_id) ?? 0) + 1);
+    const { data: countRows, error: countError } = await supabase.rpc(
+      "member_order_counts",
+      { p_member_ids: rows.map((m) => m.id) },
+    );
+    if (countError) throw countError;
+    for (const row of countRows ?? []) {
+      counts.set(row.member_id, row.order_count);
     }
   }
 

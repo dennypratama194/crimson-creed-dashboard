@@ -59,6 +59,7 @@ export async function getPayEligibleProducts(): Promise<PayEligibleProduct[]> {
 
 // ── member: my logs + earnings ─────────────────────────────────────────────
 export async function listMyProductionLogs(options: {
+  memberId: string;
   page?: number;
   scope?: ProductionListScope;
 }): Promise<{
@@ -72,10 +73,14 @@ export async function listMyProductionLogs(options: {
   const pageSize = PRODUCTION_LOG_PAGE_SIZE;
   const offset = (page - 1) * pageSize;
 
+  // Scope to the caller explicitly — a Super Admin's RLS view is every
+  // member's logs, not just their own.
   let query = supabase
     .from("production_logs")
     .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false });
+    .eq("member_id", options.memberId)
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.scope && options.scope !== "all") {
     query = query.eq("status", SCOPE_STATUS[options.scope]);
@@ -97,30 +102,15 @@ export type EarningsSummary = {
   paidAmount: number;
 };
 
-/** Money-at-a-glance for the member production page. RLS scopes rows to self. */
+/**
+ * Money-at-a-glance for the production page, summed in SQL by
+ * `my_earnings_summary()` (0057) over the caller's own logs only.
+ */
 export async function getMyEarningsSummary(): Promise<EarningsSummary> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("production_logs")
-    .select("status, payout_amount, payroll_run_id");
+  const { data, error } = await supabase.rpc("my_earnings_summary");
   if (error) throw error;
-
-  const summary: EarningsSummary = {
-    pendingCount: 0,
-    pendingAmount: 0,
-    approvedUnpaidAmount: 0,
-    paidAmount: 0,
-  };
-  for (const row of data ?? []) {
-    if (row.status === "PENDING") {
-      summary.pendingCount += 1;
-      summary.pendingAmount += row.payout_amount;
-    } else if (row.status === "APPROVED") {
-      if (row.payroll_run_id) summary.paidAmount += row.payout_amount;
-      else summary.approvedUnpaidAmount += row.payout_amount;
-    }
-  }
-  return summary;
+  return data;
 }
 
 // ── admin: rates ──────────────────────────────────────────────────────────
@@ -215,13 +205,4 @@ export async function listAdminProductionLogs(options: {
     page,
     pageSize,
   };
-}
-
-export async function getPendingProductionCount(): Promise<number> {
-  const supabase = await createClient();
-  const { count } = await supabase
-    .from("production_logs")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "PENDING");
-  return count ?? 0;
 }

@@ -2,6 +2,7 @@ import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { Banknote, FlaskConical, Plus, Wallet } from "lucide-react";
 
+import { requireActiveMember } from "@/lib/auth/session";
 import { PAYROLL_RUN_STATUS_LABEL } from "@/lib/constants/labels";
 import { PAYROLL_RUN_STATUS_TONE } from "@/lib/constants/status-config";
 import {
@@ -49,7 +50,7 @@ function one(value: string | string[] | undefined) {
 export default async function ProductionPage({
   searchParams,
 }: PageProps<"/production">) {
-  const sp = await searchParams;
+  const [member, sp] = await Promise.all([requireActiveMember(), searchParams]);
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const rawScope = one(sp.scope);
   const scope: ProductionListScope = (
@@ -60,7 +61,7 @@ export default async function ProductionPage({
 
   const [products, logs, earnings, payslips] = await Promise.all([
     getPayEligibleProducts(),
-    listMyProductionLogs({ page, scope }),
+    listMyProductionLogs({ memberId: member.id, page, scope }),
     getMyEarningsSummary(),
     listMyPayslips(),
   ]);

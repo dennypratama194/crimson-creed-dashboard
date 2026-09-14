@@ -173,15 +173,6 @@ export type MemberSubmissionAlert = {
   state: "MISSING" | MemberSubmissionStatus;
 };
 
-/** Current-month status for the logged-in member — drives the dashboard nag. */
-export async function getMemberSubmissionAlert(
-  memberId: string,
-): Promise<MemberSubmissionAlert> {
-  const periodMonth = currentPeriodMonth();
-  const { submission } = await getMyMonthSubmission(periodMonth, memberId);
-  return { periodMonth, state: submission ? submission.status : "MISSING" };
-}
-
 /**
  * Closed months the current member still owes a CONFIRMED submission for
  * (Phase 17b order gate). Empty unless a Super Admin has switched the gate on.
@@ -376,69 +367,5 @@ export async function getAdminSubmissionMonth(
     rows,
     totals,
     counts,
-  };
-}
-
-/** Distinct months that have a period row, newest first, as `YYYY-MM-01`. */
-export async function listSubmissionMonths(): Promise<string[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("submission_periods")
-    .select("period_month")
-    .order("period_month", { ascending: false });
-  if (error) throw error;
-
-  const months = (data ?? []).map((r) => r.period_month);
-  const current = currentPeriodMonth();
-  if (!months.includes(current)) months.unshift(current);
-  return months;
-}
-
-export async function getPendingSubmissionCount(): Promise<number> {
-  const supabase = await createClient();
-  const { count } = await supabase
-    .from("member_submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "PENDING");
-  return count ?? 0;
-}
-
-export type SubmissionAttention = {
-  toReview: number;
-  notSubmittedThisMonth: number;
-};
-
-/** Counts for the admin dashboard: pending reviews + who still owes this month. */
-export async function getSubmissionAttention(): Promise<SubmissionAttention> {
-  const supabase = await createClient();
-  const periodMonth = currentPeriodMonth();
-
-  const [pending, activeMembers, period] = await Promise.all([
-    getPendingSubmissionCount(),
-    supabase
-      .from("members")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE"),
-    supabase
-      .from("submission_periods")
-      .select("id")
-      .eq("period_month", periodMonth)
-      .maybeSingle(),
-  ]);
-
-  const activeCount = activeMembers.count ?? 0;
-  let confirmed = 0;
-  if (period.data) {
-    const { count } = await supabase
-      .from("member_submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("period_id", period.data.id)
-      .eq("status", "CONFIRMED");
-    confirmed = count ?? 0;
-  }
-
-  return {
-    toReview: pending,
-    notSubmittedThisMonth: Math.max(0, activeCount - confirmed),
   };
 }

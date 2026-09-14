@@ -84,13 +84,3 @@ export async function listAudit(options: {
     pageSize,
   };
 }
-
-export async function getRecentActivity(limit = 8): Promise<ActivityEntry[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("activity_logs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  return decorate(data ?? []);
-}
