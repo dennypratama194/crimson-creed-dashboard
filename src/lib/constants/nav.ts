@@ -2,19 +2,18 @@ import type { Route } from "next";
 import {
   Banknote,
   Boxes,
-  ClipboardCheck,
   ClipboardList,
   FlaskConical,
   Handshake,
   LayoutDashboard,
   Package,
+  PackageCheck,
   Radio,
   Recycle,
   ScrollText,
   ShoppingCart,
   Truck,
   Users,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,14 +39,18 @@ const MEMBER_SECTIONS: NavSection[] = [
         icon: ShoppingCart,
         matchPrefix: true,
       },
-      // Hidden from members for now — the production/piece-rate logic is still
-      // being worked out and we don't want members confused. Restore when asked.
-      // {
-      //   label: "Production",
-      //   href: "/production",
-      //   icon: FlaskConical,
-      //   matchPrefix: true,
-      // },
+      {
+        label: "Distribution",
+        href: "/distribution",
+        icon: PackageCheck,
+        matchPrefix: true,
+      },
+      {
+        label: "Production",
+        href: "/production",
+        icon: FlaskConical,
+        matchPrefix: true,
+      },
       {
         label: "Submissions",
         href: "/submissions",
@@ -77,23 +80,18 @@ const ADMIN_SECTIONS: NavSection[] = [
     ],
   },
   {
-    heading: "Production",
+    heading: "Operations",
     items: [
       {
-        label: "Review queue",
-        href: "/admin/production/logs",
-        icon: ClipboardCheck,
+        label: "Distribution",
+        href: "/admin/distribution",
+        icon: PackageCheck,
         matchPrefix: true,
       },
       {
-        label: "Pay rates",
-        href: "/admin/production/rates",
+        label: "Production",
+        href: "/admin/production",
         icon: FlaskConical,
-      },
-      {
-        label: "Payroll",
-        href: "/admin/payroll",
-        icon: Wallet,
         matchPrefix: true,
       },
     ],

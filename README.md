@@ -22,8 +22,8 @@ breakdown and every deferred module; `CLAUDE.md` holds the working rules.
   thumbnails; `/admin/inventory` ("Company stash") covers catalogue stock, raw
   materials, tools and seized property with an immutable movement ledger.
 - **Production & piece-rate payroll** — member production logs, Super Admin
-  approval, pay rates, payroll runs `DRAFT → FINALIZED → PAID` (the member
-  `/production` page exists but is hidden from the member nav for now).
+  approval, pay rates, payroll runs `DRAFT → FINALIZED → PAID`; members log work
+  and see their earnings + payslips under `/production`.
 - **Company cash** — single treasury ledger with reversals (`/admin/cash`).
 - **Suppliers** — Super-Admin-only price book (`/admin/suppliers`).
 - **Monthly material submissions** — member hand-ins of metal scrap / bottles /

@@ -1,10 +1,12 @@
 import type {
   CashDirection,
   DistributionStatus,
+  DrawStatus,
   MemberSubmissionStatus,
   OrderStatus,
   PayrollRunStatus,
   PaymentStatus,
+  ProductionAssignmentStatus,
   ProductionLogStatus,
 } from "@/lib/constants/enums";
 
@@ -42,6 +44,22 @@ export const PAYMENT_STATUS_TONE: Record<PaymentStatus, Tone> = {
 export const DISTRIBUTION_STATUS_TONE: Record<DistributionStatus, Tone> = {
   NOT_DISTRIBUTED: "gray",
   DISTRIBUTED: "success",
+};
+
+/** A consignment draw. OPEN money is still owed, so it reads as a warning. */
+export const DRAW_STATUS_TONE: Record<DrawStatus, Tone> = {
+  OPEN: "warning",
+  SETTLED: "success",
+  REVERSED: "gray",
+};
+
+export const PRODUCTION_ASSIGNMENT_STATUS_TONE: Record<
+  ProductionAssignmentStatus,
+  Tone
+> = {
+  UNPAID: "warning",
+  PAID: "success",
+  CANCELLED: "gray",
 };
 
 export const PRODUCTION_LOG_STATUS_TONE: Record<ProductionLogStatus, Tone> = {

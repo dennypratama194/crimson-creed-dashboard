@@ -8,7 +8,11 @@ import {
   ITEM_UNIT_LABEL,
   STOCK_TYPE_LABEL,
 } from "@/lib/constants/labels";
-import { listInventory } from "@/lib/db/inventory";
+import {
+  INVENTORY_STATUSES,
+  listInventory,
+  type InventoryStatus,
+} from "@/lib/db/inventory";
 import { formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { ItemThumb } from "@/components/patterns/item-thumb";
@@ -27,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { InventoryFilterBar } from "@/app/(app)/admin/inventory/inventory-filter-bar";
-import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
+import { InventoryRowActions } from "@/app/(app)/admin/inventory/inventory-row-actions";
 
 export const metadata: Metadata = { title: "Company stash" };
 
@@ -49,13 +53,22 @@ export default async function AdminInventoryPage({
     ? (rawType as StockType)
     : "all";
 
+  const rawStatus = one(sp.status);
+  const status: InventoryStatus = (
+    INVENTORY_STATUSES as readonly string[]
+  ).includes(rawStatus ?? "")
+    ? (rawStatus as InventoryStatus)
+    : "active";
+
   const { rows, total, pageSize } = await listInventory({
     page,
     search,
     stockType,
+    status,
   });
 
-  const isFiltered = Boolean(search) || stockType !== "all";
+  const isFiltered =
+    Boolean(search) || stockType !== "all" || status !== "active";
 
   return (
     <>
@@ -156,19 +169,14 @@ export default async function AdminInventoryPage({
                       </span>
                     </TableCell>
                     <TableCell>
-                      <StockBadge state={line.stock_state} />
+                      {line.archived_at ? (
+                        <Badge tone="gray">Archived</Badge>
+                      ) : (
+                        <StockBadge state={line.stock_state} />
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <StockDialog
-                        itemId={line.id}
-                        itemName={line.name}
-                        currentQuantity={line.current_quantity}
-                        trigger={
-                          <Button variant="ghost" size="sm">
-                            Adjust
-                          </Button>
-                        }
-                      />
+                      <InventoryRowActions line={line} />
                     </TableCell>
                     <TableCell className="text-right">
                       <ChevronRight

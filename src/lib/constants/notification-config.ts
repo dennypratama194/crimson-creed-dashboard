@@ -41,6 +41,11 @@ export const NOTIFICATION_CONFIG: Record<
   SUBMISSION_SUBMITTED: { icon: Recycle, tone: "info" },
   SUBMISSION_CONFIRMED: { icon: CheckCircle2, tone: "success" },
   SUBMISSION_REJECTED: { icon: XCircle, tone: "error" },
+  DISTRIBUTION_ISSUED: { icon: PackageCheck, tone: "warning" },
+  DISTRIBUTION_SETTLED: { icon: CheckCircle2, tone: "success" },
+  DISTRIBUTION_REVERSED: { icon: Ban, tone: "gray" },
+  PRODUCTION_ASSIGNED: { icon: FlaskConical, tone: "info" },
+  PRODUCTION_ASSIGNMENT_PAID: { icon: Banknote, tone: "success" },
 };
 
 export const NOTIFICATION_FALLBACK = { icon: PackageX, tone: "gray" as Tone };

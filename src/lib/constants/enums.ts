@@ -160,6 +160,8 @@ export const REFERENCE_TYPES = [
   "SUPPLIER",
   "SUBMISSION",
   "RELATION",
+  "DISTRIBUTION",
+  "PRODUCTION_ASSIGNMENT",
 ] as const;
 export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
@@ -183,6 +185,11 @@ export const NOTIFICATION_TYPES = [
   "SUBMISSION_SUBMITTED",
   "SUBMISSION_CONFIRMED",
   "SUBMISSION_REJECTED",
+  "DISTRIBUTION_ISSUED",
+  "DISTRIBUTION_SETTLED",
+  "DISTRIBUTION_REVERSED",
+  "PRODUCTION_ASSIGNED",
+  "PRODUCTION_ASSIGNMENT_PAID",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -196,6 +203,7 @@ export const AUDIT_ACTIONS = [
   "ITEM_CREATED",
   "ITEM_UPDATED",
   "ITEM_ARCHIVED",
+  "ITEM_DELETED",
   "ORDER_CREATED",
   "ORDER_STATUS_CHANGED",
   "ORDER_CANCELLED",
@@ -226,8 +234,35 @@ export const AUDIT_ACTIONS = [
   "SUBMISSION_TARGETS_SET",
   "RELATION_CREATED",
   "RELATION_UPDATED",
+  "DISTRIBUTION_RATE_SET",
+  "DISTRIBUTION_RATE_REMOVED",
+  "DISTRIBUTION_ISSUED",
+  "DISTRIBUTION_SETTLED",
+  "DISTRIBUTION_REVERSED",
+  "PRODUCTION_ASSIGNMENT_CREATED",
+  "PRODUCTION_ASSIGNMENT_PAID",
+  "PRODUCTION_ASSIGNMENT_CANCELLED",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+/**
+ * A consignment draw: the member took stock and owes the company its cut.
+ * REVERSED is the mistake path — the stock went back and the debt is void.
+ *
+ * Named "draw", not "distribution": `DistributionStatus` already means
+ * NOT_DISTRIBUTED / DISTRIBUTED on an order, which is a different thing.
+ */
+export const DRAW_STATUSES = ["OPEN", "SETTLED", "REVERSED"] as const;
+export type DrawStatus = (typeof DRAW_STATUSES)[number];
+
+/** PAID is a bookkeeping label only — it posts nothing to company cash. */
+export const PRODUCTION_ASSIGNMENT_STATUSES = [
+  "UNPAID",
+  "PAID",
+  "CANCELLED",
+] as const;
+export type ProductionAssignmentStatus =
+  (typeof PRODUCTION_ASSIGNMENT_STATUSES)[number];
 
 export const THEME_PREFERENCES = ["light", "dark", "system"] as const;
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];

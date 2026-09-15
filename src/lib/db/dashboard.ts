@@ -1,7 +1,9 @@
 import "server-only";
 
-import type { AdminDashboardPayload } from "@/lib/database.types";
-import type { EarningsSummary } from "@/lib/db/production";
+import type {
+  AdminDashboardPayload,
+  DistributionSummaryPayload,
+} from "@/lib/database.types";
 import type { MemberSubmissionAlert } from "@/lib/db/submissions";
 import type { Notification } from "@/lib/db/notifications";
 import type { Order } from "@/lib/db/orders";
@@ -89,7 +91,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
 export type MemberDashboard = {
   counts: { open: number; completed: number; unread: number };
   trends: { completedOrders: KpiTrend };
-  earnings: EarningsSummary;
+  distribution: DistributionSummaryPayload;
   submissionAlert: MemberSubmissionAlert;
   /** Closed months owing a confirmed submission — ordering is locked while non-empty. */
   submissionDebt: string[];
@@ -104,7 +106,7 @@ type MemberDashboardPayload = {
   completed: number;
   completed7d: number;
   unread: number;
-  earnings: EarningsSummary;
+  distribution: DistributionSummaryPayload;
   submissionState: MemberSubmissionAlert["state"];
   periodMonth: string;
   activeOrders: Order[];
@@ -134,7 +136,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
         delta: pctDelta(d.completed, completedOrdersPrev),
       },
     },
-    earnings: d.earnings,
+    distribution: d.distribution,
     submissionAlert: {
       periodMonth: d.periodMonth,
       state: d.submissionState,

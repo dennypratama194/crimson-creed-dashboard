@@ -10,11 +10,11 @@ import {
   createOrderSchema,
   submitOrderPaymentSchema,
 } from "@/lib/validation/order";
+import { createProductionAssignmentSchema } from "@/lib/validation/production";
 import {
-  createPayrollRunSchema,
-  reviewProductionLogSchema,
-  submitProductionLogSchema,
-} from "@/lib/validation/production";
+  issueDistributionSchema,
+  reverseDistributionSchema,
+} from "@/lib/validation/distribution";
 import {
   setSubmissionGateSchema,
   submitMaterialSubmissionSchema,
@@ -128,43 +128,64 @@ describe("recordCashEntrySchema", () => {
   });
 });
 
-describe("production + payroll schemas", () => {
-  it("never accepts a payout or rate from the browser", () => {
-    const parsed = submitProductionLogSchema.parse({
+describe("distribution + production schemas", () => {
+  it("never accepts a rate or an owed amount from the browser", () => {
+    const parsed = issueDistributionSchema.parse({
+      memberId: ID,
       itemId: ID,
-      quantity: 4,
-      payout: 1_000_000,
-      unitRate: 999,
+      quantity: 1000,
+      unitRate: 1,
+      amountOwed: 0,
     });
-    expect(parsed).toEqual({ itemId: ID, quantity: 4 });
+    expect(parsed).toEqual({ memberId: ID, itemId: ID, quantity: 1000 });
   });
 
-  it("requires a reason to reject a production log", () => {
+  it("requires a whole draw quantity — a draw moves integer stock", () => {
     expect(
       firstError(
-        reviewProductionLogSchema.safeParse({ logId: ID, approve: false }),
-      ),
-    ).toBe("A reason is required to reject");
-    expect(
-      reviewProductionLogSchema.safeParse({ logId: ID, approve: true }).success,
-    ).toBe(true);
-  });
-
-  it("requires a payroll period that does not end before it starts", () => {
-    expect(
-      firstError(
-        createPayrollRunSchema.safeParse({
-          periodStart: "2026-09-10",
-          periodEnd: "2026-09-01",
+        issueDistributionSchema.safeParse({
+          memberId: ID,
+          itemId: ID,
+          quantity: 10.5,
         }),
       ),
-    ).toBe("The end date must be on or after the start date");
+    ).toBe("Use a whole number");
+  });
+
+  it("requires a reason to reverse a draw", () => {
     expect(
-      createPayrollRunSchema.safeParse({
-        periodStart: "2026-09-01",
-        periodEnd: "2026-09-01",
+      firstError(
+        reverseDistributionSchema.safeParse({ distributionId: ID, reason: "" }),
+      ),
+    ).toBe("A reason is required to reverse a draw");
+    expect(
+      reverseDistributionSchema.safeParse({
+        distributionId: ID,
+        reason: "Wrong quantity",
       }).success,
     ).toBe(true);
+  });
+
+  it("requires at least one person in charge on a production assignment", () => {
+    expect(
+      firstError(
+        createProductionAssignmentSchema.safeParse({
+          memberIds: [],
+          itemId: ID,
+          quantity: 5,
+        }),
+      ),
+    ).toBe("Pick who is in charge");
+  });
+
+  it("takes a crew — one assignment per person", () => {
+    const other = "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    const parsed = createProductionAssignmentSchema.parse({
+      memberIds: [ID, other],
+      itemId: ID,
+      quantity: 5,
+    });
+    expect(parsed.memberIds).toEqual([ID, other]);
   });
 });
 

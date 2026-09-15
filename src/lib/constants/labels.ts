@@ -4,6 +4,7 @@ import type {
   CashDirection,
   CashEntrySource,
   DistributionStatus,
+  DrawStatus,
   ItemCategory,
   ItemUnit,
   MemberRank,
@@ -13,6 +14,7 @@ import type {
   OrderStatus,
   PayrollRunStatus,
   PaymentStatus,
+  ProductionAssignmentStatus,
   ProductionLogStatus,
   StockType,
 } from "@/lib/constants/enums";
@@ -82,6 +84,21 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 export const DISTRIBUTION_STATUS_LABEL: Record<DistributionStatus, string> = {
   NOT_DISTRIBUTED: "Not distributed",
   DISTRIBUTED: "Distributed",
+};
+
+export const DRAW_STATUS_LABEL: Record<DrawStatus, string> = {
+  OPEN: "In progress",
+  SETTLED: "Done",
+  REVERSED: "Cancelled",
+};
+
+export const PRODUCTION_ASSIGNMENT_STATUS_LABEL: Record<
+  ProductionAssignmentStatus,
+  string
+> = {
+  UNPAID: "Not paid",
+  PAID: "Paid",
+  CANCELLED: "Cancelled",
 };
 
 export const PRODUCTION_LOG_STATUS_LABEL: Record<ProductionLogStatus, string> =

@@ -113,8 +113,10 @@ export default async function InventoryItemPage({
             />
           ) : (
             <>
-              <Table>
-                <TableHeader>
+              {/* Capped so the card keeps a steady height however long the
+                  history gets — the rows scroll inside it instead. */}
+              <Table scrollerClassName="max-h-[28rem] overflow-y-auto">
+                <TableHeader className="sticky top-0 z-10 bg-muted">
                   <TableRow>
                     <TableHead>When</TableHead>
                     <TableHead>Type</TableHead>

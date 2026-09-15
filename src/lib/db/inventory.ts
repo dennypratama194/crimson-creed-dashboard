@@ -15,6 +15,7 @@ export type InventoryLine = Pick<
   | "low_stock_threshold"
   | "image_url"
   | "stock_type"
+  | "archived_at"
 > & {
   current_quantity: number;
   stock_state: StockState;
@@ -23,16 +24,20 @@ export type InventoryLine = Pick<
 export const INVENTORY_PAGE_SIZE = 25;
 export const MOVEMENT_PAGE_SIZE = 20;
 
+/** Archived items are hidden by default; "archived" is how you get one back. */
+export const INVENTORY_STATUSES = ["active", "archived", "all"] as const;
+export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
+
 /**
- * Stock levels for non-archived items. Search, stock-type filter, ordering and
- * pagination run in Postgres on `items`; quantities are then fetched for the
- * page's items only. (The dashboard's whole-stash low-stock count lives in
- * `admin_dashboard()`.)
+ * Stock levels. Search, stock-type filter, ordering and pagination run in
+ * Postgres on `items`; quantities are then fetched for the page's items only.
+ * (The dashboard's whole-stash low-stock count lives in `admin_dashboard()`.)
  */
 export async function listInventory(options: {
   page?: number;
   search?: string;
   stockType?: StockType | "all";
+  status?: InventoryStatus;
 }): Promise<{
   rows: InventoryLine[];
   total: number;
@@ -47,12 +52,15 @@ export async function listInventory(options: {
   let query = supabase
     .from("items")
     .select(
-      "id, name, category, unit, low_stock_threshold, image_url, stock_type",
+      "id, name, category, unit, low_stock_threshold, image_url, stock_type, archived_at",
       { count: "exact" },
     )
-    .is("archived_at", null)
     .order("name", { ascending: true })
     .order("id", { ascending: true });
+
+  const status = options.status ?? "active";
+  if (status === "active") query = query.is("archived_at", null);
+  else if (status === "archived") query = query.not("archived_at", "is", null);
 
   // Literal substring match: escape LIKE wildcards, drop PostgREST's `*` alias.
   const search = options.search

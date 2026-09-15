@@ -17,15 +17,24 @@ The PRD (`Crimson_Creed_Operations_System_PRD.pdf`) is the source of truth.
 - Authorization is enforced in the proxy + server actions + RLS. The UI only
   hides controls; hiding is not a security boundary.
 - Members can cancel only their own `PENDING` orders.
-- Production pay is **piece-rate**. The per-unit rate, product name, and unit are
-  **snapshotted** onto `production_logs` at submission; changing a rate never
-  rewrites historical pay. Payout is computed **server-side**
-  (`quantity × snapshot rate`) — never trusted from the browser.
-- Member production logs require Super Admin approval (`PENDING → APPROVED /
-REJECTED`) before they count. A finalized `payroll_run` locks its approved
-  logs (`payroll_run_id`) so they cannot be re-reviewed or paid twice.
+- A distribution **draw** snapshots the company cut, item name and unit onto
+  `distributions` at issue; changing a rate never rewrites an existing debt.
+  `amount_owed` is computed **server-side** (`quantity × snapshot rate`) — never
+  trusted from the browser.
+- Neither a settled draw nor a paid production assignment posts to company cash.
+  Both statuses are records of what happened, not treasury movements. Do not
+  wire either into `cash_entries` without agreeing it first.
 - Soft-delete / inactive flags for anything referenced historically. No hard
-  deletes of referenced items or members.
+  deletes of referenced items or members. `delete_item` (0072, widened in 0073)
+  and the member delete are the only hard deletes. `delete_item` **clears the
+  item's stash history** (movements, inventory, cuts, supplier listings,
+  production assignments) but still **refuses** while the item sits on an
+  `order_items` row, a `distribution`, or a `submission_material_types` row —
+  money and seeded config, not stock history — naming which. It is the only
+  path allowed to delete `inventory_movements`: the append-only trigger admits a
+  DELETE only while the transaction-local `app.purging_item` GUC names that
+  exact item. Archiving / deactivating stays the path for anything with orders
+  or draws.
 - Audit log is append-only for non-service roles.
 
 ## Conventions
@@ -61,10 +70,47 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   path that mutates `items` visibility/price must do the same.
 - Every list has an intentional empty state; every async view has skeletons;
   errors are non-technical. Dangerous actions use a confirm dialog.
-- Production & piece-rate wages ARE implemented (Phase 14) — `production_rates`,
-  `production_logs`, `payroll_runs`, `payroll_run_lines`, under `/production` and
-  `/admin/production/*` + `/admin/payroll/*`. Approved production does **not** yet
-  touch inventory (deferred to 14f); do not wire that without agreeing it first.
+- Distribution (consignment draws) IS implemented (Phase 19, migrations
+  0059–0070) — `distribution_rates` (one row per drawable item; the org keeps a
+  cut for several items, not one) + `distributions`, under `/admin/distribution`
+  (+ `/admin/distribution/rates`) and a **read-only** `/distribution` for
+  members. Company cut only ever **prices an item that already
+  exists** — items are created in exactly one place (`/admin/inventory`). The
+  create-and-price shortcut from 0064 was dropped in 0068: item names are not
+  unique and the cut links by `item_id`, so typing a name there could silently
+  make a second stash item and split the stock away from the cut. Board
+  totals come from `distribution_summary()` (0066, Super-Admin gated, org-wide);
+  the member page uses `my_distribution_summary()`, which is caller-scoped even
+  for a Super Admin. A member draws stash stock and owes `quantity × cut` back;
+  `issue_distribution` inserts the debt, posts a `DISTRIBUTION` movement and
+  decrements the stash in one transaction, refusing outright if stock is short.
+  `OPEN → SETTLED`, or `REVERSED` to undo a mis-entered draw (returns the
+  stock). Eligibility is by **category**: only `PRODUCT` items can carry a cut
+  (0070, enforced in `set_distribution_rate`, the same rule the production
+  assignment picker uses). Stock type is irrelevant — 0061's stash-only rule was
+  dropped in 0069 — so a catalogue PRODUCT is both orderable and drawable:
+  `items.price` (what a member pays to buy) and `distribution_rates.unit_rate`
+  (what they owe per unit drawn) are unrelated numbers on the same item, and
+  both paths move the same stock. What a member sells it for on the street is
+  their own margin and is deliberately **not** tracked.
+- Production is an **assignment board** (Phase 19), not piece-rate work.
+  `production_assignments` records who is in charge of producing what, flagged
+  under `/admin/production`. A job is **one** `production_assignments` row with
+  a crew inside it: `production_assignment_members` (0067) holds one line per
+  person, each with its own `UNPAID / PAID` flag, so a member is marked paid
+  without touching the rest. The job's `status` is a **rollup** maintained by
+  `app.sync_assignment_status()` — `PAID` only once every line is paid,
+  `CANCELLED` terminal and never recomputed — which keeps board filters and the
+  dashboard tile simple reads. `create_production_assignment` takes a `uuid[]`
+  of members; one invalid member rolls back the whole job. RLS: a member reaches
+  a job through their own crew line and sees **only that line**, never a
+  crewmate's name or pay state. `/production` is read-only for members (an
+  unassigned member sees an empty state). Members never file or review anything.
+- The piece-rate module it replaced (`production_rates`, `production_logs`,
+  `payroll_runs`, `payroll_run_lines` and their RPCs, plus `my_earnings_summary`
+  / `my_payslips`) is **dormant**: the tables and functions still exist and
+  still carry their RLS, but nothing in the app reads or writes them. Do not
+  build new UI on them; do not drop them without agreeing it first.
 - Suppliers ARE implemented (Phase 16) — `suppliers` + `supplier_items` (a price
   book: buy / sell / max-quanti per supplier-item pair), audited CRUD RPCs,
   Super-Admin-only RLS, under `/admin/suppliers`. Super Admin only: members never
@@ -109,9 +155,9 @@ REJECTED`) before they count. A finalized `payroll_run` locks its approved
   and never reach `create_order`. `/admin/items` shows CATALOGUE only;
   `/admin/inventory` ("Company stash") shows every type and can create any of
   them. Items carry an optional `image_url` thumbnail (`item-images` bucket).
-- Do not build the remaining future modules (member inventory requests, the
-  production→inventory movement hookup) — the schema leaves room; the app does
-  not implement them.
+- Do not build the remaining future modules (member inventory requests, a
+  production→inventory movement hookup, per-draw cash posting) — the schema
+  leaves room; the app does not implement them.
 - Run `npm run validate` before committing. Implement one phase at a time.
 
 ## Typography note (deviation from global standard)

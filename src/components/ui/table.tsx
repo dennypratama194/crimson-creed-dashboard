@@ -4,7 +4,18 @@ import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { cn } from "@/lib/utils";
 
-export function Table({ className, ...props }: ComponentProps<"table">) {
+export function Table({
+  className,
+  scrollerClassName,
+  ...props
+}: ComponentProps<"table"> & {
+  /**
+   * Extra classes for the scroll container that owns the border. Use it to cap
+   * the height of a long table (`max-h-…`) so the page does not grow with the
+   * row count; the rows then scroll inside the card.
+   */
+  scrollerClassName?: string;
+}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
 
@@ -33,7 +44,10 @@ export function Table({ className, ...props }: ComponentProps<"table">) {
     <div className="relative">
       <div
         ref={scrollerRef}
-        className="w-full overflow-x-auto rounded-xl border border-border"
+        className={cn(
+          "w-full overflow-x-auto rounded-xl border border-border",
+          scrollerClassName,
+        )}
       >
         <table
           className={cn(

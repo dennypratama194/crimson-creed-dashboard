@@ -1,87 +1,64 @@
 import { z } from "zod";
 
-import { ITEM_UNITS } from "@/lib/constants/enums";
+/**
+ * Production assignments (Phase 19). A Super Admin records who is in charge of
+ * a job and flips the paid flag; members never file one, so there is no submit
+ * or review schema here.
+ */
 
-/** ISO date (YYYY-MM-DD), as emitted by <input type="date">. */
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker");
-
-export const submitProductionLogSchema = z.object({
+export const createProductionAssignmentSchema = z.object({
+  // A job can have a crew in charge; each member gets their own assignment row
+  // so they are tracked and paid individually.
+  memberIds: z
+    .array(z.uuid())
+    .min(1, "Pick who is in charge")
+    .max(50, "That is too many people for one assignment"),
   itemId: z.uuid("Pick a product"),
   quantity: z
-    .number({ error: "Enter how much you processed" })
+    .number({ error: "Enter how much they are producing" })
     .positive("Must be greater than zero")
-    .max(1_000_000, "That quantity is too large"),
-  occurredAt: isoDate.nullish(),
+    .max(10_000_000, "That quantity is too large"),
   note: z
     .string()
     .trim()
     .max(300, "Keep the note under 300 characters")
     .nullish(),
 });
-export type SubmitProductionLogInput = z.infer<
-  typeof submitProductionLogSchema
+export type CreateProductionAssignmentInput = z.infer<
+  typeof createProductionAssignmentSchema
 >;
 
-export const reviewProductionLogSchema = z
-  .object({
-    logId: z.uuid(),
-    approve: z.boolean(),
-    note: z.string().trim().max(300, "Keep it under 300 characters").nullish(),
-  })
-  .refine((v) => v.approve || !!v.note?.trim(), {
-    error: "A reason is required to reject",
-    path: ["note"],
-  });
-export type ReviewProductionLogInput = z.infer<
-  typeof reviewProductionLogSchema
->;
-
-export const createProductionProductSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Name is required")
-    .max(80, "Keep the name under 80 characters"),
-  unit: z.enum(ITEM_UNITS),
-  unitRate: z
-    .number({ error: "Enter a pay rate" })
-    .min(0, "Cannot be negative")
-    .max(10_000_000, "That rate is too large"),
+/** Flip one person on a job. The crew line id, not the member id. */
+export const setAssignmentMemberPaidSchema = z.object({
+  lineId: z.uuid(),
+  paid: z.boolean(),
 });
-export type CreateProductionProductInput = z.infer<
-  typeof createProductionProductSchema
+export type SetAssignmentMemberPaidInput = z.infer<
+  typeof setAssignmentMemberPaidSchema
 >;
 
-export const setProductionRateSchema = z.object({
-  itemId: z.uuid(),
-  unitRate: z
-    .number({ error: "Enter a pay rate" })
-    .min(0, "Cannot be negative")
-    .max(10_000_000, "That rate is too large"),
+/** Flip the whole crew at once. */
+export const setProductionAssignmentPaidSchema = z.object({
+  assignmentId: z.uuid(),
+  paid: z.boolean(),
 });
-export type SetProductionRateInput = z.infer<typeof setProductionRateSchema>;
+export type SetProductionAssignmentPaidInput = z.infer<
+  typeof setProductionAssignmentPaidSchema
+>;
 
-export const createPayrollRunSchema = z
-  .object({
-    periodStart: isoDate,
-    periodEnd: isoDate,
-    note: z
-      .string()
-      .trim()
-      .max(300, "Keep the note under 300 characters")
-      .nullish(),
-  })
-  .refine((v) => v.periodEnd >= v.periodStart, {
-    error: "The end date must be on or after the start date",
-    path: ["periodEnd"],
-  });
-export type CreatePayrollRunInput = z.infer<typeof createPayrollRunSchema>;
+export const cancelProductionAssignmentSchema = z.object({
+  assignmentId: z.uuid(),
+  reason: z.string().trim().max(300, "Keep it under 300 characters").nullish(),
+});
+export type CancelProductionAssignmentInput = z.infer<
+  typeof cancelProductionAssignmentSchema
+>;
 
-/** Member "my production" list tabs. */
+/** Assignment list tabs, shared by the admin board and the member view. */
 export const PRODUCTION_LIST_SCOPES = [
   "all",
-  "pending",
-  "approved",
-  "rejected",
+  "unpaid",
+  "paid",
+  "cancelled",
 ] as const;
 export type ProductionListScope = (typeof PRODUCTION_LIST_SCOPES)[number];

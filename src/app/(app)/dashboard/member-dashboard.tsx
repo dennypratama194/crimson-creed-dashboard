@@ -3,11 +3,11 @@ import {
   Bell,
   CheckCircle2,
   ChevronRight,
+  Coins,
   Lock,
   Package,
   Plus,
   Recycle,
-  Wallet,
 } from "lucide-react";
 
 import {
@@ -39,14 +39,13 @@ export function MemberDashboardView({
   const {
     counts,
     trends,
-    earnings,
+    distribution,
     submissionAlert,
     submissionDebt,
     activeOrders,
     recentOrders,
     recentNotifications,
   } = data;
-  const awaitingPayout = earnings.pendingAmount + earnings.approvedUnpaidAmount;
 
   const submissionMonth = formatMonth(submissionAlert.periodMonth);
   const submissionNag =
@@ -136,10 +135,10 @@ export function MemberDashboardView({
           comparison={`vs. ${formatQuantity(trends.completedOrders.previous)} last period`}
         />
         <KpiCard
-          label="Production pay pending"
-          value={formatMoney(awaitingPayout)}
-          icon={Wallet}
-          hint="Awaiting review or payout"
+          label="You owe the company"
+          value={formatMoney(distribution.openAmount)}
+          icon={Coins}
+          hint={`${distribution.openDraws} draw${distribution.openDraws === 1 ? "" : "s"} in progress`}
         />
         <KpiCard
           label="Unread notifications"

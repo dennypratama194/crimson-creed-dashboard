@@ -77,6 +77,25 @@ export function InventoryFilterBar() {
           ))}
         </SelectContent>
       </Select>
+
+      <Select
+        value={params.get("status") ?? "active"}
+        onValueChange={(v) => {
+          const next = new URLSearchParams(params);
+          if (v === "active") next.delete("status");
+          else next.set("status", v);
+          commit(next);
+        }}
+      >
+        <SelectTrigger className="sm:w-40" aria-label="Filter by status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="active">In the stash</SelectItem>
+          <SelectItem value="archived">Archived</SelectItem>
+          <SelectItem value="all">All</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }

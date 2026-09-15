@@ -115,6 +115,26 @@ export async function archiveItemAction(
   return { ok: true };
 }
 
+/**
+ * Hard delete. The RPC refuses when anything references the item and names the
+ * blockers, so the caller gets a real reason rather than a constraint error.
+ */
+export async function deleteItemAction(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  await requireSuperAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("delete_item", { p_item_id: id });
+  if (error) {
+    return {
+      ok: false,
+      error: rpcErrorMessage(error, "Could not delete the item."),
+    };
+  }
+  revalidateItemViews();
+  return { ok: true };
+}
+
 export async function restoreItemAction(
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {

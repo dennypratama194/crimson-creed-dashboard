@@ -158,10 +158,16 @@ export function AdminDashboardView({ data }: { data: AdminDashboard }) {
               href="/admin/orders?status=PROCESSING&payment=PAID"
             />
             <AttentionRow
-              label="Production to review"
-              description="Member-logged production awaiting approval"
-              count={attention.productionToReview}
-              href="/admin/production/logs?status=PENDING"
+              label="Draws in progress"
+              description="Stock drawn but not yet paid back"
+              count={attention.openDraws}
+              href="/admin/distribution?scope=open"
+            />
+            <AttentionRow
+              label="Production not paid"
+              description="Assignments not yet marked paid"
+              count={attention.productionUnpaid}
+              href="/admin/production?scope=unpaid"
             />
             <AttentionRow
               label="Material submissions to review"

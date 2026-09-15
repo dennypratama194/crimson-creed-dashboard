@@ -57,6 +57,9 @@ export type ProductionLogStatus =
   | "REJECTED"
   | "CANCELLED";
 export type PayrollRunStatus = "DRAFT" | "FINALIZED" | "PAID";
+/** A consignment draw (migration 0059). Distinct from DistributionStatus. */
+export type DrawStatus = "OPEN" | "SETTLED" | "REVERSED";
+export type ProductionAssignmentStatus = "UNPAID" | "PAID" | "CANCELLED";
 export type MemberSubmissionStatus = "PENDING" | "CONFIRMED" | "REJECTED";
 export type CashDirection = "IN" | "OUT";
 export type CashEntrySource = "MANUAL" | "ADJUSTMENT" | "ORDER" | "PAYROLL_RUN";
@@ -91,7 +94,9 @@ export type ReferenceType =
   | "CASH_ENTRY"
   | "SUPPLIER"
   | "SUBMISSION"
-  | "RELATION";
+  | "RELATION"
+  | "DISTRIBUTION"
+  | "PRODUCTION_ASSIGNMENT";
 export type NotificationType =
   | "ORDER_CREATED"
   | "ORDER_PROCESSING"
@@ -111,7 +116,12 @@ export type NotificationType =
   | "PAYROLL_PAID"
   | "SUBMISSION_SUBMITTED"
   | "SUBMISSION_CONFIRMED"
-  | "SUBMISSION_REJECTED";
+  | "SUBMISSION_REJECTED"
+  | "DISTRIBUTION_ISSUED"
+  | "DISTRIBUTION_SETTLED"
+  | "DISTRIBUTION_REVERSED"
+  | "PRODUCTION_ASSIGNED"
+  | "PRODUCTION_ASSIGNMENT_PAID";
 export type AuditAction =
   | "MEMBER_CREATED"
   | "MEMBER_UPDATED"
@@ -122,6 +132,7 @@ export type AuditAction =
   | "ITEM_CREATED"
   | "ITEM_UPDATED"
   | "ITEM_ARCHIVED"
+  | "ITEM_DELETED"
   | "ORDER_CREATED"
   | "ORDER_STATUS_CHANGED"
   | "ORDER_CANCELLED"
@@ -151,7 +162,15 @@ export type AuditAction =
   | "SUBMISSION_REJECTED"
   | "SUBMISSION_TARGETS_SET"
   | "RELATION_CREATED"
-  | "RELATION_UPDATED";
+  | "RELATION_UPDATED"
+  | "DISTRIBUTION_RATE_SET"
+  | "DISTRIBUTION_RATE_REMOVED"
+  | "DISTRIBUTION_ISSUED"
+  | "DISTRIBUTION_SETTLED"
+  | "DISTRIBUTION_REVERSED"
+  | "PRODUCTION_ASSIGNMENT_CREATED"
+  | "PRODUCTION_ASSIGNMENT_PAID"
+  | "PRODUCTION_ASSIGNMENT_CANCELLED";
 
 // ── row shapes ──────────────────────────────────────────────────────────────
 type MemberRow = {
@@ -470,6 +489,75 @@ type MemberSubmissionLineRow = {
   updated_at: string;
 }
 
+type DistributionRateRow = {
+  item_id: string;
+  unit_rate: number;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type DistributionRow = {
+  id: string;
+  draw_number: string;
+  member_id: string;
+  item_id: string;
+  item_name_snapshot: string;
+  item_unit_snapshot: ItemUnit;
+  quantity: number;
+  unit_rate_snapshot: number;
+  amount_owed: number;
+  status: DrawStatus;
+  note: string | null;
+  resolution_note: string | null;
+  issued_by: string | null;
+  issued_at: string;
+  settled_by: string | null;
+  settled_at: string | null;
+  reversed_by: string | null;
+  reversed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type ProductionAssignmentRow = {
+  id: string;
+  item_id: string;
+  item_name_snapshot: string;
+  item_unit_snapshot: ItemUnit;
+  quantity: number;
+  /** Rollup of the crew lines — PAID only once every member is paid. */
+  status: ProductionAssignmentStatus;
+  note: string | null;
+  assigned_by: string | null;
+  assigned_at: string;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type ProductionAssignmentMemberRow = {
+  id: string;
+  assignment_id: string;
+  member_id: string;
+  member_name_snapshot: string;
+  /** Never CANCELLED — that belongs to the job, not to one person on it. */
+  status: Exclude<ProductionAssignmentStatus, "CANCELLED">;
+  paid_by: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `my_distribution_summary()` (migration 0061). */
+export type DistributionSummaryPayload = {
+  openDraws: number;
+  openAmount: number;
+  settledDraws: number;
+  settledAmount: number;
+};
+
 // ── jsonb RPC payloads ──────────────────────────────────────────────────────
 /** `admin_dashboard()` (migration 0056). */
 export type AdminDashboardPayload = {
@@ -488,9 +576,9 @@ export type AdminDashboardPayload = {
     paymentsToVerify: number;
     toProcess: number;
     toDistribute: number;
-    productionToReview: number;
-    draftPayrollRuns: number;
-    unpaidPayrollTotal: number;
+    productionUnpaid: number;
+    openDraws: number;
+    outstandingDebt: number;
     submissionsToReview: number;
     membersNotSubmitted: number;
   };
@@ -680,12 +768,78 @@ export interface Database {
       >;
       member_submissions: TableShape<MemberSubmissionRow, never, never>;
       member_submission_lines: TableShape<MemberSubmissionLineRow, never, never>;
+      distribution_rates: TableShape<DistributionRateRow, never, never>;
+      distributions: TableShape<DistributionRow, never, never>;
+      production_assignments: TableShape<
+        ProductionAssignmentRow,
+        never,
+        never
+      >;
+      production_assignment_members: TableShape<
+        ProductionAssignmentMemberRow,
+        never,
+        never
+      >;
     };
     Views: { [_ in never]: never };
     Functions: {
       create_order: {
         Args: { p_items: Json; p_note?: string | null };
         Returns: OrderRow;
+      };
+      set_distribution_rate: {
+        Args: { p_item_id: string; p_unit_rate: number };
+        Returns: DistributionRateRow;
+      };
+      remove_distribution_rate: {
+        Args: { p_item_id: string };
+        Returns: void;
+      };
+      issue_distribution: {
+        Args: {
+          p_member_id: string;
+          p_item_id: string;
+          p_quantity: number;
+          p_note?: string | null;
+        };
+        Returns: DistributionRow;
+      };
+      settle_distribution: {
+        Args: { p_distribution_id: string; p_note?: string | null };
+        Returns: DistributionRow;
+      };
+      reverse_distribution: {
+        Args: { p_distribution_id: string; p_reason: string };
+        Returns: DistributionRow;
+      };
+      create_production_assignment: {
+        Args: {
+          p_member_ids: string[];
+          p_item_id: string;
+          p_quantity: number;
+          p_note?: string | null;
+        };
+        Returns: ProductionAssignmentRow;
+      };
+      set_assignment_member_paid: {
+        Args: { p_line_id: string; p_paid: boolean };
+        Returns: ProductionAssignmentMemberRow;
+      };
+      set_production_assignment_paid: {
+        Args: { p_assignment_id: string; p_paid: boolean };
+        Returns: ProductionAssignmentRow;
+      };
+      cancel_production_assignment: {
+        Args: { p_assignment_id: string; p_reason?: string | null };
+        Returns: ProductionAssignmentRow;
+      };
+      distribution_summary: {
+        Args: Record<string, never>;
+        Returns: DistributionSummaryPayload;
+      };
+      my_distribution_summary: {
+        Args: Record<string, never>;
+        Returns: DistributionSummaryPayload;
       };
       submit_order_payment: {
         Args: { p_order_id: string; p_paid_to?: string | null };
@@ -783,6 +937,7 @@ export interface Database {
         Returns: ItemRow;
       };
       archive_item: { Args: { p_item_id: string }; Returns: ItemRow };
+      delete_item: { Args: { p_item_id: string }; Returns: void };
       restore_item: { Args: { p_item_id: string }; Returns: ItemRow };
       create_supplier: {
         Args: {
@@ -996,6 +1151,8 @@ export interface Database {
       payment_status: PaymentStatus;
       distribution_status: DistributionStatus;
       production_log_status: ProductionLogStatus;
+      draw_status: DrawStatus;
+      production_assignment_status: ProductionAssignmentStatus;
       payroll_run_status: PayrollRunStatus;
       member_submission_status: MemberSubmissionStatus;
       cash_direction: CashDirection;

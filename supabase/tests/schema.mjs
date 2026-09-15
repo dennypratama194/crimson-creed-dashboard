@@ -1914,10 +1914,12 @@ await expect(
     );
     assert(typeof d.completed7d === "number", `completed7d ${d.completed7d}`);
     assert(typeof d.unread === "number", `unread ${d.unread}`);
-    // plog (40 * 12.5 = 500) was approved and locked into a paid run.
+    // Phase 19: the money tile is consignment debt, not production payout.
+    // No draws exist in the fixture, so every total is zero but present.
     assert(
-      Number(d.earnings.paidAmount) === 500,
-      `earnings.paidAmount ${JSON.stringify(d.earnings)}`,
+      Number(d.distribution.openAmount) === 0 &&
+        Number(d.distribution.openDraws) === 0,
+      `distribution ${JSON.stringify(d.distribution)}`,
     );
     assert(
       typeof d.submissionState === "string",
@@ -1947,12 +1949,11 @@ await expect(
 await asRole("authenticated", m2.id);
 await expect("member_dashboard() is scoped to the caller", async () => {
   const d = asObj((await one(`select member_dashboard() as d`)).d);
-  // m2 never completed an order; its one approved log (10 * 12.5) is in the
-  // finalized run, so it counts as paid — and m1's 500 must not leak in.
+  // m2 never completed an order, and has no draws of its own.
   assert(d.completed === 0, `m2 completed ${d.completed}`);
   assert(
-    Number(d.earnings.paidAmount) === 125,
-    `m2 paid ${d.earnings.paidAmount}`,
+    Number(d.distribution.openAmount) === 0,
+    `m2 owes ${d.distribution.openAmount}`,
   );
 });
 await asRole("authenticated", inactive.id);
@@ -2055,10 +2056,11 @@ await expect(
        (select count(*)::int from orders where status = 'PROCESSING'
           and payment_status = 'PAID'
           and distribution_status = 'NOT_DISTRIBUTED') distribute,
-       (select count(*)::int from production_logs where status = 'PENDING') prod,
-       (select count(*)::int from payroll_runs where status = 'DRAFT') drafts,
-       (select coalesce(sum(total_amount), 0) from payroll_runs
-          where status = 'FINALIZED') unpaid,
+       (select count(*)::int from production_assignments
+          where status = 'UNPAID') prod,
+       (select count(*)::int from distributions where status = 'OPEN') draws,
+       (select coalesce(sum(amount_owed), 0) from distributions
+          where status = 'OPEN') owed,
        (select count(*)::int from member_submissions where status = 'PENDING') subs,
        greatest(0,
          (select count(*)::int from members where status = 'ACTIVE')
@@ -2071,9 +2073,9 @@ await expect(
       ["paymentsToVerify", t.verify],
       ["toProcess", t.process],
       ["toDistribute", t.distribute],
-      ["productionToReview", t.prod],
-      ["draftPayrollRuns", t.drafts],
-      ["unpaidPayrollTotal", Number(t.unpaid)],
+      ["productionUnpaid", t.prod],
+      ["openDraws", t.draws],
+      ["outstandingDebt", Number(t.owed)],
       ["submissionsToReview", t.subs],
       ["membersNotSubmitted", t.missing],
     ];
@@ -2330,6 +2332,463 @@ await expectThrows(
 await asRole(null);
 
 // ── indexes (0058) + re-applying 0056–0058 ─────────────────────────────────
+// -- distribution draws + production assignments (Phase 19) ----------------
+console.log("\nDistribution & production assignments");
+await asRole("authenticated", admin.id);
+
+let meth;
+await expect("admin creates a drawable stash item", async () => {
+  meth = await one(
+    `select * from create_item($1,'PRODUCT','UNIT',$2,null,null,0,true,false,null,'RAW_MATERIAL')`,
+    ["Blue Meth", 0],
+  );
+  assert(meth.stock_type === "RAW_MATERIAL", `stock_type ${meth.stock_type}`);
+});
+await asRole(null);
+await db.query(
+  `update inventory set current_quantity = 1000 where item_id = $1`,
+  [meth.id],
+);
+
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "a non-PRODUCT item cannot carry a company cut (0070)",
+  // 9mm Rounds is AMMO — eligibility is by category, not stock type.
+  () => db.query(`select set_distribution_rate($1, 450)`, [item.id]),
+  "Product",
+);
+await expect("stock type does not gate a cut — PRODUCT is enough", async () => {
+  // Processed Weed is PRODUCT + CATALOGUE: orderable from the shop and still
+  // drawable. The order-vs-draw separation was deliberately given up (0069).
+  const r = await one(`select * from set_distribution_rate($1, 450)`, [
+    weed.id,
+  ]);
+  assert(Number(r.unit_rate) === 450, `unit_rate ${r.unit_rate}`);
+  await db.query(`select remove_distribution_rate($1)`, [weed.id]);
+});
+await expect("admin sets a company cut per item", async () => {
+  const r = await one(`select * from set_distribution_rate($1, $2)`, [
+    meth.id,
+    450,
+  ]);
+  assert(Number(r.unit_rate) === 450, `unit_rate ${r.unit_rate}`);
+});
+await expect("a second item can carry its own cut", async () => {
+  const bud = await one(
+    `select * from create_item($1,'PRODUCT','GRAM',0,null,null,0,true,false,null,'RAW_MATERIAL')`,
+    ["Street Weed"],
+  );
+  const br = await one(`select * from set_distribution_rate($1, $2)`, [
+    bud.id,
+    300,
+  ]);
+  assert(Number(br.unit_rate) === 300, `unit_rate ${br.unit_rate}`);
+  const n = await one(`select count(*)::int n from distribution_rates`);
+  assert(n.n === 2, `expected 2 rates, got ${n.n}`);
+});
+
+await expectThrows(
+  "a draw is refused when the stash is short",
+  () =>
+    db.query(`select issue_distribution($1, $2, 5000)`, [memberId.m1, meth.id]),
+  "in stock",
+);
+await expect("a refused draw writes nothing at all", async () => {
+  const inv = await one(
+    `select current_quantity q from inventory where item_id = $1`,
+    [meth.id],
+  );
+  assert(Number(inv.q) === 1000, `stock moved to ${inv.q}`);
+  const d = await one(`select count(*)::int n from distributions`);
+  assert(d.n === 0, `${d.n} distribution row(s) written`);
+});
+
+let draw;
+await expect("a draw computes what is owed and moves the stash", async () => {
+  draw = await one(`select * from issue_distribution($1, $2, 1000, $3)`, [
+    memberId.m1,
+    meth.id,
+    "Night run",
+  ]);
+  // Server-side: 1000 x 450. The browser never sends the rate or the total.
+  assert(Number(draw.amount_owed) === 450000, `owed ${draw.amount_owed}`);
+  assert(
+    Number(draw.unit_rate_snapshot) === 450,
+    `rate ${draw.unit_rate_snapshot}`,
+  );
+  assert(draw.status === "OPEN", `status ${draw.status}`);
+  assert(
+    draw.draw_number?.startsWith("DR-"),
+    `draw_number ${draw.draw_number}`,
+  );
+
+  const inv = await one(
+    `select current_quantity q from inventory where item_id = $1`,
+    [meth.id],
+  );
+  assert(Number(inv.q) === 0, `stock left at ${inv.q}`);
+
+  const mv = await one(
+    `select quantity, movement_type::text t from inventory_movements
+     where reference_id = $1 and reference_type = 'DISTRIBUTION'`,
+    [draw.id],
+  );
+  assert(Number(mv.quantity) === -1000, `movement ${mv.quantity}`);
+  assert(mv.t === "DISTRIBUTION", `movement type ${mv.t}`);
+});
+
+await expect("changing the cut never rewrites an existing debt", async () => {
+  await db.query(`select set_distribution_rate($1, 900)`, [meth.id]);
+  const d = await one(
+    `select amount_owed, unit_rate_snapshot r from distributions where id = $1`,
+    [draw.id],
+  );
+  assert(Number(d.amount_owed) === 450000, `owed drifted to ${d.amount_owed}`);
+  assert(Number(d.r) === 450, `snapshot drifted to ${d.r}`);
+  await db.query(`select set_distribution_rate($1, 450)`, [meth.id]);
+});
+
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "a member cannot settle their own debt",
+  () => db.query(`select settle_distribution($1)`, [draw.id]),
+  "Super Admin",
+);
+await expect("a member sees their own draw", async () => {
+  const r = await one(`select count(*)::int n from distributions`);
+  assert(r.n === 1, `m1 sees ${r.n} draw(s)`);
+});
+await expect("my_distribution_summary() is the caller's own debt", async () => {
+  const d = asObj((await one(`select my_distribution_summary() d`)).d);
+  assert(Number(d.openAmount) === 450000, `openAmount ${d.openAmount}`);
+  assert(Number(d.openDraws) === 1, `openDraws ${d.openDraws}`);
+});
+await asRole("authenticated", m2.id);
+await expect("a member never sees someone else's draw", async () => {
+  const r = await one(`select count(*)::int n from distributions`);
+  assert(r.n === 0, `m2 sees ${r.n} draw(s)`);
+});
+await expect("a member cannot read the company cut table", async () => {
+  const r = await one(`select count(*)::int n from distribution_rates`);
+  assert(r.n === 0, `m2 sees ${r.n} rate row(s)`);
+});
+
+await asRole("authenticated", admin.id);
+await expect("admin settles the draw", async () => {
+  const r = await one(`select * from settle_distribution($1, $2)`, [
+    draw.id,
+    "Paid in full",
+  ]);
+  assert(r.status === "SETTLED", `status ${r.status}`);
+  assert(r.settled_at !== null, "settled_at not stamped");
+});
+await expect("distribution_summary() totals the whole org", async () => {
+  const d = asObj((await one(`select distribution_summary() d`)).d);
+  assert(Number(d.settledAmount) === 450000, `settled ${d.settledAmount}`);
+  assert(Number(d.settledDraws) === 1, `settledDraws ${d.settledDraws}`);
+  assert(Number(d.openAmount) === 0, `open ${d.openAmount}`);
+});
+await expectThrows(
+  "a settled draw cannot be settled twice",
+  () => db.query(`select settle_distribution($1)`, [draw.id]),
+  "already settled",
+);
+await expectThrows(
+  "reversing a draw requires a reason",
+  () => db.query(`select reverse_distribution($1, '  ')`, [draw.id]),
+  "reason",
+);
+await expect("reversing a draw returns the stock", async () => {
+  const r = await one(`select * from reverse_distribution($1, $2)`, [
+    draw.id,
+    "Wrong quantity",
+  ]);
+  assert(r.status === "REVERSED", `status ${r.status}`);
+  const inv = await one(
+    `select current_quantity q from inventory where item_id = $1`,
+    [meth.id],
+  );
+  assert(Number(inv.q) === 1000, `stock back at ${inv.q}`);
+});
+await expectThrows(
+  "a reversed draw cannot be reversed again",
+  () => db.query(`select reverse_distribution($1, 'again')`, [draw.id]),
+  "already reversed",
+);
+
+// -- production assignments ------------------------------------------------
+let assignment;
+await expect("admin assigns a job to a crew", async () => {
+  assignment = await one(
+    `select * from create_production_assignment($1::uuid[], $2, 250, $3)`,
+    [[memberId.m1, memberId.m2], weed.id, "West lab"],
+  );
+  assert(assignment.status === "UNPAID", `status ${assignment.status}`);
+  assert(
+    assignment.item_name_snapshot === "Processed Weed",
+    `snapshot ${assignment.item_name_snapshot}`,
+  );
+  const jobs = await one(`select count(*)::int n from production_assignments`);
+  assert(jobs.n === 1, `expected 1 job, got ${jobs.n}`);
+  const crew = await one(
+    `select count(*)::int n from production_assignment_members
+     where assignment_id = $1`,
+    [assignment.id],
+  );
+  assert(crew.n === 2, `expected 2 crew lines, got ${crew.n}`);
+});
+await expect("a repeated member is listed once", async () => {
+  const job = await one(
+    `select * from create_production_assignment($1::uuid[], $2, 15)`,
+    [[memberId.m1, memberId.m1], weed.id],
+  );
+  const crew = await one(
+    `select count(*)::int n from production_assignment_members
+     where assignment_id = $1`,
+    [job.id],
+  );
+  assert(crew.n === 1, `expected 1 crew line, got ${crew.n}`);
+});
+await expect("an empty crew is refused and writes no job", async () => {
+  const before = await one(
+    `select count(*)::int n from production_assignments`,
+  );
+  const err = await callRolledBack(
+    `select create_production_assignment($1::uuid[], $2, 5)`,
+    [[], weed.id],
+  );
+  assert(err !== null, "an empty crew was accepted");
+  const after = await one(`select count(*)::int n from production_assignments`);
+  assert(before.n === after.n, `jobs changed ${before.n} -> ${after.n}`);
+});
+await expect("one bad member rolls back the whole job", async () => {
+  const before = await one(
+    `select count(*)::int n from production_assignments`,
+  );
+  const err = await callRolledBack(
+    `select create_production_assignment($1::uuid[], $2, 5)`,
+    [[memberId.m1, "00000000-0000-0000-0000-000000000000"], weed.id],
+  );
+  assert(err !== null, "an unknown member was accepted");
+  const after = await one(`select count(*)::int n from production_assignments`);
+  assert(before.n === after.n, `jobs changed ${before.n} -> ${after.n}`);
+});
+
+// -- per-person paid flags + the job-level rollup --------------------------
+let m1Line;
+await expect("paying one member does not pay the crew", async () => {
+  m1Line = await one(
+    `select * from production_assignment_members
+     where assignment_id = $1 and member_id = $2`,
+    [assignment.id, memberId.m1],
+  );
+  const r = await one(`select * from set_assignment_member_paid($1, true)`, [
+    m1Line.id,
+  ]);
+  assert(r.status === "PAID" && r.paid_at !== null, `line status ${r.status}`);
+
+  const other = await one(
+    `select status from production_assignment_members
+     where assignment_id = $1 and member_id = $2`,
+    [assignment.id, memberId.m2],
+  );
+  assert(other.status === "UNPAID", `crewmate status ${other.status}`);
+
+  // Rollup: still UNPAID while anyone on the job is unpaid.
+  const job = await one(
+    `select status from production_assignments where id = $1`,
+    [assignment.id],
+  );
+  assert(job.status === "UNPAID", `job rolled up to ${job.status}`);
+});
+await expect("the job rolls up to PAID once everyone is paid", async () => {
+  const m2Line = await one(
+    `select * from production_assignment_members
+     where assignment_id = $1 and member_id = $2`,
+    [assignment.id, memberId.m2],
+  );
+  await db.query(`select set_assignment_member_paid($1, true)`, [m2Line.id]);
+  const job = await one(
+    `select status from production_assignments where id = $1`,
+    [assignment.id],
+  );
+  assert(job.status === "PAID", `job status ${job.status}`);
+});
+await expect("un-paying one member rolls the job back to UNPAID", async () => {
+  await db.query(`select set_assignment_member_paid($1, false)`, [m1Line.id]);
+  const job = await one(
+    `select status from production_assignments where id = $1`,
+    [assignment.id],
+  );
+  assert(job.status === "UNPAID", `job status ${job.status}`);
+});
+await expect("marking the whole crew paid flips every line", async () => {
+  await db.query(`select set_production_assignment_paid($1, true)`, [
+    assignment.id,
+  ]);
+  const r = await one(
+    `select count(*)::int n from production_assignment_members
+     where assignment_id = $1 and status <> 'PAID'`,
+    [assignment.id],
+  );
+  assert(r.n === 0, `${r.n} line(s) left unpaid`);
+});
+await expect("marking paid posts nothing to company cash", async () => {
+  const before = await one(`select balance b from cash_account limit 1`);
+  await db.query(`select set_production_assignment_paid($1, false)`, [
+    assignment.id,
+  ]);
+  await db.query(`select set_production_assignment_paid($1, true)`, [
+    assignment.id,
+  ]);
+  const after = await one(`select balance b from cash_account limit 1`);
+  assert(
+    Number(before.b) === Number(after.b),
+    `cash moved ${before.b} -> ${after.b}`,
+  );
+});
+await expect("a cancelled job cannot be marked paid", async () => {
+  const other = await one(
+    `select * from create_production_assignment($1::uuid[], $2, 10)`,
+    [[memberId.m2], weed.id],
+  );
+  await db.query(`select cancel_production_assignment($1, 'Reassigned')`, [
+    other.id,
+  ]);
+  const line = await one(
+    `select id from production_assignment_members where assignment_id = $1`,
+    [other.id],
+  );
+  const err = await callRolledBack(
+    `select set_production_assignment_paid($1, true)`,
+    [other.id],
+  );
+  assert(err !== null, "a cancelled job was marked paid");
+  const lineErr = await callRolledBack(
+    `select set_assignment_member_paid($1, true)`,
+    [line.id],
+  );
+  assert(lineErr !== null, "a cancelled job's crew line was marked paid");
+});
+
+// -- what each side can see -----------------------------------------------
+await asRole("authenticated", m1.id);
+await expect("a crew member sees the job they are on", async () => {
+  const r = await one(
+    `select count(*)::int n from production_assignments where id = $1`,
+    [assignment.id],
+  );
+  assert(r.n === 1, `m1 sees ${r.n} job(s)`);
+});
+await expect("a crew member sees only their own line", async () => {
+  const r = await one(
+    `select count(*)::int n from production_assignment_members
+     where assignment_id = $1`,
+    [assignment.id],
+  );
+  assert(r.n === 1, `m1 sees ${r.n} crew line(s) — a crewmate leaked`);
+});
+await expectThrows(
+  "a member cannot mark themselves paid",
+  () => db.query(`select set_assignment_member_paid($1, true)`, [m1Line.id]),
+  "Super Admin",
+);
+await asRole("authenticated", inactive.id);
+await expect("a member not on the job sees nothing of it", async () => {
+  const jobs = await one(
+    `select count(*)::int n from production_assignments where id = $1`,
+    [assignment.id],
+  );
+  assert(jobs.n === 0, `sees ${jobs.n} job(s)`);
+  const lines = await one(
+    `select count(*)::int n from production_assignment_members
+     where assignment_id = $1`,
+    [assignment.id],
+  );
+  assert(lines.n === 0, `sees ${lines.n} crew line(s)`);
+});
+await asRole("authenticated", admin.id);
+
+// -- hard delete (0072) ----------------------------------------------------
+console.log("\nItem delete");
+await asRole("authenticated", admin.id);
+await expect("an unreferenced item is deleted outright", async () => {
+  const fresh = await one(
+    `select * from create_item($1,'OTHER','UNIT',0,null,null,0,false,true,null,'OTHER')`,
+    ["Disposable Crate"],
+  );
+  await db.query(`select delete_item($1)`, [fresh.id]);
+  const gone = await one(`select count(*)::int n from items where id = $1`, [
+    fresh.id,
+  ]);
+  assert(gone.n === 0, "item survived the delete");
+  // The auto-created inventory row goes with it.
+  const inv = await one(
+    `select count(*)::int n from inventory where item_id = $1`,
+    [fresh.id],
+  );
+  assert(inv.n === 0, "inventory row was orphaned");
+  const logged = await one(
+    `select count(*)::int n from audit_logs
+     where action = 'ITEM_DELETED' and entity_id = $1`,
+    [fresh.id],
+  );
+  assert(logged.n === 1, "delete was not audited");
+});
+await expect("stash history is cleared, not a blocker", async () => {
+  const stashed = await one(
+    `select * from create_item($1,'PRODUCT','UNIT',0,null,null,0,false,true,null,'RAW_MATERIAL')`,
+    ["Doomed Batch"],
+  );
+  await db.query(`select record_inventory_movement($1,'IN',40,'seed')`, [
+    stashed.id,
+  ]);
+  await db.query(`select set_distribution_rate($1, 10)`, [stashed.id]);
+  await db.query(`select create_production_assignment($1::uuid[], $2, 5)`, [
+    [memberId.m1],
+    stashed.id,
+  ]);
+
+  await db.query(`select delete_item($1)`, [stashed.id]);
+
+  for (const [table, col] of [
+    ["items", "id"],
+    ["inventory", "item_id"],
+    ["inventory_movements", "item_id"],
+    ["distribution_rates", "item_id"],
+    ["production_assignments", "item_id"],
+  ]) {
+    const r = await one(
+      `select count(*)::int n from ${table} where ${col} = $1`,
+      [stashed.id],
+    );
+    assert(r.n === 0, `${table} still holds ${r.n} row(s)`);
+  }
+});
+await expectThrows(
+  "an item on a draw is still refused",
+  // Blue Meth carries draws — money owed, not stock history.
+  () => db.query(`select delete_item($1)`, [meth.id]),
+  "cannot be deleted",
+);
+await expect("a refused delete leaves the item untouched", async () => {
+  const still = await one(`select count(*)::int n from items where id = $1`, [
+    meth.id,
+  ]);
+  assert(still.n === 1, "item disappeared despite the refusal");
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "a member cannot delete an item",
+  () => db.query(`select delete_item($1)`, [item.id]),
+  "Super Admin",
+);
+await asRole(null);
+
+// Hand the session back to the superuser role — the idempotency check below
+// re-applies migrations and cannot run as `authenticated`.
+await asRole(null);
+
 console.log("\nQuery indexes + idempotency");
 await expect("composite list indexes exist", async () => {
   const r = await db.query(
@@ -2365,6 +2824,7 @@ const MEMBER_CALLABLE = new Set([
   "list_submission_receivers",
   "member_dashboard",
   "my_earnings_summary",
+  "my_distribution_summary",
   "my_payslips",
   "my_submission_debt",
   "submit_material_submission",
