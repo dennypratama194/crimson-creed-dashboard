@@ -1,9 +1,9 @@
 # End-to-end tests
 
-| Spec                 | Covers                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `acceptance.spec.ts` | Full order lifecycle (member places → admin verifies payment → processing → distribution → completion); a member cannot reach admin routes |
-| `access.spec.ts`     | A signed-out visitor is redirected to `/login` with `?next=`; an inactive member cannot sign in                                            |
+| Spec                 | Covers                                                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acceptance.spec.ts` | Full order lifecycle (member places → names who they paid → admin verifies payment → processing → distribution → completion), including the `paid_to_name` snapshot; a member cannot reach admin routes |
+| `access.spec.ts`     | A signed-out visitor is redirected to `/login` with `?next=`; an inactive member cannot sign in                                                                                                         |
 
 Cash ledger, production approval, payroll finalization and monthly submission
 flows are **not** covered end-to-end yet. Their authorization and business rules
@@ -25,13 +25,24 @@ npm run db:seed                     # creates the fixture users below
 
 The seed prints every account. The specs use:
 
-| Role              | Username        | Password           |
-| ----------------- | --------------- | ------------------ |
-| Super Admin       | `vincent_crane` | `Crimson#vincent1` |
-| Member            | `sable_ruiz`    | `Crimson#sable1`   |
-| Member — inactive | `hugo_marsh`    | `Crimson#hugo1`    |
+| Role              | Username          | Password           |
+| ----------------- | ----------------- | ------------------ |
+| Super Admin       | `vincent_crane`   | `Crimson#vincent1` |
+| Super Admin — 2nd | `marlow_dietrich` | `Crimson#marlow1`  |
+| Member            | `sable_ruiz`      | `Crimson#sable1`   |
+| Member — inactive | `hugo_marsh`      | `Crimson#hugo1`    |
+
+The second Super Admin is not spare scenery: the acceptance spec opens the
+"Pay to" picker and asserts that **both** are offered before choosing one, so
+the test would still pass against a one-admin project without proving the
+picker works. Keep both seeded.
 
 The acceptance spec creates a new order each run, so re-seed occasionally.
+
+`submit_order_payment` **requires** a recipient (migration 0055) and snapshots
+their name onto the order. A spec that confirms "I've paid" without choosing one
+does not merely skip a step — the dialog refuses and never closes. If you change
+that dialog, change this spec with it rather than relaxing the assertion.
 
 ## Run
 

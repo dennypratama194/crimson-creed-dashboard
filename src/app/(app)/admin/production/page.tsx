@@ -16,6 +16,7 @@ import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { Button } from "@/components/ui/button";
+import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { AssignDialog } from "@/app/(app)/admin/production/assign-dialog";
 import { AssignmentsTable } from "@/app/(app)/admin/production/assignments-table";
 import { ProductionFilterBar } from "@/app/(app)/admin/production/production-filter-bar";
@@ -75,6 +76,8 @@ export default async function AdminProductionPage({
       />
 
       <div className="flex flex-col gap-6">
+        <DirtyMoneyNote scope="production" />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <KpiCard
             label="Awaiting payment"

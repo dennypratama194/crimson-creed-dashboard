@@ -17,6 +17,7 @@ import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { cn } from "@/lib/utils";
+import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { MyDrawsTable } from "@/app/(app)/distribution/my-draws-table";
 
 export const metadata: Metadata = { title: "Distribution" };
@@ -56,18 +57,20 @@ export default async function DistributionPage({
       />
 
       <div className="flex flex-col gap-6">
+        <DirtyMoneyNote scope="distribution" />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <KpiCard
             label="You owe"
             value={formatMoney(summary.openAmount)}
             icon={Coins}
-            hint={`${summary.openDraws} draw${summary.openDraws === 1 ? "" : "s"} in progress`}
+            hint={`Dirty money · ${summary.openDraws} draw${summary.openDraws === 1 ? "" : "s"} in progress`}
           />
           <KpiCard
             label="Settled"
             value={formatMoney(summary.settledAmount)}
             icon={CheckCircle2}
-            hint={`${summary.settledDraws} draw${summary.settledDraws === 1 ? "" : "s"} done`}
+            hint={`Dirty money · ${summary.settledDraws} draw${summary.settledDraws === 1 ? "" : "s"} done`}
           />
         </div>
 

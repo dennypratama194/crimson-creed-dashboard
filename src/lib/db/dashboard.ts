@@ -1,9 +1,12 @@
 import "server-only";
 
-import type {
-  AdminDashboardPayload,
-  DistributionSummaryPayload,
-} from "@/lib/database.types";
+import {
+  adminDashboardPayload,
+  memberDashboardPayload,
+  parseRpcPayload,
+  type AdminDashboardPayload,
+  type DistributionSummaryPayload,
+} from "@/lib/db/contracts";
 import type { MemberSubmissionAlert } from "@/lib/db/submissions";
 import type { Notification } from "@/lib/db/notifications";
 import type { Order } from "@/lib/db/orders";
@@ -49,7 +52,13 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
   const { data, error } = await supabase.rpc("admin_dashboard");
   if (error) throw error;
 
-  const k = data.kpis;
+  // jsonb in, typed value out — one checked crossing, not a cast per field.
+  const payload = parseRpcPayload(
+    adminDashboardPayload,
+    data,
+    "admin_dashboard",
+  );
+  const k = payload.kpis;
   const companyCashPrev = Math.round((k.companyCash - k.cashNet7d) * 100) / 100;
   const activeMembersPrev = k.activeMembers - k.newActiveMembers7d;
   const completedOrdersPrev = k.completedOrders - k.completedOrders7d;
@@ -80,11 +89,11 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
         },
       },
     },
-    attention: data.attention,
-    orderTrend: data.orderTrend,
-    recentActivity: data.recentActivity,
-    lowStockItems: data.lowStockItems,
-    recentOrders: data.recentOrders,
+    attention: payload.attention,
+    orderTrend: payload.orderTrend,
+    recentActivity: payload.recentActivity,
+    lowStockItems: payload.lowStockItems,
+    recentOrders: payload.recentOrders,
   };
 }
 
@@ -125,7 +134,11 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
   const { data, error } = await supabase.rpc("member_dashboard");
   if (error) throw error;
 
-  const d = data as unknown as MemberDashboardPayload;
+  const d = parseRpcPayload(
+    memberDashboardPayload,
+    data,
+    "member_dashboard",
+  ) as MemberDashboardPayload;
   const completedOrdersPrev = d.completed - d.completed7d;
 
   return {

@@ -8,9 +8,9 @@ import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import {
   archiveItemAction,
-  deleteItemAction,
   restoreItemAction,
 } from "@/app/(app)/admin/items/actions";
+import { DeleteItemDialog } from "@/app/(app)/admin/inventory/delete-item-dialog";
 import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
 
 /**
@@ -25,24 +25,19 @@ import { StockDialog } from "@/app/(app)/admin/inventory/stock-dialog";
 export function InventoryRowActions({ line }: { line: InventoryLine }) {
   const archived = line.archived_at !== null;
 
+  // Permanent delete has its own dialog: it names what is destroyed, spells out
+  // the blockers up front, and asks for the item name to be typed. Archive is
+  // the reversible neighbour and keeps the plain confirm.
   const deleteAction = (
-    <ConfirmDialog
+    <DeleteItemDialog
+      itemId={line.id}
+      itemName={line.name}
       trigger={
         <Button variant="ghost" size="sm" className="text-tone-error-fg">
           <Trash2 aria-hidden />
           Delete
         </Button>
       }
-      title={`Permanently delete "${line.name}"?`}
-      description={
-        line.current_quantity > 0
-          ? `This cannot be undone. The item and its stash history go with it — stock movements, the ${formatQuantity(line.current_quantity)} on hand, its company cut, supplier listings and production assignments. Items on an order or a draw are refused; archive those instead.`
-          : "This cannot be undone. The item and its stash history go with it — stock movements, its company cut, supplier listings and production assignments. Items on an order or a draw are refused; archive those instead."
-      }
-      confirmLabel="Delete forever"
-      destructive
-      successMessage={`"${line.name}" deleted.`}
-      onConfirm={() => deleteItemAction(line.id)}
     />
   );
 

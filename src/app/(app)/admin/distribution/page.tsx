@@ -25,6 +25,7 @@ import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { Button } from "@/components/ui/button";
+import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { DistributionTable } from "@/app/(app)/admin/distribution/distribution-table";
 import { DistributionFilterBar } from "@/app/(app)/admin/distribution/distribution-filter-bar";
 import { IssueDrawDialog } from "@/app/(app)/admin/distribution/issue-draw-dialog";
@@ -93,18 +94,20 @@ export default async function AdminDistributionPage({
       />
 
       <div className="flex flex-col gap-6">
+        <DirtyMoneyNote scope="distribution" />
+
         <div className="grid gap-4 sm:grid-cols-3">
           <KpiCard
             label="Submitted"
             value={formatMoney(summary.settledAmount)}
             icon={CheckCircle2}
-            hint={`${summary.settledDraws} draw${summary.settledDraws === 1 ? "" : "s"} handed back`}
+            hint={`Dirty money · ${summary.settledDraws} draw${summary.settledDraws === 1 ? "" : "s"} handed back`}
           />
           <KpiCard
             label="Outstanding"
             value={formatMoney(summary.openAmount)}
             icon={Coins}
-            hint={`${summary.openDraws} draw${summary.openDraws === 1 ? "" : "s"} in progress`}
+            hint={`Dirty money · ${summary.openDraws} draw${summary.openDraws === 1 ? "" : "s"} in progress`}
           />
           <KpiCard
             label="Drawable items"

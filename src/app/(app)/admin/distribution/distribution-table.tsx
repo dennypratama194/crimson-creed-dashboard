@@ -43,7 +43,7 @@ export function DistributionTable({ rows }: { rows: AdminDistributionRow[] }) {
           </TableHead>
           <TableHead className="w-[11%]">
             <span data-align="right" className="block">
-              Owed
+              Owed (dirty)
             </span>
           </TableHead>
           <TableHead className="w-[12%]">Status</TableHead>
@@ -100,7 +100,7 @@ export function DistributionTable({ rows }: { rows: AdminDistributionRow[] }) {
                         </Button>
                       }
                       title="Mark this draw as done?"
-                      description={`Records that ${draw.member_name} handed ${formatMoney(draw.amount_owed)} back to the company. This does not post to company cash.`}
+                      description={`Records that ${draw.member_name} handed ${formatMoney(draw.amount_owed)} of dirty money back to the company. This does not post to Company cash.`}
                       confirmLabel="Mark as done"
                       field={{
                         label: "Note",

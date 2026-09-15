@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check:migrations needs history to find the merge-base with the
+          # target branch. A shallow clone has no merge-base to find.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -34,6 +38,9 @@ jobs:
       - name: Schema / RLS / RPC smoke test (PGlite)
         run: npm run db:test
 
+      - name: Historical migrations unchanged
+        run: npm run check:migrations
+
       - name: Build
         run: npm run build
         env:
@@ -41,3 +48,38 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
           NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+  # Multi-connection locking behaviour, which PGlite cannot test: it is one
+  # in-process backend, so nothing there can contend for a row lock. This runs
+  # against a throwaway Postgres service container, built from
+  # supabase/migrations. It never touches any hosted project — the suite itself
+  # refuses a non-local host.
+  concurrency-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crimson_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Concurrency regression tests
+        run: npm run db:test:concurrency
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/crimson_test

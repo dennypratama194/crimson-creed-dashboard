@@ -2,6 +2,10 @@ import "server-only";
 
 import type { ProductionAssignmentStatus } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import {
+  myProductionAssignmentsPayload,
+  parseRpcPayload,
+} from "@/lib/db/contracts";
 import { createClient } from "@/lib/supabase/server";
 import type { ProductionListScope } from "@/lib/validation/production";
 
@@ -50,8 +54,18 @@ export async function getAssignableProducts(): Promise<AssignableProduct[]> {
 }
 
 /**
- * Attaches crew lines to a page of jobs in one extra round-trip rather than one
- * per row. A member's RLS view of the crew is only their own line.
+ * A crew is capped at 50 (create_production_assignment). A 20-job page could
+ * therefore ask for 1000 crew lines in one request — exactly PostgREST's
+ * default row cap, where the response would be silently truncated and jobs
+ * would render with a short crew and no error. Asking in chunks keeps the
+ * worst case at CREW_CHUNK x 50 rows, well under the cap.
+ */
+const CREW_CHUNK = 10;
+
+/**
+ * Attaches crew lines to a page of jobs in a small, bounded number of extra
+ * round-trips rather than one per row. A member's RLS view of the crew is only
+ * their own line; a Super Admin's is the whole crew.
  */
 async function withCrew(
   rows: ProductionAssignment[],
@@ -59,29 +73,46 @@ async function withCrew(
   if (rows.length === 0) return [];
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("production_assignment_members")
-    .select("*")
-    .in(
-      "assignment_id",
-      rows.map((r) => r.id),
-    )
-    .order("member_name_snapshot", { ascending: true });
-  if (error) throw error;
-
+  const ids = rows.map((r) => r.id);
   const byAssignment = new Map<string, AssignmentMember[]>();
-  for (const line of data ?? []) {
-    const list = byAssignment.get(line.assignment_id);
-    if (list) list.push(line);
-    else byAssignment.set(line.assignment_id, [line]);
+
+  for (let i = 0; i < ids.length; i += CREW_CHUNK) {
+    const { data, error } = await supabase
+      .from("production_assignment_members")
+      .select("*")
+      .in("assignment_id", ids.slice(i, i + CREW_CHUNK))
+      .order("member_name_snapshot", { ascending: true });
+    if (error) throw error;
+
+    for (const line of data ?? []) {
+      const list = byAssignment.get(line.assignment_id);
+      if (list) list.push(line);
+      else byAssignment.set(line.assignment_id, [line]);
+    }
   }
 
   return rows.map((r) => ({ ...r, crew: byAssignment.get(r.id) ?? [] }));
 }
 
 // ── member: my assignments (read-only) ─────────────────────────────────────
+/**
+ * One round-trip to `my_production_assignments()` (migration 0075), which does
+ * ownership, filtering, ordering, paging and the count in SQL.
+ *
+ * This used to be two queries: fetch EVERY crew line belonging to the member,
+ * map it to assignment ids, then `assignments where id in (<the whole list>)`.
+ * Past PostgREST's row cap that list came back truncated with no error, so jobs
+ * disappeared from the member's list and `total` under-counted to match.
+ *
+ * The RPC is caller-scoped through app.current_member_id() and takes no member
+ * id at all — there is nothing here for a browser to widen — so a Super Admin
+ * opening /production sees their own jobs like anyone else.
+ *
+ * The payload carries exactly one crew line per job — the caller's own, which
+ * is all the 0067 RLS policy shows a MEMBER, and what the table renders as
+ * "have I been paid".
+ */
 export async function listMyProductionAssignments(options: {
-  memberId: string;
   page?: number;
   scope?: ProductionListScope;
 }): Promise<{
@@ -93,56 +124,21 @@ export async function listMyProductionAssignments(options: {
   const supabase = await createClient();
   const page = Math.max(1, options.page ?? 1);
   const pageSize = PRODUCTION_ASSIGNMENT_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
 
-  // Scope to the caller explicitly — a Super Admin's RLS view is every job, not
-  // just the ones they are on. The filter is the member's OWN crew line, so
-  // "Paid" means "I have been paid", not "the whole crew has".
-  let lineQuery = supabase
-    .from("production_assignment_members")
-    .select("assignment_id", { count: "exact" })
-    .eq("member_id", options.memberId);
-
-  // A crew line is only ever UNPAID or PAID — CANCELLED lives on the job.
-  if (options.scope === "unpaid" || options.scope === "paid") {
-    lineQuery = lineQuery.eq(
-      "status",
-      options.scope === "paid" ? "PAID" : "UNPAID",
-    );
-  }
-
-  const { data: lines, error: linesErr } = await lineQuery;
-  if (linesErr) throw linesErr;
-
-  const ids = (lines ?? []).map((l) => l.assignment_id);
-  if (ids.length === 0) return { rows: [], total: 0, page, pageSize };
-
-  let query = supabase
-    .from("production_assignments")
-    .select("*", { count: "exact" })
-    .in("id", ids)
-    .order("assigned_at", { ascending: false })
-    .order("id", { ascending: false });
-
-  // A cancelled job hides its crew's paid state, so it is filtered on the job.
-  if (options.scope === "cancelled") {
-    query = query.eq("status", "CANCELLED");
-  } else if (options.scope === "unpaid" || options.scope === "paid") {
-    query = query.neq("status", "CANCELLED");
-  }
-
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error } = await supabase.rpc("my_production_assignments", {
+    p_scope: options.scope ?? "all",
+    p_limit: pageSize,
+    p_offset: (page - 1) * pageSize,
+  });
   if (error) throw error;
 
-  return {
-    rows: await withCrew(data ?? []),
-    total: count ?? 0,
-    page,
-    pageSize,
-  };
+  const payload = parseRpcPayload(
+    myProductionAssignmentsPayload,
+    data,
+    "my_production_assignments",
+  );
+
+  return { rows: payload.rows, total: payload.total, page, pageSize };
 }
 
 // ── admin: the assignment board ────────────────────────────────────────────

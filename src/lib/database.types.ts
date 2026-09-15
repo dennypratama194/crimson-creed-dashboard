@@ -1,10 +1,16 @@
 /**
- * Supabase schema types.
+ * Supabase SCHEMA types — tables, enums, function signatures.
  *
- * Hand-authored to match supabase/migrations (there is no local Docker stack in
- * this environment). Once a hosted project is linked, regenerate with:
- *   npm run db:types
- * and keep this file in sync with the migrations until then.
+ * TREAT THIS FILE AS GENERATED OUTPUT. `npm run db:types` replaces it whole
+ * (see scripts/gen-types.mjs). Anything hand-authored added here is lost on the
+ * next regeneration, so application-owned contracts do not belong in it:
+ *
+ *   jsonb RPC payload shapes  ->  src/lib/db/contracts.ts
+ *
+ * It is currently maintained by hand, matching supabase/migrations, because no
+ * Supabase project is linked in this environment and there is no local Docker
+ * stack. That is a stand-in for generation, not a licence to mix contracts back
+ * in: once a project is linked, `npm run db:types` overwrites every line below.
  */
 
 export type Json =
@@ -550,72 +556,12 @@ type ProductionAssignmentMemberRow = {
   updated_at: string;
 }
 
-/** `my_distribution_summary()` (migration 0061). */
-export type DistributionSummaryPayload = {
-  openDraws: number;
-  openAmount: number;
-  settledDraws: number;
-  settledAmount: number;
-};
-
 // ── jsonb RPC payloads ──────────────────────────────────────────────────────
-/** `admin_dashboard()` (migration 0056). */
-export type AdminDashboardPayload = {
-  kpis: {
-    activeMembers: number;
-    newActiveMembers7d: number;
-    orders7d: number;
-    ordersPrev7d: number;
-    completedOrders: number;
-    completedOrders7d: number;
-    lowStock: number;
-    companyCash: number;
-    cashNet7d: number;
-  };
-  attention: {
-    paymentsToVerify: number;
-    toProcess: number;
-    toDistribute: number;
-    productionUnpaid: number;
-    openDraws: number;
-    outstandingDebt: number;
-    submissionsToReview: number;
-    membersNotSubmitted: number;
-  };
-  orderTrend: { date: string; count: number }[];
-  recentActivity: Pick<ActivityLogRow, "id" | "verb" | "summary" | "created_at">[];
-  lowStockItems: (Pick<ItemRow, "id" | "name" | "low_stock_threshold"> & {
-    current_quantity: number;
-  })[];
-  recentOrders: (Pick<
-    OrderRow,
-    "id" | "order_number" | "created_at" | "total" | "status" | "paid_to_name"
-  > & { member_name: string })[];
-};
-
-/** `cash_summary()` (migration 0057). */
-export type CashSummaryPayload = {
-  incomeTotal: number;
-  expenseTotal: number;
-  net: number;
-  entryCount: number;
-};
-
-/** `my_earnings_summary()` (migration 0057). */
-export type EarningsSummaryPayload = {
-  pendingCount: number;
-  pendingAmount: number;
-  approvedUnpaidAmount: number;
-  paidAmount: number;
-};
-
-/** One element of `my_payslips()` (migration 0057). */
-export type PayslipPayload = PayrollRunLineRow & {
-  run_number: string;
-  period_start: string;
-  period_end: string;
-  run_status: PayrollRunStatus;
-};
+// They are NOT here. `npm run db:types` rewrites this whole file, so a
+// hand-authored contract sitting in it is one regeneration away from being
+// deleted — which is exactly what used to be true of AdminDashboardPayload.
+// The payload shapes, and the Zod schemas that check them at the boundary,
+// live in `src/lib/db/contracts.ts`.
 
 type TableShape<Row, Insert, Update> = {
   Row: Row;
@@ -835,11 +781,11 @@ export interface Database {
       };
       distribution_summary: {
         Args: Record<string, never>;
-        Returns: DistributionSummaryPayload;
+        Returns: Json;
       };
       my_distribution_summary: {
         Args: Record<string, never>;
-        Returns: DistributionSummaryPayload;
+        Returns: Json;
       };
       submit_order_payment: {
         Args: { p_order_id: string; p_paid_to?: string | null };
@@ -1022,21 +968,29 @@ export interface Database {
         Args: Record<string, never>;
         Returns: Json;
       };
+      my_production_assignments: {
+        Args: { p_scope?: string; p_limit?: number; p_offset?: number };
+        Returns: Json;
+      };
+      item_delete_impact: {
+        Args: { p_item_id: string };
+        Returns: Json;
+      };
       admin_dashboard: {
         Args: Record<string, never>;
-        Returns: AdminDashboardPayload;
+        Returns: Json;
       };
       cash_summary: {
         Args: { p_from?: string | null; p_to?: string | null };
-        Returns: CashSummaryPayload;
+        Returns: Json;
       };
       my_earnings_summary: {
         Args: Record<string, never>;
-        Returns: EarningsSummaryPayload;
+        Returns: Json;
       };
       my_payslips: {
         Args: Record<string, never>;
-        Returns: PayslipPayload[];
+        Returns: Json;
       };
       member_order_counts: {
         Args: { p_member_ids: string[] };

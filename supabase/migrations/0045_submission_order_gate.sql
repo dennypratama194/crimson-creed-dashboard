@@ -15,9 +15,17 @@
 -- ---------------------------------------------------------------------------
 -- settings: the toggle + how far back the obligation reaches
 -- ---------------------------------------------------------------------------
+-- Idempotent: one environment had these columns added by hand before this
+-- migration was ever recorded, so a plain ADD COLUMN aborted the whole push.
 alter table organization_settings
-  add column submission_gate_enabled boolean not null default false,
-  add column submission_obligation_start_month date,
+  add column if not exists submission_gate_enabled boolean not null default false,
+  add column if not exists submission_obligation_start_month date;
+
+-- No ADD CONSTRAINT IF NOT EXISTS in Postgres; drop-then-add is the equivalent.
+alter table organization_settings
+  drop constraint if exists organization_settings_start_month_first_of_month;
+
+alter table organization_settings
   add constraint organization_settings_start_month_first_of_month
     check (
       submission_obligation_start_month is null

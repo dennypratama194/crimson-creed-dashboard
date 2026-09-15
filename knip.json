@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/app/**/{page,layout,template,loading,error,not-found,global-error,route,default,sitemap,robots,icon,apple-icon,opengraph-image}.{ts,tsx}",
+    "e2e/**/*.spec.ts",
+    "scripts/*.mjs",
+    "supabase/*.ts",
+    "supabase/tests/*.mjs",
+    "tools/*.mjs",
+    "**/*.test.{ts,tsx}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.mjs",
+    "supabase/**/*.{ts,mjs}"
+  ],
+  "ignore": ["src/lib/database.types.ts", "src/components/ui/**"],
+  "ignoreDependencies": ["tailwindcss", "tw-animate-css"],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "types": "off",
+    "enumMembers": "off"
+  }
+}

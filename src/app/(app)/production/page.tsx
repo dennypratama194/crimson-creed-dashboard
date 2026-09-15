@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { cn } from "@/lib/utils";
+import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { MyAssignmentsTable } from "@/app/(app)/production/my-assignments-table";
 
 export const metadata: Metadata = { title: "Production" };
@@ -30,7 +31,8 @@ function one(value: string | string[] | undefined) {
 export default async function ProductionPage({
   searchParams,
 }: PageProps<"/production">) {
-  const [member, sp] = await Promise.all([requireActiveMember(), searchParams]);
+  // requireActiveMember is the gate; the list RPC scopes itself to the caller.
+  const [, sp] = await Promise.all([requireActiveMember(), searchParams]);
   const page = Math.max(1, Number(one(sp.page)) || 1);
   const rawScope = one(sp.scope);
   const scope: ProductionListScope = (
@@ -39,11 +41,8 @@ export default async function ProductionPage({
     ? (rawScope as ProductionListScope)
     : "all";
 
-  const assignments = await listMyProductionAssignments({
-    memberId: member.id,
-    page,
-    scope,
-  });
+  // The RPC behind this is caller-scoped in SQL; there is no member id to pass.
+  const assignments = await listMyProductionAssignments({ page, scope });
 
   return (
     <>
@@ -53,6 +52,8 @@ export default async function ProductionPage({
       />
 
       <section className="flex flex-col gap-4">
+        <DirtyMoneyNote scope="production" />
+
         <div
           role="tablist"
           aria-label="Filter assignments"

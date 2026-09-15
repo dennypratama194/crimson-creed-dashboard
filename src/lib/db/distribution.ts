@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { DistributionSummaryPayload, Tables } from "@/lib/database.types";
+import type { Tables } from "@/lib/database.types";
+import {
+  distributionSummaryPayload,
+  parseRpcPayload,
+  type DistributionSummaryPayload,
+} from "@/lib/db/contracts";
 import { getMemberNames } from "@/lib/db/members";
 import { createClient } from "@/lib/supabase/server";
 import type { DrawListScope } from "@/lib/validation/distribution";
@@ -201,7 +206,11 @@ export async function getMyDistributionSummary(): Promise<DistributionSummaryPay
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("my_distribution_summary");
   if (error) throw error;
-  return data;
+  return parseRpcPayload(
+    distributionSummaryPayload,
+    data,
+    "my_distribution_summary",
+  );
 }
 
 // ── admin: the board ───────────────────────────────────────────────────────
@@ -269,7 +278,11 @@ export async function getDistributionSummary(): Promise<DistributionSummaryPaylo
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("distribution_summary");
   if (error) throw error;
-  return data;
+  return parseRpcPayload(
+    distributionSummaryPayload,
+    data,
+    "distribution_summary",
+  );
 }
 
 export async function getDistribution(

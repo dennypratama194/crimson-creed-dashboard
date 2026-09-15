@@ -7,6 +7,7 @@ import type {
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
+import { cashSummaryPayload, parseRpcPayload } from "@/lib/db/contracts";
 import { createClient } from "@/lib/supabase/server";
 
 export type CashEntry = Tables<"cash_entries">;
@@ -44,7 +45,7 @@ export async function getCashSummary(range?: {
     p_to: range?.to ?? null,
   });
   if (error) throw error;
-  return data;
+  return parseRpcPayload(cashSummaryPayload, data, "cash_summary");
 }
 
 export type CashEntryRow = CashEntry & {

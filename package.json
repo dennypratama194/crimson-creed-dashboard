@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:test": "node supabase/tests/schema.mjs",
-    "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
+    "db:types": "node scripts/gen-types.mjs",
     "db:push": "supabase db push",
     "db:migrations": "supabase migration list",
     "db:seed": "tsx --env-file=.env.local supabase/seed.ts",
@@ -22,7 +22,10 @@
     "db:item-images": "tsx --env-file=.env.local supabase/backfill-item-images.ts",
     "db:create-admin": "tsx --env-file=.env.local supabase/create-admin.ts",
     "validate": "npm run typecheck && npm run lint && npm run test && npm run db:test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:test:concurrency": "node supabase/tests/concurrency.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "check:deadcode": "knip --no-exit-code"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
@@ -69,6 +72,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
@@ -76,7 +80,9 @@
     "eslint-config-next": "16.3.3",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
+    "knip": "^6.35.1",
     "lint-staged": "^17.4.1",
+    "pg": "^8.23.0",
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "supabase": "^2.116.0",

@@ -31,7 +31,7 @@ export function MyDrawsTable({ rows }: { rows: Distribution[] }) {
           </TableHead>
           <TableHead className="w-32">
             <span data-align="right" className="block">
-              You owe
+              You owe (dirty)
             </span>
           </TableHead>
           <TableHead className="w-28">Status</TableHead>

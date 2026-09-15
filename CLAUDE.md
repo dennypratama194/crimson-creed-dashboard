@@ -5,6 +5,14 @@
 The PRD (`Crimson_Creed_Operations_System_PRD.pdf`) is the source of truth.
 `IMPLEMENTATION_PLAN.md` tracks the agreed architecture and phase breakdown.
 
+`AGENTS.md`, imported above, carries the shared instructions every contributor
+and agent follows, and points at `docs/engineering-standards.md` for the
+detailed architecture, database, concurrency, performance, security and testing
+rules. **Process rules are not repeated here** — this file is the domain: what
+the product must do and what may never change about it. If the two ever seem to
+disagree, `docs/engineering-standards.md` is wrong about the domain and this
+file is wrong about process; fix the one that strayed.
+
 ## Non-negotiables (from the PRD)
 
 - Two app roles only: `SUPER_ADMIN`, `MEMBER`. Rank never affects permissions.

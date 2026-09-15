@@ -66,7 +66,10 @@ async function one(sql, params) {
 }
 
 // ── bootstrap: roles + stubbed Supabase auth schema ────────────────────────
-await db.exec(`
+// Reusable, because the idempotency check near the end of the suite builds a
+// second, throwaway database rather than replaying migrations into this one.
+async function bootstrapAuthStub(target) {
+  await target.exec(`
   create role anon nologin noinherit;
   create role authenticated nologin noinherit;
   create role service_role nologin noinherit bypassrls;
@@ -101,6 +104,9 @@ await db.exec(`
   alter table storage.objects enable row level security;
   grant usage on schema storage to anon, authenticated, service_role;
 `);
+}
+
+await bootstrapAuthStub(db);
 
 // ── apply migrations in order ─────────────────────────────────────────────
 const files = readdirSync(MIGRATIONS_DIR)
@@ -2647,6 +2653,172 @@ await expect("marking paid posts nothing to company cash", async () => {
     `cash moved ${before.b} -> ${after.b}`,
   );
 });
+// -- eligibility, enforced in the RPC and not only in the picker (0074) ----
+await expect("a non-PRODUCT item cannot be assigned (0074)", async () => {
+  // `item` is 9mm Rounds — AMMO. getAssignableProducts never offers it; a
+  // direct RPC call now agrees.
+  const before = await one(
+    `select count(*)::int n from production_assignments`,
+  );
+  const err = await callRolledBack(
+    `select create_production_assignment($1::uuid[], $2, 5)`,
+    [[memberId.m1], item.id],
+  );
+  assert(err !== null, "an AMMO item was assigned");
+  assert(/Product item/i.test(err.message), `wrong refusal: ${err.message}`);
+  const after = await one(`select count(*)::int n from production_assignments`);
+  assert(before.n === after.n, `jobs changed ${before.n} -> ${after.n}`);
+});
+await expect(
+  "stock type does not gate an assignment — PRODUCT is enough",
+  async () => {
+    // meth is PRODUCT + RAW_MATERIAL. Category is the only rule (same as 0070).
+    const a = await one(
+      `select * from create_production_assignment($1::uuid[], $2, 3)`,
+      [[memberId.m1], meth.id],
+    );
+    assert(a.item_id === meth.id, "a stash PRODUCT was refused");
+    await db.query(`select cancel_production_assignment($1, 'test cleanup')`, [
+      a.id,
+    ]);
+  },
+);
+await expect("an archived item cannot be assigned", async () => {
+  const doomed = await one(
+    `select * from create_item($1,'PRODUCT','UNIT',0,null,null,0,false,true,null,'RAW_MATERIAL')`,
+    ["Shelved Product"],
+  );
+  await db.query(`select archive_item($1)`, [doomed.id]);
+  const err = await callRolledBack(
+    `select create_production_assignment($1::uuid[], $2, 5)`,
+    [[memberId.m1], doomed.id],
+  );
+  assert(err !== null, "an archived item was assigned");
+  assert(/archived/i.test(err.message), `wrong refusal: ${err.message}`);
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "a member cannot create an assignment",
+  () =>
+    db.query(`select create_production_assignment($1::uuid[], $2, 5)`, [
+      [memberId.m1],
+      weed.id,
+    ]),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+
+// -- a repeated same-state request is a no-op (0074) -----------------------
+await expect("re-paying an already-paid line rewrites nothing", async () => {
+  const line = await one(
+    `select * from production_assignment_members
+     where assignment_id = $1 and member_id = $2`,
+    [assignment.id, memberId.m1],
+  );
+  await db.query(`select set_assignment_member_paid($1, true)`, [line.id]);
+  const first = await one(
+    `select status, paid_by, paid_at from production_assignment_members
+     where id = $1`,
+    [line.id],
+  );
+  const auditBefore = await one(
+    `select count(*)::int n from audit_logs
+     where action = 'PRODUCTION_ASSIGNMENT_PAID' and entity_id = $1`,
+    [line.id],
+  );
+  const notesBefore = await one(
+    `select count(*)::int n from notifications
+     where type = 'PRODUCTION_ASSIGNMENT_PAID' and reference_id = $1`,
+    [assignment.id],
+  );
+
+  // Same state again — the double-click / retried request.
+  await db.query(`select set_assignment_member_paid($1, true)`, [line.id]);
+
+  const second = await one(
+    `select status, paid_by, paid_at from production_assignment_members
+     where id = $1`,
+    [line.id],
+  );
+  assert(
+    String(first.paid_at) === String(second.paid_at) &&
+      String(first.paid_by) === String(second.paid_by),
+    `attribution was rewritten: ${first.paid_at}/${first.paid_by} -> ${second.paid_at}/${second.paid_by}`,
+  );
+  const auditAfter = await one(
+    `select count(*)::int n from audit_logs
+     where action = 'PRODUCTION_ASSIGNMENT_PAID' and entity_id = $1`,
+    [line.id],
+  );
+  assert(
+    auditAfter.n === auditBefore.n,
+    `audit rows ${auditBefore.n} -> ${auditAfter.n}`,
+  );
+  const notesAfter = await one(
+    `select count(*)::int n from notifications
+     where type = 'PRODUCTION_ASSIGNMENT_PAID' and reference_id = $1`,
+    [assignment.id],
+  );
+  assert(
+    notesAfter.n === notesBefore.n,
+    `notifications ${notesBefore.n} -> ${notesAfter.n}`,
+  );
+});
+await expect("re-un-paying an unpaid line is also a no-op", async () => {
+  const other = await one(
+    `select * from create_production_assignment($1::uuid[], $2, 4)`,
+    [[memberId.m2], weed.id],
+  );
+  const line = await one(
+    `select id from production_assignment_members where assignment_id = $1`,
+    [other.id],
+  );
+  const before = await one(
+    `select count(*)::int n from audit_logs
+     where action = 'PRODUCTION_ASSIGNMENT_PAID' and entity_id = $1`,
+    [line.id],
+  );
+  await db.query(`select set_assignment_member_paid($1, false)`, [line.id]);
+  const after = await one(
+    `select count(*)::int n from audit_logs
+     where action = 'PRODUCTION_ASSIGNMENT_PAID' and entity_id = $1`,
+    [line.id],
+  );
+  assert(after.n === before.n, `audit rows ${before.n} -> ${after.n}`);
+  await db.query(`select cancel_production_assignment($1, 'test cleanup')`, [
+    other.id,
+  ]);
+});
+await expect("null inputs are refused, not silently applied", async () => {
+  const line = await one(
+    `select id from production_assignment_members
+     where assignment_id = $1 limit 1`,
+    [assignment.id],
+  );
+  assert(
+    (await callRolledBack(`select set_assignment_member_paid($1, null)`, [
+      line.id,
+    ])) !== null,
+    "a null paid state was accepted",
+  );
+  assert(
+    (await callRolledBack(`select set_assignment_member_paid(null, true)`)) !==
+      null,
+    "a null line id was accepted",
+  );
+  assert(
+    (await callRolledBack(`select set_production_assignment_paid($1, null)`, [
+      assignment.id,
+    ])) !== null,
+    "a null paid state was accepted on the whole-crew path",
+  );
+  assert(
+    (await callRolledBack(`select cancel_production_assignment(null)`)) !==
+      null,
+    "a null assignment id was accepted by cancel",
+  );
+});
+
 await expect("a cancelled job cannot be marked paid", async () => {
   const other = await one(
     `select * from create_production_assignment($1::uuid[], $2, 10)`,
@@ -2709,6 +2881,275 @@ await expect("a member not on the job sees nothing of it", async () => {
 });
 await asRole("authenticated", admin.id);
 
+// -- my_production_assignments(): the member page, paginated in SQL (0075) --
+// The old data-access path pulled every crew line the member owned, mapped it
+// to assignment ids and asked for `id in (<that list>)`. Past the PostgREST
+// row cap the list was silently truncated and `total` counted the truncation.
+// These tests describe the RPC that replaced it.
+const callMine = (scope = "all", limit = 20, offset = 0) =>
+  one(`select my_production_assignments($1, $2, $3) p`, [scope, limit, offset]);
+
+// A dataset deliberately larger than the 1000-row cap that used to bound the
+// intermediate query, and with a block of IDENTICAL assigned_at values so the
+// `id` tie-breaker is actually exercised.
+const BULK = 1200;
+await asRole(null);
+await db.query(
+  `insert into production_assignments (
+     item_id, item_name_snapshot, item_unit_snapshot, quantity,
+     assigned_by, assigned_at
+   )
+   select $1, 'Bulk Job', 'UNIT', 1, $2,
+          -- 400 rows share one timestamp; the rest step back a second each.
+          case when g <= 400 then timestamptz '2020-01-01 00:00:00+00'
+               else timestamptz '2020-01-01 00:00:00+00' - (g || ' seconds')::interval
+          end
+   from generate_series(1, $3) g`,
+  [weed.id, memberId.m1, BULK],
+);
+await db.query(
+  `insert into production_assignment_members
+     (assignment_id, member_id, member_name_snapshot, status)
+   select a.id, $1, 'Bulk Member',
+          case when row_number() over (order by a.id) % 2 = 0
+               then 'PAID' else 'UNPAID' end::production_assignment_status
+   from production_assignments a
+   where a.item_name_snapshot = 'Bulk Job'`,
+  [memberId.m1],
+);
+// Roll the job status up to match the crew lines we just wrote by hand.
+await db.query(
+  `update production_assignments a set status = l.status
+   from production_assignment_members l
+   where l.assignment_id = a.id and a.item_name_snapshot = 'Bulk Job'`,
+);
+
+await asRole("authenticated", m1.id);
+await expect(
+  "a dataset past the old 1000-row cap is counted in full",
+  async () => {
+    const { p } = await callMine("all", 20, 0);
+    assert(
+      Number(p.total) >= BULK,
+      `total ${p.total} — the old path capped this at 1000`,
+    );
+    assert(p.rows.length === 20, `page held ${p.rows.length} rows`);
+  },
+);
+await expect("paging is deterministic across equal timestamps", async () => {
+  // Walk five pages through the block of identical assigned_at values and
+  // prove no row is repeated or skipped by the ordering.
+  const seen = new Set();
+  for (let page = 0; page < 5; page += 1) {
+    const { p } = await callMine("all", 20, page * 20);
+    assert(p.rows.length === 20, `page ${page} held ${p.rows.length} rows`);
+    for (const row of p.rows) {
+      assert(!seen.has(row.id), `row ${row.id} appeared on two pages`);
+      seen.add(row.id);
+    }
+  }
+  assert(seen.size === 100, `saw ${seen.size} distinct rows across 5 pages`);
+});
+await expect("ordering is newest first", async () => {
+  const { p } = await callMine("all", 20, 0);
+  for (let i = 1; i < p.rows.length; i += 1) {
+    const prev = p.rows[i - 1];
+    const cur = p.rows[i];
+    const older =
+      prev.assigned_at > cur.assigned_at ||
+      (prev.assigned_at === cur.assigned_at && prev.id > cur.id);
+    assert(older, `row ${i} is out of order`);
+  }
+});
+await expect(
+  "every row carries exactly the caller's own crew line",
+  async () => {
+    const { p } = await callMine("all", 20, 0);
+    for (const row of p.rows) {
+      assert(
+        row.crew.length === 1,
+        `row ${row.id} carried ${row.crew.length} lines`,
+      );
+      assert(
+        row.crew[0].member_id === memberId.m1,
+        "a crewmate's line leaked into the member payload",
+      );
+    }
+  },
+);
+await expect(
+  "the paid / unpaid filters read the member's OWN line",
+  async () => {
+    const all = await callMine("all", 1, 0);
+    const paid = await callMine("paid", 100, 0);
+    const unpaid = await callMine("unpaid", 100, 0);
+    const cancelled = await callMine("cancelled", 100, 0);
+    for (const row of paid.p.rows) {
+      assert(row.crew[0].status === "PAID", `unpaid line in the paid filter`);
+      assert(row.status !== "CANCELLED", "a cancelled job leaked into 'paid'");
+    }
+    for (const row of unpaid.p.rows) {
+      assert(row.crew[0].status === "UNPAID", `paid line in the unpaid filter`);
+      assert(
+        row.status !== "CANCELLED",
+        "a cancelled job leaked into 'unpaid'",
+      );
+    }
+    for (const row of cancelled.p.rows) {
+      assert(
+        row.status === "CANCELLED",
+        `${row.status} in the cancelled filter`,
+      );
+    }
+    assert(
+      Number(paid.p.total) +
+        Number(unpaid.p.total) +
+        Number(cancelled.p.total) ===
+        Number(all.p.total),
+      `filters ${paid.p.total}+${unpaid.p.total}+${cancelled.p.total} != all ${all.p.total}`,
+    );
+  },
+);
+await asRole("authenticated", admin.id);
+let splitJob;
+await expect("a paid member on a partly unpaid crew reads PAID", async () => {
+  // The distinction the member page turns on: "have I been paid", not "has the
+  // job been paid". m1 is paid, m2 is not, so the job rolls up UNPAID while
+  // m1's own line is PAID — and m1's "Paid" tab must still list it.
+  splitJob = await one(
+    `select * from create_production_assignment($1::uuid[], $2, 7)`,
+    [[memberId.m1, memberId.m2], weed.id],
+  );
+  const mine = await one(
+    `select id from production_assignment_members
+     where assignment_id = $1 and member_id = $2`,
+    [splitJob.id, memberId.m1],
+  );
+  await db.query(`select set_assignment_member_paid($1, true)`, [mine.id]);
+
+  const rolled = await one(
+    `select status from production_assignments where id = $1`,
+    [splitJob.id],
+  );
+  assert(rolled.status === "UNPAID", `job rollup ${rolled.status}`);
+
+  await asRole("authenticated", m1.id);
+  const { p } = await callMine("paid", 100, 0);
+  const row = p.rows.find((r) => r.id === splitJob.id);
+  assert(row, "m1's paid line did not appear under the paid filter");
+  assert(row.status === "UNPAID", `job rollup ${row.status}`);
+  assert(row.crew[0].status === "PAID", `own line ${row.crew[0].status}`);
+
+  // And the crewmate's unpaid line is not visible anywhere in the payload.
+  assert(row.crew.length === 1, `payload carried ${row.crew.length} lines`);
+});
+await asRole("authenticated", m2.id);
+await expect("the same job reads UNPAID for the crewmate", async () => {
+  const { p } = await callMine("unpaid", 100, 0);
+  const row = p.rows.find((r) => r.id === splitJob.id);
+  assert(row, "m2's unpaid line did not appear under the unpaid filter");
+  assert(row.crew[0].member_id === memberId.m2, "m1's line leaked to m2");
+  const paid = await callMine("paid", 100, 0);
+  assert(
+    !paid.p.rows.some((r) => r.id === splitJob.id),
+    "m2 saw the job as paid because a crewmate was paid",
+  );
+});
+await asRole("authenticated", m1.id);
+await expect("pagination inputs are bounded, not trusted", async () => {
+  const huge = await callMine("all", 100000, 0);
+  assert(huge.p.rows.length <= 100, `returned ${huge.p.rows.length} rows`);
+  const zero = await callMine("all", 0, -50);
+  assert(zero.p.rows.length >= 1, "a zero limit returned nothing");
+  const past = await callMine("all", 20, 999999);
+  assert(past.p.rows.length === 0, "an offset past the end returned rows");
+  assert(
+    Number(past.p.total) === Number(huge.p.total),
+    "total drifted with the offset",
+  );
+});
+await expectThrows(
+  "an unknown filter is refused",
+  () => db.query(`select my_production_assignments('everything')`),
+  "Unknown filter",
+);
+
+await asRole("authenticated", inactive.id);
+await expect(
+  "an inactive member is scoped to their own empty list",
+  async () => {
+    // Same boundary as the rest of the my_* family (my_distribution_summary,
+    // my_submission_debt): the RPC scopes to the caller, and requireActiveMember
+    // in the app layer is what keeps an inactive account off the page at all.
+    // What matters here is that it cannot widen to anybody else's work.
+    const { p } = await callMine("all", 100, 0);
+    assert(Number(p.total) === 0, `inactive member saw ${p.total} jobs`);
+  },
+);
+await asRole("anon", null);
+await expectThrows(
+  "a signed-out caller cannot read the assignment list",
+  () => db.query(`select my_production_assignments('all')`),
+  "permission denied|insufficient_privilege|active members",
+);
+
+await asRole("authenticated", m2.id);
+await expect("a member sees only their own jobs", async () => {
+  const { p } = await callMine("all", 100, 0);
+  // m2 is on `assignment` only — none of m1's 1200 bulk jobs.
+  for (const row of p.rows) {
+    assert(
+      row.crew[0].member_id === memberId.m2,
+      "another member's line was returned",
+    );
+  }
+  assert(
+    Number(p.total) < BULK,
+    `m2 sees ${p.total} jobs — m1's list leaked across`,
+  );
+});
+
+await asRole("authenticated", admin.id);
+await expect(
+  "a Super Admin's personal view is their own, not everyone's",
+  async () => {
+    // The RPC takes no member id at all, so there is nothing to widen. A Super
+    // Admin on /production sees the jobs THEY are on — here, none.
+    const { p } = await callMine("all", 100, 0);
+    assert(
+      Number(p.total) === 0,
+      `admin's personal view showed ${p.total} jobs`,
+    );
+    assert(
+      p.rows.length === 0,
+      "admin's personal view listed other people's work",
+    );
+  },
+);
+await expect("the RPC signature exposes no member parameter", async () => {
+  const r = await one(
+    `select oidvectortypes(p.proargtypes) args
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'my_production_assignments'`,
+  );
+  assert(
+    r.args === "text, integer, integer",
+    `signature is (${r.args}) — a member id would be trustable from the browser`,
+  );
+});
+
+// Clear the bulk fixture so the delete tests below count what they expect.
+await asRole(null);
+await db.query(
+  `delete from production_assignment_members l
+   using production_assignments a
+   where l.assignment_id = a.id and a.item_name_snapshot = 'Bulk Job'`,
+);
+await db.query(
+  `delete from production_assignments where item_name_snapshot = 'Bulk Job'`,
+);
+await asRole("authenticated", admin.id);
+
 // -- hard delete (0072) ----------------------------------------------------
 console.log("\nItem delete");
 await asRole("authenticated", admin.id);
@@ -2769,18 +3210,193 @@ await expectThrows(
   "an item on a draw is still refused",
   // Blue Meth carries draws — money owed, not stock history.
   () => db.query(`select delete_item($1)`, [meth.id]),
-  "cannot be deleted",
+  "Archive it instead",
 );
+await expect(
+  "the refusal does not promise that settling a draw would help (0076)",
+  async () => {
+    const err = await callRolledBack(`select delete_item($1)`, [meth.id]);
+    assert(err !== null, "the delete was not refused");
+    assert(
+      !/settle or reverse those first/i.test(err.message),
+      `still advises settling: ${err.message}`,
+    );
+    assert(
+      /permanent/i.test(err.message) && /archive/i.test(err.message),
+      `refusal is not explicit: ${err.message}`,
+    );
+  },
+);
+await expect(
+  "a draw blocks in every status, not just OPEN (0076)",
+  async () => {
+    // meth carries a SETTLED and a REVERSED draw by now as well as an OPEN one.
+    const states = await db.query(
+      `select distinct status from distributions where item_id = $1`,
+      [meth.id],
+    );
+    assert(states.rows.length > 0, "no draws to test against");
+    for (const { status } of states.rows) {
+      const err = await callRolledBack(`select delete_item($1)`, [meth.id]);
+      assert(err !== null, `a ${status} draw did not block the delete`);
+    }
+  },
+);
+await expect("an item on an order line is refused by name (0072)", async () => {
+  // `item` is 9mm Rounds — it sits on the order placed at the top of the suite.
+  const err = await callRolledBack(`select delete_item($1)`, [item.id]);
+  assert(err !== null, "an ordered item was deleted");
+  assert(/order line/i.test(err.message), `wrong refusal: ${err.message}`);
+});
+await expect("a configured submission material is refused", async () => {
+  const mapped = await one(
+    `select inventory_item_id id from submission_material_types
+     where inventory_item_id is not null limit 1`,
+  );
+  assert(mapped?.id, "no submission material is wired to a stock item");
+  const err = await callRolledBack(`select delete_item($1)`, [mapped.id]);
+  assert(err !== null, "a submission material item was deleted");
+  assert(
+    /submission material/i.test(err.message),
+    `wrong refusal: ${err.message}`,
+  );
+});
+await expect("a blocked delete leaves no partial cleanup", async () => {
+  // Blockers are checked before a single DELETE runs, but prove it: the stash
+  // history the RPC would otherwise clear has to still be there afterwards.
+  const before = await one(
+    `select (select count(*) from inventory_movements where item_id = $1) mv,
+            (select count(*) from distribution_rates where item_id = $1) rate,
+            (select count(*) from inventory where item_id = $1) inv`,
+    [meth.id],
+  );
+  await callRolledBack(`select delete_item($1)`, [meth.id]);
+  const after = await one(
+    `select (select count(*) from inventory_movements where item_id = $1) mv,
+            (select count(*) from distribution_rates where item_id = $1) rate,
+            (select count(*) from inventory where item_id = $1) inv`,
+    [meth.id],
+  );
+  assert(
+    String(before.mv) === String(after.mv) &&
+      String(before.rate) === String(after.rate) &&
+      String(before.inv) === String(after.inv),
+    `history changed: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
+  );
+});
 await expect("a refused delete leaves the item untouched", async () => {
   const still = await one(`select count(*)::int n from items where id = $1`, [
     meth.id,
   ]);
   assert(still.n === 1, "item disappeared despite the refusal");
 });
+await expect(
+  "item_delete_impact previews blockers and clears (0076)",
+  async () => {
+    const r = await one(`select item_delete_impact($1) p`, [meth.id]);
+    const p = r.p;
+    assert(p.itemName === "Blue Meth", `itemName ${p.itemName}`);
+    assert(Number(p.blockers.draws) > 0, `draws ${p.blockers.draws}`);
+    assert(
+      Number(p.clears.stockMovements) > 0,
+      `stockMovements ${p.clears.stockMovements}`,
+    );
+  },
+);
+
+// The append-only ledger stays append-only for every path but delete_item.
+// Run as the table OWNER: `authenticated` is refused by a table grant long
+// before the trigger is reached, so only the owner actually exercises it.
+await asRole(null);
+await expect("an ordinary movement UPDATE is still refused", async () => {
+  const err = await callRolledBack(
+    `update inventory_movements set quantity = quantity + 1 where item_id = $1`,
+    [meth.id],
+  );
+  assert(err !== null, "a movement was updated");
+  assert(/append-only/i.test(err.message), `wrong refusal: ${err.message}`);
+});
+await expect("an ordinary movement DELETE is still refused", async () => {
+  const err = await callRolledBack(
+    `delete from inventory_movements where item_id = $1`,
+    [meth.id],
+  );
+  assert(err !== null, "a movement was deleted");
+  assert(/append-only/i.test(err.message), `wrong refusal: ${err.message}`);
+});
+await expect("the purge exemption is scoped to one item (0073)", async () => {
+  // Even with the GUC set by hand, it only ever admits the item it names.
+  const victim = await one(
+    `select item_id id from inventory_movements
+     where item_id <> $1 group by item_id limit 1`,
+    [meth.id],
+  );
+  assert(victim?.id, "no second item with movements to test against");
+  await db.exec("begin");
+  try {
+    await db.query(`select set_config('app.purging_item', $1, true)`, [
+      meth.id,
+    ]);
+    let err = null;
+    try {
+      await db.query(`delete from inventory_movements where item_id = $1`, [
+        victim.id,
+      ]);
+    } catch (e) {
+      err = e;
+    }
+    assert(err !== null, "another item's movements were purged");
+    assert(/append-only/i.test(err.message), `wrong refusal: ${err.message}`);
+  } finally {
+    await db.exec("rollback");
+  }
+});
+await expect("the purge exemption never admits an UPDATE (0073)", async () => {
+  await db.exec("begin");
+  try {
+    await db.query(`select set_config('app.purging_item', $1, true)`, [
+      meth.id,
+    ]);
+    let err = null;
+    try {
+      await db.query(
+        `update inventory_movements set quantity = quantity + 1 where item_id = $1`,
+        [meth.id],
+      );
+    } catch (e) {
+      err = e;
+    }
+    assert(err !== null, "the purge flag allowed an UPDATE");
+  } finally {
+    await db.exec("rollback");
+  }
+});
+await expect("the purge flag does not survive its transaction", async () => {
+  const r = await one(
+    `select coalesce(current_setting('app.purging_item', true), '') v`,
+  );
+  assert(r.v === "", `purge flag leaked as "${r.v}"`);
+});
+await asRole("authenticated", m1.id);
+await expect("a member cannot reach the ledger at all", async () => {
+  for (const sql of [
+    `update inventory_movements set quantity = quantity + 1`,
+    `delete from inventory_movements`,
+  ]) {
+    const err = await callRolledBack(sql);
+    assert(err !== null, `a member ran: ${sql}`);
+  }
+});
+
 await asRole("authenticated", m1.id);
 await expectThrows(
   "a member cannot delete an item",
   () => db.query(`select delete_item($1)`, [item.id]),
+  "Super Admin",
+);
+await expectThrows(
+  "a member cannot preview a delete either",
+  () => db.query(`select item_delete_impact($1)`, [item.id]),
   "Super Admin",
 );
 await asRole(null);
@@ -2803,10 +3419,38 @@ await expect("composite list indexes exist", async () => {
   );
   assert(r.rows.length === 3, `found ${r.rows.map((x) => x.indexname)}`);
 });
-await expect("0056–0058 re-apply cleanly", async () => {
-  for (const file of files.filter((f) => /^005[6-8]_/.test(f))) {
-    await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+// Re-applying a migration has to happen in a THROWAWAY database, never this
+// one. 0056–0058 declare admin_dashboard() and the aggregate read RPCs; later
+// migrations (0063, 0075, …) redefine some of those objects. Replaying the old
+// files here would quietly roll the live test schema back to its pre-Phase-19
+// shape, and every assertion after this point — the whole security-boundary
+// section — would then be checking functions the app no longer ships.
+await expect("0056–0058 re-apply cleanly (isolated database)", async () => {
+  const scratch = await PGlite.create();
+  try {
+    await bootstrapAuthStub(scratch);
+    for (const file of files) {
+      await scratch.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    for (const file of files.filter((f) => /^005[6-8]_/.test(f))) {
+      await scratch.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+  } finally {
+    await scratch.close();
   }
+});
+await expect("this database still holds the CURRENT definitions", async () => {
+  // Guards the isolation above: if someone replays migrations into `db` again,
+  // the post-Phase-19 marker disappears and this fails loudly.
+  const r = await one(
+    `select pg_get_functiondef(p.oid) def
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'admin_dashboard'`,
+  );
+  assert(
+    /openDraws|productionUnpaid/i.test(r.def),
+    "admin_dashboard() was reverted to its pre-0063 shape",
+  );
 });
 
 // ── security boundaries ─────────────────────────────────────────────────────
@@ -2826,6 +3470,7 @@ const MEMBER_CALLABLE = new Set([
   "my_earnings_summary",
   "my_distribution_summary",
   "my_payslips",
+  "my_production_assignments",
   "my_submission_debt",
   "submit_material_submission",
   "submit_order_payment",
@@ -2883,6 +3528,27 @@ await expect("SECURITY DEFINER functions all pin search_path", async () => {
        )`,
   );
   assert(r.rows.length === 0, `unpinned: ${r.rows.map((x) => x.proname)}`);
+});
+await expect("EVERY function in public/app pins search_path", async () => {
+  // Wider than the check above on purpose. app.reject_movement_mutation() is
+  // the trigger standing between an ordinary caller and the append-only stock
+  // ledger, and it shipped in 0073 with no pinned search_path — invisible to a
+  // SECURITY DEFINER-only check, because a trigger does not need to be one.
+  // Pinning is the house rule for all of them (0052, 0076), so test all of them.
+  const r = await db.query(
+    `select n.nspname || '.' || p.proname as name from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname in ('public', 'app')
+       and p.prokind = 'f'
+       and not exists (
+         select 1 from unnest(coalesce(p.proconfig, '{}')) c
+         where c like 'search_path=%'
+       )`,
+  );
+  assert(
+    r.rows.length === 0,
+    `unpinned: ${r.rows.map((x) => x.name).join(", ")}`,
+  );
 });
 await expect("member-callable allowlist names real functions", async () => {
   const names = new Set(publicFns.map((f) => f.name));
