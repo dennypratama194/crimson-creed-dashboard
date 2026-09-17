@@ -4622,6 +4622,22 @@ if (!baseRef) {
           JSON.stringify(kept),
         );
 
+        // The quota must count the post-upgrade order. Compare before/after rather
+        // than expecting 1: once this branch is merged the base schema already
+        // has 0079, so the pre-upgrade order was counted too.
+        const quotaHits = async () =>
+          (
+            await upOne(
+              `select coalesce((
+                 select hits from member_action_throttle m
+                 join members x on x.id = m.member_id
+                 where x.user_id = $1 and action = 'order:create'
+               ), 0) as hits`,
+              [u.id],
+            )
+          ).hits;
+        const hitsBefore = await quotaHits();
+
         await as("authenticated", u.id);
         const next = await upOne(
           `select * from create_order($1::jsonb, null)`,
@@ -4649,12 +4665,11 @@ if (!baseRef) {
         );
         assert(Number(w.w) === 0, `throttle ${w.w}`);
         await as(null);
-        const q = await upOne(
-          `select hits from member_action_throttle m join members x on x.id = m.member_id
-           where x.user_id = $1 and action = 'order:create'`,
-          [u.id],
+        const hitsAfter = await quotaHits();
+        assert(
+          hitsAfter === hitsBefore + 1,
+          `quota after upgrade ${hitsBefore} -> ${hitsAfter}`,
         );
-        assert(q?.hits === 1, `quota after upgrade ${q?.hits}`);
       } finally {
         await up.close();
       }
