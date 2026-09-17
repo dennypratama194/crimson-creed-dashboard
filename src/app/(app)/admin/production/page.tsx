@@ -11,6 +11,7 @@ import {
   PRODUCTION_LIST_SCOPES,
   type ProductionListScope,
 } from "@/lib/validation/production";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -33,7 +34,7 @@ export default async function AdminProductionPage({
   await requireSuperAdmin();
   const sp = await searchParams;
 
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const rawScope = one(sp.scope);
   const scope: ProductionListScope = (
     PRODUCTION_LIST_SCOPES as readonly string[]

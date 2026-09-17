@@ -6,6 +6,7 @@ import {
   myProductionAssignmentsPayload,
   parseRpcPayload,
 } from "@/lib/db/contracts";
+import { pageBounds, readAllRows } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 import type { ProductionListScope } from "@/lib/validation/production";
 
@@ -43,14 +44,16 @@ export type AssignableProduct = {
  */
 export async function getAssignableProducts(): Promise<AssignableProduct[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("items")
-    .select("id, name, unit, stock_type")
-    .eq("category", "PRODUCT")
-    .is("archived_at", null)
-    .order("name", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+  return readAllRows((from, to) =>
+    supabase
+      .from("items")
+      .select("id, name, unit, stock_type")
+      .eq("category", "PRODUCT")
+      .is("archived_at", null)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 }
 
 /**
@@ -81,7 +84,8 @@ async function withCrew(
       .from("production_assignment_members")
       .select("*")
       .in("assignment_id", ids.slice(i, i + CREW_CHUNK))
-      .order("member_name_snapshot", { ascending: true });
+      .order("member_name_snapshot", { ascending: true })
+      .order("id", { ascending: true });
     if (error) throw error;
 
     for (const line of data ?? []) {
@@ -122,13 +126,13 @@ export async function listMyProductionAssignments(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = PRODUCTION_ASSIGNMENT_PAGE_SIZE;
+  const { page, from } = pageBounds(options.page, pageSize);
 
   const { data, error } = await supabase.rpc("my_production_assignments", {
     p_scope: options.scope ?? "all",
     p_limit: pageSize,
-    p_offset: (page - 1) * pageSize,
+    p_offset: from,
   });
   if (error) throw error;
 
@@ -153,9 +157,8 @@ export async function listAdminProductionAssignments(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = PRODUCTION_ASSIGNMENT_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("production_assignments")
@@ -173,10 +176,7 @@ export async function listAdminProductionAssignments(options: {
     .slice(0, 60);
   if (search) query = query.ilike("item_name_snapshot", `%${search}%`);
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   return {

@@ -14,6 +14,7 @@ import { getCashBalance, getCashSummary, listCashEntries } from "@/lib/db/cash";
 import { listSuperAdmins } from "@/lib/db/members";
 import { formatMoney, formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -58,7 +59,7 @@ export default async function CashPage({
   searchParams,
 }: PageProps<"/admin/cash">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const direction = pick<CashDirection>(one(sp.direction), CASH_DIRECTIONS);
   const category = pick<CashCategory>(one(sp.category), CASH_CATEGORIES);
   const source = pick<CashEntrySource>(one(sp.source), CASH_ENTRY_SOURCES);

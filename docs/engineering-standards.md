@@ -168,7 +168,17 @@ list>)`. Past PostgREST's row cap (1000 on Supabase) the list came back
   it — so `order by assigned_at desc, id desc`. Without the tie-breaker, paging
   repeats and skips rows.
 - **Validate and clamp page inputs** in the RPC. `least(greatest(limit, 1), 100)`,
-  offset floored at zero.
+  offset floored at zero. On the PostgREST side, `pageBounds()` /
+  `clampPage()` in `src/lib/db/paging.ts` turn a `?page=` from the URL into a
+  whole page number before it becomes a range.
+- **"Read everything" is a bounded loop, not one select.** Pickers and
+  catalogues that genuinely need the whole set use `readAllRows()` (batches
+  below the row cap, unique order, loud failure past a ceiling); id lists go
+  through `chunk()`. Totals and counts belong in SQL instead.
+- **A failed read is not absence.** Readers throw on a Supabase error; `null`
+  means the row does not exist (or RLS hides it), and a malformed id from the
+  URL is `null` before any query (`isUuid`). Never `data ?? 0` over an ignored
+  `error` — an outage then renders as a zero balance or a 404.
 - **Justify an index with the query it serves.** Name the query shape in the
   migration comment. Do not add indexes speculatively — each one is paid for on
   every write.
@@ -279,11 +289,11 @@ and the labels are the app-side half of them. The same goes for the SQL —
 migrations are not scanned at all, and no scanner's opinion is a reason to drop
 a function or a table.
 
-And do not add, remove, or pin a dependency to quiet a report. `undici` is
-currently imported by `src/lib/services/fivem.ts` without being in
-`package.json`; it resolves transitively today. That one is worth **declaring**
-— it is a real fragility — but as a deliberate decision, not as a way to make
-the output shorter.
+And do not add, remove, or pin a dependency to quiet a report. `undici`
+(imported by `src/lib/services/fivem.ts`) used to resolve only through `jsdom`,
+a dev dependency, so a production install without dev dependencies would have
+lost it. It is now declared directly — a deliberate fix for that fragility, not
+a way to make the output shorter.
 
 ---
 

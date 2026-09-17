@@ -4,6 +4,7 @@ import { ScrollText } from "lucide-react";
 import { AUDIT_ACTIONS, type AuditAction } from "@/lib/constants/enums";
 import { listAudit } from "@/lib/db/activity";
 import { formatDateTime, humanizeToken } from "@/lib/format";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
@@ -28,7 +29,7 @@ export default async function AdminAuditPage({
   searchParams,
 }: PageProps<"/admin/audit">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const rawAction = one(sp.action);
   const action = (AUDIT_ACTIONS as readonly string[]).includes(rawAction ?? "")
     ? (rawAction as AuditAction)

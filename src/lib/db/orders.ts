@@ -8,7 +8,9 @@ import type {
   PaymentStatus,
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import { isUuid } from "@/lib/db/ids";
 import { getMemberNames } from "@/lib/db/members";
+import { pageBounds, readAllRows } from "@/lib/db/paging";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { OrderListScope } from "@/lib/validation/order";
@@ -33,24 +35,21 @@ export async function listOrders(options: {
   memberId?: string;
 }): Promise<{ rows: Order[]; total: number; page: number; pageSize: number }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = ORDER_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("orders")
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.memberId) query = query.eq("member_id", options.memberId);
   if (options.scope === "open") query = query.in("status", [...OPEN_STATUSES]);
   if (options.scope === "closed")
     query = query.in("status", [...CLOSED_STATUSES]);
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   return { rows: data ?? [], total: count ?? 0, page, pageSize };
@@ -76,9 +75,8 @@ export async function listAdminOrders(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = ORDER_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   // Only what the table renders: order rows carry up to four 1000-char notes.
   let query = supabase
@@ -102,10 +100,7 @@ export async function listAdminOrders(options: {
     .slice(0, 40);
   if (search) query = query.ilike("order_number", `%${search}%`);
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const rows = data ?? [];
@@ -128,30 +123,47 @@ export type OrderDetail = {
   timeline: OrderTimelineEntry[];
 };
 
+/**
+ * One order with its lines and timeline, or null when the order does not exist
+ * (or RLS hides it). A failed query throws to the route's error boundary rather
+ * than rendering as a 404 or as an order with no lines.
+ */
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
+  if (!isUuid(id)) return null;
   const supabase = await createClient();
 
-  const { data: order } = await supabase
+  const { data: order, error } = await supabase
     .from("orders")
     .select("*")
     .eq("id", id)
     .maybeSingle();
+  if (error) throw error;
   if (!order) return null;
 
-  const [{ data: items }, { data: timeline }] = await Promise.all([
-    supabase
-      .from("order_items")
-      .select("*")
-      .eq("order_id", id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("order_timeline")
-      .select("*")
-      .eq("order_id", id)
-      .order("created_at", { ascending: true }),
+  // An order has a few lines and a handful of timeline entries; read in
+  // batches anyway so neither list can be cut short by the row cap.
+  const [items, timeline] = await Promise.all([
+    readAllRows((from, to) =>
+      supabase
+        .from("order_items")
+        .select("*")
+        .eq("order_id", id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from("order_timeline")
+        .select("*")
+        .eq("order_id", id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
-  return { order, items: items ?? [], timeline: timeline ?? [] };
+  return { order, items, timeline };
 }
 
 export type OrderableItem = Pick<
@@ -175,17 +187,19 @@ export const ORDERABLE_ITEMS_CACHE_TAG = "orderable-items";
 const cachedOrderableItems = unstable_cache(
   async (): Promise<OrderableItem[]> => {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, name, category, unit, price, description, image_url")
-      .eq("stock_type", "CATALOGUE")
-      .eq("active", true)
-      .eq("orderable", true)
-      .is("archived_at", null)
-      .order("category", { ascending: true })
-      .order("name", { ascending: true });
-    if (error) throw error;
-    return data ?? [];
+    return readAllRows((from, to) =>
+      supabase
+        .from("items")
+        .select("id, name, category, unit, price, description, image_url")
+        .eq("stock_type", "CATALOGUE")
+        .eq("active", true)
+        .eq("orderable", true)
+        .is("archived_at", null)
+        .order("category", { ascending: true })
+        .order("name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
   },
   ["orderable-items"],
   { tags: [ORDERABLE_ITEMS_CACHE_TAG], revalidate: 300 },

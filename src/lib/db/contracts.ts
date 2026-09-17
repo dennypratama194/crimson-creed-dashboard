@@ -27,12 +27,17 @@
  */
 import { z } from "zod";
 
+import {
+  MEMBER_RANKS,
+  MEMBER_SUBMISSION_STATUSES,
+} from "@/lib/constants/enums";
 import type { PayrollRunStatus, Tables } from "@/lib/database.types";
 
 // Row aliases, via the generated `Tables<>` helper rather than the generator's
 // internal names — so regenerating the schema file cannot break this one.
 type ActivityLogRow = Tables<"activity_logs">;
 type ItemRow = Tables<"items">;
+type MemberSubmissionRow = Tables<"member_submissions">;
 type OrderRow = Tables<"orders">;
 type PayrollRunLineRow = Tables<"payroll_run_lines">;
 type ProductionAssignmentRow = Tables<"production_assignments">;
@@ -156,6 +161,57 @@ export const myProductionAssignmentsPayload = z.object({
 export type MyProductionAssignmentsPayload = z.infer<
   typeof myProductionAssignmentsPayload
 >;
+
+// ── admin_submission_month() / my_submission_history()  (0080) ──────────────
+// materialTypeId -> quantity. jsonb_object_agg over integers, coerced anyway.
+const quantities = z.record(z.string(), num);
+const submissionStatus = z.enum(MEMBER_SUBMISSION_STATUSES);
+
+export const adminSubmissionMonthPayload = z.object({
+  hasPeriod: z.boolean(),
+  targets: quantities,
+  rows: z.array(
+    z.object({
+      memberId: z.string(),
+      // null only for a straggler whose member row is gone
+      memberName: z.string().nullable(),
+      // null for stragglers; the reader substitutes the display default
+      rank: z.enum(MEMBER_RANKS).nullable(),
+      active: z.boolean(),
+      submissionId: z.string().nullable(),
+      status: submissionStatus.nullable(),
+      submittedAt: z.string().nullable(),
+      confirmedAt: z.string().nullable(),
+      note: z.string().nullable(),
+      reviewNote: z.string().nullable(),
+      receivedById: z.string().nullable(),
+      receivedByName: z.string().nullable(),
+      quantities,
+    }),
+  ),
+  totals: quantities,
+  counts: z.object({
+    members: num,
+    confirmed: num,
+    pending: num,
+    rejected: num,
+    missing: num,
+  }),
+});
+export type AdminSubmissionMonthPayload = z.infer<
+  typeof adminSubmissionMonthPayload
+>;
+
+export const mySubmissionHistoryPayload = z.object({
+  rows: z.array(
+    z.object({
+      periodMonth: z.string(),
+      submission: z.unknown().transform((s) => s as MemberSubmissionRow),
+      quantities,
+    }),
+  ),
+  total: num,
+});
 
 // ── item_delete_impact()  (0076) ────────────────────────────────────────────
 // Advisory only. delete_item re-checks every blocker under a row lock; nothing

@@ -17,7 +17,7 @@ create or replace function public.set_distribution_rate(
   p_item_id uuid,
   p_unit_rate numeric
 )
-returns public.distribution_rates
+returns distribution_rates
 language plpgsql
 security definer
 set search_path = public, pg_temp

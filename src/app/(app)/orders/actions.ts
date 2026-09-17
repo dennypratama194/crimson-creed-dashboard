@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 
 import { requireActiveMember } from "@/lib/auth/session";
 import { rpcErrorMessage } from "@/lib/forms";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import {
   createOrderSchema,
@@ -20,17 +19,11 @@ export type ActionResult<T = undefined> = {
 export async function createOrderAction(
   input: unknown,
 ): Promise<ActionResult<{ orderId: string }>> {
-  const member = await requireActiveMember();
+  await requireActiveMember();
 
-  // Order creation notifies every Super Admin and writes ~5 rows; cap the rate
-  // so a scripted member cannot flood the queue.
-  const limited = await checkRateLimit(
-    `order:create:${member.id}`,
-    { limit: 15 },
-    "You're placing orders too fast.",
-  );
-  if (limited) return { ok: false, error: limited };
-
+  // Order creation notifies every Super Admin and writes ~5 rows. The per-member
+  // cap lives inside create_order (migration 0079), where a direct PostgREST
+  // call cannot skip it; its refusal comes back as a readable error below.
   const parsed = createOrderSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -60,10 +53,8 @@ export async function createOrderAction(
 export async function submitPaymentAction(
   input: unknown,
 ): Promise<ActionResult> {
-  const member = await requireActiveMember();
-
-  const limited = await checkRateLimit(`order:pay:${member.id}`, { limit: 20 });
-  if (limited) return { ok: false, error: limited };
+  // Rate-limited inside submit_order_payment (0079).
+  await requireActiveMember();
 
   const parsed = submitOrderPaymentSchema.safeParse(input);
   if (!parsed.success) {
@@ -96,12 +87,8 @@ export async function cancelOrderAction(
   orderId: string,
   reason?: string,
 ): Promise<ActionResult> {
-  const member = await requireActiveMember();
-
-  const limited = await checkRateLimit(`order:cancel:${member.id}`, {
-    limit: 20,
-  });
-  if (limited) return { ok: false, error: limited };
+  // Rate-limited inside cancel_order (0079).
+  await requireActiveMember();
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("cancel_order", {

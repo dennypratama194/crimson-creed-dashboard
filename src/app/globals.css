@@ -106,18 +106,24 @@
   --input: #2b2e34;
   --ring: #c56a3e;
 
+  /* Dark mode lightens on hover, so the label is dark rather than white: white
+   * on #c56a3e is 3.8:1 and on the hover 2.7:1, below AA for 14px text. Near-
+   * black on them is 5.2:1 and 7.3:1. The fill stays on-brand, and text-primary
+   * (links, accents on the page background) is unaffected at 5.2:1. */
   --primary: #c56a3e;
   --primary-hover: #d78a5c;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #08090a;
 
   --secondary: #1a1c1f;
   --secondary-foreground: #f2f4f7;
   --accent: #1c1e22;
   --accent-foreground: #f7f8f8;
 
+  /* Same reasoning: white on #f04438 / #f97066 is 3.8:1 / 2.8:1; near-black is
+   * 5.3:1 / 7.2:1. Red fill against the rust primary keeps the intent distinct. */
   --destructive: #f04438;
   --destructive-hover: #f97066;
-  --destructive-foreground: #ffffff;
+  --destructive-foreground: #08090a;
 
   --tone-gray-bg: rgba(255, 255, 255, 0.055);
   --tone-gray-fg: #c8cace;

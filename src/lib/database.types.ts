@@ -1093,6 +1093,22 @@ export interface Database {
         Returns: number;
       };
       clear_auth_throttle: { Args: { p_key: string }; Returns: undefined };
+      admin_submission_month: {
+        Args: { p_period_month: string };
+        Returns: Json;
+      };
+      my_submission_history: {
+        Args: { p_limit?: number; p_offset?: number };
+        Returns: Json;
+      };
+      supplier_item_counts: {
+        Args: { p_supplier_ids: string[] };
+        Returns: {
+          supplier_id: string;
+          item_count: number;
+          orderable_count: number;
+        }[];
+      };
     };
     Enums: {
       app_role: AppRole;

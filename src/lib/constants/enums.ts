@@ -57,11 +57,6 @@ export const STOCK_TYPES = [
 ] as const;
 export type StockType = (typeof STOCK_TYPES)[number];
 
-/** Stash-only stock types — everything except the member-facing catalogue. */
-export const NON_CATALOGUE_STOCK_TYPES = STOCK_TYPES.filter(
-  (t): t is Exclude<StockType, "CATALOGUE"> => t !== "CATALOGUE",
-);
-
 export const ORDER_STATUSES = [
   "PENDING",
   "PROCESSING",

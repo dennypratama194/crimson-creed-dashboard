@@ -77,8 +77,9 @@ do locally can write to production.
 
 ## Migration rules
 
-`supabase/migrations/` is the single, ordered, forward-only history — currently
-**58 files, `0001` → `0058`**.
+`supabase/migrations/` is the single, ordered, forward-only history. Read the
+directory for what exists; `npm run check:migrations` compares it with the base
+branch, and `npx supabase migration list` compares it with a linked project.
 
 - **Never edit a migration that has been applied anywhere.** Production and dev
   record applied versions in `supabase_migrations.schema_migrations`; an edited
@@ -102,11 +103,18 @@ do locally can write to production.
 
 ### Database types
 
-`src/lib/database.types.ts` is hand-maintained. After a schema change either
-edit it by hand or run `npm run db:types` against the **dev** project — then
-re-apply the typed jsonb RPC payloads (`AdminDashboardPayload`,
-`CashSummaryPayload`, `EarningsSummaryPayload`, `PayslipPayload`), which the
-generator emits as plain `Json`. `npm run typecheck` will flag any mismatch.
+`src/lib/database.types.ts` is **generated output**. `npm run db:types`
+(`scripts/gen-types.mjs`) replaces it whole, preferring a local or explicit
+throwaway database (`DB_URL=…`) over the hosted project. Never put anything
+hand-authored in it. Where no generator can run (no linked project, no Docker)
+it is edited to match the migrations **in the generator's own shape** — function
+signatures with `Returns: Json` for jsonb — so the next real regeneration is a
+no-op rather than a loss.
+
+The typed shapes of jsonb RPC payloads live in `src/lib/db/contracts.ts`, as a
+Zod schema plus its type, and are parsed once where the data arrives
+(`parseRpcPayload`). No generator touches that file. `npm run typecheck` flags
+a signature mismatch; a payload shape drift fails at the parse.
 
 ## Every time you add a feature that needs the database
 
@@ -175,6 +183,62 @@ and `drop index if exists orders_member_created_at_idx, notifications_recipient_
 then `npx supabase migration repair --status reverted 0056 0057 0058`.
 
 ---
+
+## Release notes — review hardening (migrations 0077–0080)
+
+| Migration                                      | Changes                                                                                                                                                                                                                                                                          | Reversible by a forward migration                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `0077_reassert_drop_create_distributable_item` | Re-issues 0068's idempotent `drop function if exists create_distributable_item` so a database that skipped the out-of-order 0068 reaches the same end state. No-op where 0068 ran.                                                                                               | Yes (re-create from 0064) — but the drop is intended.                                                   |
+| `0078_auth_throttle_concurrency`               | `hit_auth_throttle` creates buckets with `insert … on conflict do nothing` then locks; the sweep runs after the caller holds its key and uses `skip locked`. Pins `search_path` on both throttle functions. Same signature, same fixed-window semantics.                         | Yes — restore the 0047 body.                                                                            |
+| `0079_member_action_quota`                     | New `member_action_throttle` table (RLS on, no policies) + `app.consume_member_action`. `create_order`, `submit_order_payment`, `cancel_order`, `submit_material_submission` redefined with the quota as their first data access. Signatures, return types and grants unchanged. | Yes — restore the 0045 / 0053 / 0055 / 0013 bodies; the table can stay or be dropped (no app reads it). |
+| `0080_bounded_read_rpcs`                       | Read-only RPCs `admin_submission_month(date)`, `my_submission_history(int, int)`, `supplier_item_counts(uuid[])`. No table or index changes.                                                                                                                                     | Yes — drop the three functions.                                                                         |
+
+**Order — database first, then the app.** Every migration here is backward-
+compatible with the app build that is live while it runs:
+
+- the previous build never calls the 0080 RPCs, and its Server Actions still
+  run their own `checkRateLimit` before the RPC — with 0079 applied a member is
+  briefly counted by both, which can only make the limit stricter for the length
+  of the deploy, never looser;
+- 0078 keeps the `hit_auth_throttle` signature and return value.
+
+1. Back up production (see step 4 above).
+2. `npx supabase migration list` against the target. Confirm what is pending —
+   and whether **0068** is listed as applied (see below).
+3. Apply `0077` → `0080` to staging, deploy the app to staging, exercise: place
+   an order, report a payment, cancel, submit materials, `/admin/submissions`,
+   `/admin/suppliers` (both views), `/submissions` history paging, the
+   notification badge, and a deactivated member's session.
+4. Apply the same migrations to production, then deploy the app.
+
+The new app build **requires** 0080 (`/admin/submissions`, `/submissions`,
+`/admin/suppliers` call the new RPCs) and relies on 0079 for member rate
+limiting (it no longer checks in the Server Action). Deploying the app before
+the migrations breaks those pages and leaves member mutations unthrottled.
+
+**Recovery.** App rollback is a redeploy of the previous build; it is safe with
+the migrations left in place (see the compatibility notes above). A database
+rollback is a forward migration restoring the previous function bodies — none
+of these four migrations rewrites or deletes data, so no restore is needed to
+undo them. `member_action_throttle` only ever holds counters.
+
+**Migration-history reconciliation — check before pushing.**
+
+- **0068** sits below 0069–0073, which reached `main` first. The production
+  catch-up script (`supabase/.temp/remaining.sql`, never to be re-run) records
+  `0068` in `supabase_migrations.schema_migrations`, so it was **not** renamed
+  or deleted here. If `migration list` shows 0068 as applied, nothing to do. If
+  it shows 0068 as pending on a database already past 0073, `db push` will
+  refuse the out-of-order file: either run `npx supabase db push --include-all`
+  (it only drops a function that is already gone once 0077 runs), or apply 0077
+  and then `npx supabase migration repair --status applied 0068`.
+- **0045** was once edited on a branch to tolerate an environment where its
+  columns had been added by hand before the migration was recorded. That edit
+  was reverted: the file is byte-identical to `main` again, as the migration
+  guard requires. If such an environment still has 0045 **pending**, a push
+  aborts on `add column`. Reconcile it deliberately — confirm the columns and
+  constraint match 0045, apply the rest of 0045 by hand, then
+  `npx supabase migration repair --status applied 0045`. Do not edit the file.
 
 ## Guardrails in the repo
 

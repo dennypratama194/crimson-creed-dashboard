@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { routeDecision } from "@/lib/auth/route-guard";
 import { publicEnv } from "@/lib/env";
 import {
   REMEMBER_COOKIE,
@@ -15,17 +16,9 @@ import {
  *  - sends signed-in users away from /login
  *
  * The INACTIVE-member gate and role checks live in the (app) layout / server
- * actions / RLS — this file only handles the signed-in/out boundary.
+ * actions / RLS — this file only handles the signed-in/out boundary (see
+ * src/lib/auth/route-guard.ts for why /account-unavailable is not public).
  */
-
-const PUBLIC_PATHS = ["/login", "/forgot-password"];
-
-function isPublic(pathname: string) {
-  return PUBLIC_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
-}
-
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -60,26 +53,23 @@ export async function proxy(request: NextRequest) {
   // (app) layout + server actions + RLS — here we only need the signed-in /
   // signed-out boundary, so a local check is enough.
   const { data: claims } = await supabase.auth.getClaims();
-  const user = claims?.claims ?? null;
+  const decision = routeDecision(!!claims?.claims, request.nextUrl.pathname);
 
-  const { pathname } = request.nextUrl;
+  if (decision.action === "next") return response;
 
-  if (!user && !isPublic(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    if (pathname !== "/") url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  const url = request.nextUrl.clone();
+  url.pathname = decision.pathname;
+  url.search = "";
+  if (decision.next) url.searchParams.set("next", decision.next);
+
+  // A refresh (or a cleared, expired session) may have just rewritten the auth
+  // cookies onto `response`. A bare redirect would drop them, and the browser
+  // would come back with the stale token.
+  const redirect = NextResponse.redirect(url);
+  for (const cookie of response.cookies.getAll()) {
+    redirect.cookies.set(cookie);
   }
-
-  if (user && isPublic(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-
-  return response;
+  return redirect;
 }
 
 export const config = {

@@ -29,6 +29,7 @@ const INTENTIONAL_ERROR_CODES = new Set([
   "23514", // check_violation
   "23503", // foreign_key_violation
   "42501", // insufficient_privilege
+  "CC429", // project-defined: per-member mutation quota (0079)
 ]);
 
 /** System-generated phrasings that leak constraint / column / type internals. */

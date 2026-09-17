@@ -11,6 +11,7 @@ import {
   type ItemListSort,
   type ItemListStatus,
 } from "@/lib/validation/item";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
@@ -29,7 +30,7 @@ export default async function AdminItemsPage({
 }: PageProps<"/admin/items">) {
   const sp = await searchParams;
 
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const search = one(sp.q) ?? "";
 
   const rawCategory = one(sp.category);

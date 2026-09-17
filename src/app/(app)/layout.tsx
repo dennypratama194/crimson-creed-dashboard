@@ -6,12 +6,23 @@ import { getUnreadNotificationCount } from "@/lib/db/notifications";
 import { AppShell } from "@/components/layout/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+/**
+ * The unread badge for this render. Not worth failing every page over: an
+ * unreadable count is null (not 0), and the bell fetches it once mounted.
+ * `countedAt` marks a fresh server read, so the bell can tell a revalidated
+ * layout from the one it already has.
+ */
+async function readUnreadBadge() {
+  const count = await getUnreadNotificationCount().catch(() => null);
+  return { count, countedAt: Date.now() };
+}
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   // Both internally share one cached auth lookup; running them together saves a
   // sequential DB round trip on every navigation.
-  const [member, unreadCount, cookieStore] = await Promise.all([
+  const [member, badge, cookieStore] = await Promise.all([
     requireActiveMember(),
-    getUnreadNotificationCount(),
+    readUnreadBadge(),
     cookies(),
   ]);
   const sidebarCollapsed = cookieStore.get("cc.sidebar")?.value === "collapsed";
@@ -21,7 +32,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <AppShell
         role={member.role}
         displayName={member.display_name}
-        unreadCount={unreadCount}
+        unreadCount={badge.count}
+        unreadCountedAt={badge.countedAt}
         defaultCollapsed={sidebarCollapsed}
       >
         {children}

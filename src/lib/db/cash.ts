@@ -8,19 +8,26 @@ import type {
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
 import { cashSummaryPayload, parseRpcPayload } from "@/lib/db/contracts";
+import { isUuid } from "@/lib/db/ids";
+import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 
 export type CashEntry = Tables<"cash_entries">;
 
 export const CASH_ENTRY_PAGE_SIZE = 25;
 
+/**
+ * The treasury balance. A ledger with no account row yet genuinely holds 0; a
+ * failed read throws, so an outage never renders as an empty treasury.
+ */
 export async function getCashBalance(): Promise<number> {
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("cash_account")
     .select("balance")
     .eq("id", true)
     .maybeSingle();
+  if (error) throw error;
   return data?.balance ?? 0;
 }
 
@@ -65,24 +72,21 @@ export async function listCashEntries(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = CASH_ENTRY_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("cash_entries")
     .select("*", { count: "exact" })
     .order("occurred_at", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.direction) query = query.eq("direction", options.direction);
   if (options.category) query = query.eq("category", options.category);
   if (options.source) query = query.eq("source", options.source);
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const rows = data ?? [];
@@ -117,16 +121,18 @@ export type CashEntryDetail = {
 export async function getCashEntryDetail(
   id: string,
 ): Promise<CashEntryDetail | null> {
+  if (!isUuid(id)) return null;
   const supabase = await createClient();
 
-  const { data: entry } = await supabase
+  const { data: entry, error } = await supabase
     .from("cash_entries")
     .select("*")
     .eq("id", id)
     .maybeSingle();
+  if (error) throw error;
   if (!entry) return null;
 
-  const [{ data: reversedBy }, { data: reverses }] = await Promise.all([
+  const [reversedByRes, reversesRes] = await Promise.all([
     supabase
       .from("cash_entries")
       .select("*")
@@ -138,8 +144,12 @@ export async function getCashEntryDetail(
           .select("*")
           .eq("id", entry.reverses_entry_id)
           .maybeSingle()
-      : Promise.resolve({ data: null }),
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  if (reversedByRes.error) throw reversedByRes.error;
+  if (reversesRes.error) throw reversesRes.error;
+  const reversedBy = reversedByRes.data;
+  const reverses = reversesRes.data;
 
   const names = await getMemberNames(
     [entry.created_by, entry.handled_by].filter((v): v is string => v !== null),

@@ -5,6 +5,7 @@
  * database (no Docker), stubs the Supabase `auth` schema, then exercises the
  * core roleplay workflow and the RLS boundaries. Run: `npm run db:test`.
  */
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3472,6 +3473,7 @@ const MEMBER_CALLABLE = new Set([
   "my_payslips",
   "my_production_assignments",
   "my_submission_debt",
+  "my_submission_history",
   "submit_material_submission",
   "submit_order_payment",
   "submit_production_log",
@@ -3871,7 +3873,821 @@ await expect("a Super Admin cannot delete or rewrite audit_logs", async () => {
 });
 await asRole(null);
 
+// ── member mutation quotas (0079) ─────────────────────────────────────────
+// Every call below goes straight at the RPC as `authenticated`, the way a
+// member holding their own JWT would call PostgREST — no Server Action, no
+// app-side limiter in the way.
+console.log("\nMember mutation quotas (0079)");
+await asRole(null);
+await db.exec(`delete from member_action_throttle`);
+const gateBefore = await one(
+  `select submission_gate_enabled g from organization_settings where id`,
+);
+await db.exec(
+  `update organization_settings set submission_gate_enabled = false where id`,
+);
+const sideEffects = async (memberRowId) => {
+  await asRole(null);
+  const r = await one(
+    `select
+       (select count(*)::int from orders where member_id = $1) orders,
+       (select count(*)::int from notifications) notifications,
+       (select count(*)::int from audit_logs) audits,
+       (select count(*)::int from activity_logs) activity,
+       (select count(*)::int from order_timeline) timeline,
+       (select count(*)::int from member_submissions) submissions`,
+    [memberRowId],
+  );
+  return r;
+};
+const bucket = async (memberRowId, action) => {
+  await asRole(null);
+  return one(
+    `select hits, window_started_at from member_action_throttle
+     where member_id = $1 and action = $2`,
+    [memberRowId, action],
+  );
+};
+const oneLine = JSON.stringify([{ item_id: item.id, quantity: 1 }]);
+
+let quotaOrders = [];
+await expect(
+  "a member may place 15 orders directly in one window",
+  async () => {
+    await asRole("authenticated", m2.id);
+    for (let i = 0; i < 15; i += 1) {
+      quotaOrders.push(
+        await one(`select * from create_order($1::jsonb, null)`, [oneLine]),
+      );
+    }
+    const b = await bucket(memberId.m2, "order:create");
+    assert(b?.hits === 15, `bucket hits ${b?.hits}`);
+  },
+);
+await expect(
+  "the 16th direct create_order is refused with CC429 and leaves nothing",
+  async () => {
+    const before = await sideEffects(memberId.m2);
+    await asRole("authenticated", m2.id);
+    let err = null;
+    try {
+      await db.query(`select create_order($1::jsonb, null)`, [oneLine]);
+    } catch (e) {
+      err = e;
+    }
+    assert(err, "the call over quota succeeded");
+    assert(err.code === "CC429", `code ${err.code}: ${err.message}`);
+    assert(
+      /too fast.*try again in about 1 minute/i.test(err.message),
+      err.message,
+    );
+    assert(
+      /retry_after_seconds=\d+/.test(err.detail ?? ""),
+      `detail ${err.detail}`,
+    );
+    const after = await sideEffects(memberId.m2);
+    assert(
+      JSON.stringify(after) === JSON.stringify(before),
+      `side effects changed: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
+    );
+  },
+);
+await expect(
+  "the refusal persists: the bucket was not rolled back",
+  async () => {
+    const b = await bucket(memberId.m2, "order:create");
+    assert(b?.hits === 15, `bucket hits ${b?.hits}`);
+    await asRole("authenticated", m2.id);
+    const err = await callRolledBack(`select create_order($1::jsonb, null)`, [
+      oneLine,
+    ]);
+    assert(err?.code === "CC429", `still allowed: ${err?.message}`);
+  },
+);
+await expect("another member's quota is untouched", async () => {
+  await asRole("authenticated", m1.id);
+  const o = await one(`select * from create_order($1::jsonb, null)`, [oneLine]);
+  assert(o.member_id === memberId.m1, "order not attributed to m1");
+  const theirs = await bucket(memberId.m2, "order:create");
+  const mine = await bucket(memberId.m1, "order:create");
+  assert(
+    theirs.hits === 15 && mine.hits === 1,
+    `m2 ${theirs.hits}, m1 ${mine.hits}`,
+  );
+});
+await expect(
+  "a call refused for a business reason consumes nothing",
+  async () => {
+    await asRole(null);
+    await db.exec(
+      `delete from member_action_throttle where action = 'order:create'`,
+    );
+    await asRole("authenticated", m1.id);
+    for (let i = 0; i < 20; i += 1) {
+      const err = await callRolledBack(
+        `select create_order('[]'::jsonb, null)`,
+      );
+      assert(err?.code === "23514", `unexpected: ${err?.message}`);
+      // callRolledBack rolls back; do it for real too, outside a transaction
+      await attempt(`select create_order('[]'::jsonb, null)`);
+    }
+    const b = await bucket(memberId.m1, "order:create");
+    assert(!b || b.hits === 0, `failed calls counted: ${b?.hits}`);
+  },
+);
+await expect("a new window opens once the old one has passed", async () => {
+  await asRole(null);
+  await db.query(
+    `insert into member_action_throttle (member_id, action, window_started_at, hits)
+     values ($1, 'order:create', now() - interval '61 seconds', 15)
+     on conflict (member_id, action) do update
+       set window_started_at = excluded.window_started_at, hits = excluded.hits`,
+    [memberId.m2],
+  );
+  await asRole("authenticated", m2.id);
+  quotaOrders.push(
+    await one(`select * from create_order($1::jsonb, null)`, [oneLine]),
+  );
+  const b = await bucket(memberId.m2, "order:create");
+  assert(b.hits === 1, `hits ${b.hits}`);
+});
+
+const fillBucket = async (memberRowId, action, hits) => {
+  await asRole(null);
+  await db.query(
+    `insert into member_action_throttle (member_id, action, window_started_at, hits)
+     values ($1, $2, clock_timestamp(), $3)
+     on conflict (member_id, action) do update
+       set window_started_at = excluded.window_started_at, hits = excluded.hits`,
+    [memberRowId, action, hits],
+  );
+};
+await expect(
+  "cancel_order: over quota is refused and the order stays PENDING",
+  async () => {
+    const target = quotaOrders[0];
+    await fillBucket(memberId.m2, "order:cancel", 20);
+    const before = await sideEffects(memberId.m2);
+    await asRole("authenticated", m2.id);
+    const err = await callRolledBack(`select cancel_order($1, 'spam')`, [
+      target.id,
+    ]);
+    assert(err?.code === "CC429", `code ${err?.code}: ${err?.message}`);
+    await attempt(`select cancel_order($1, 'spam')`, [target.id]);
+    const after = await sideEffects(memberId.m2);
+    assert(
+      JSON.stringify(after) === JSON.stringify(before),
+      "side effects changed",
+    );
+    await asRole(null);
+    const o = await one(`select status from orders where id = $1`, [target.id]);
+    assert(o.status === "PENDING", `status ${o.status}`);
+  },
+);
+await expect(
+  "cancel_order: a Super Admin is not throttled by the member quota",
+  async () => {
+    await fillBucket(memberId.admin, "order:cancel", 20);
+    await asRole("authenticated", admin.id);
+    const o = await one(`select * from cancel_order($1, 'admin cleanup')`, [
+      quotaOrders[1].id,
+    ]);
+    assert(o.status === "CANCELLED", `status ${o.status}`);
+  },
+);
+await expect(
+  "submit_order_payment: over quota is refused and payment is unchanged",
+  async () => {
+    const target = quotaOrders[2];
+    await fillBucket(memberId.m2, "order:pay", 20);
+    await asRole("authenticated", m2.id);
+    const err = await callRolledBack(`select submit_order_payment($1, $2)`, [
+      target.id,
+      memberId.admin,
+    ]);
+    assert(err?.code === "CC429", `code ${err?.code}: ${err?.message}`);
+    await asRole(null);
+    const o = await one(`select payment_status from orders where id = $1`, [
+      target.id,
+    ]);
+    assert(o.payment_status === "UNPAID", `payment ${o.payment_status}`);
+    // under quota it works, and counts
+    await db.exec(
+      `delete from member_action_throttle where action = 'order:pay'`,
+    );
+    await asRole("authenticated", m2.id);
+    await one(`select * from submit_order_payment($1, $2)`, [
+      target.id,
+      memberId.admin,
+    ]);
+    const b = await bucket(memberId.m2, "order:pay");
+    assert(b.hits === 1, `hits ${b.hits}`);
+  },
+);
+await expect(
+  "submit_material_submission: over quota is refused with no submission written",
+  async () => {
+    await asRole(null);
+    const mtRows = (await db.query(`select id from submission_material_types`))
+      .rows;
+    const lines = JSON.stringify(
+      mtRows.map((r) => ({ material_type_id: r.id, quantity: 3 })),
+    );
+    await fillBucket(memberId.m2, "submission:submit", 15);
+    const before = await sideEffects(memberId.m2);
+    await asRole("authenticated", m2.id);
+    const err = await callRolledBack(
+      `select submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+      [lines, memberId.admin],
+    );
+    assert(err?.code === "CC429", `code ${err?.code}: ${err?.message}`);
+    assert(/submitting too fast/i.test(err.message), err.message);
+    const after = await sideEffects(memberId.m2);
+    assert(
+      JSON.stringify(after) === JSON.stringify(before),
+      "side effects changed",
+    );
+  },
+);
+await expect(
+  "a member cannot read, write or drive the quota table directly",
+  async () => {
+    await asRole("authenticated", m2.id);
+    for (const sql of [
+      `select app.consume_member_action('order:create')`,
+      `select count(*) from member_action_throttle`,
+      `delete from member_action_throttle`,
+      `update member_action_throttle set hits = 0`,
+      `insert into member_action_throttle (member_id, action, window_started_at, hits)
+       values ('${memberId.m2}', 'order:create', now(), 0)`,
+    ]) {
+      const err = await callRolledBack(sql);
+      assert(
+        err?.code === "42501",
+        `${sql.split("\n")[0]} -> ${err?.message ?? "allowed"}`,
+      );
+    }
+    const b = await bucket(memberId.m2, "submission:submit");
+    assert(b.hits === 15, "a member reset their own quota");
+  },
+);
+await expect(
+  "the quota RPCs keep their signatures and pinned search_path",
+  async () => {
+    await asRole(null);
+    const r = await db.query(
+      `select p.proname, oidvectortypes(p.proargtypes) args, p.proconfig
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where (n.nspname, p.proname) in (('public','create_order'),('public','cancel_order'),
+       ('public','submit_order_payment'),('public','submit_material_submission'),
+       ('app','consume_member_action'),('public','hit_auth_throttle'),('public','clear_auth_throttle'))`,
+    );
+    const sig = Object.fromEntries(r.rows.map((x) => [x.proname, x.args]));
+    assert(
+      sig.create_order === "jsonb, text",
+      `create_order(${sig.create_order})`,
+    );
+    assert(
+      sig.cancel_order === "uuid, text",
+      `cancel_order(${sig.cancel_order})`,
+    );
+    assert(
+      sig.submit_order_payment === "uuid, uuid",
+      `submit_order_payment(${sig.submit_order_payment})`,
+    );
+    assert(
+      sig.submit_material_submission === "jsonb, text, date, uuid",
+      `submit_material_submission(${sig.submit_material_submission})`,
+    );
+    for (const x of r.rows) {
+      assert(
+        (x.proconfig ?? []).includes("search_path=public, pg_temp"),
+        `${x.proname}: ${x.proconfig}`,
+      );
+    }
+  },
+);
+await asRole(null);
+await db.exec(`delete from member_action_throttle`);
+await db.query(
+  `update organization_settings set submission_gate_enabled = $1 where id`,
+  [gateBefore.g],
+);
+
+// ── auth throttle semantics (0078) ────────────────────────────────────────
+// Sequential semantics only; concurrent first hits need real connections and
+// live in supabase/tests/concurrency.mjs.
+console.log("\nAuth throttle (0078)");
+await asRole("service_role", null);
+const hit = async (key, limit = 3, win = 60, block = 120) =>
+  Number(
+    (
+      await one(`select hit_auth_throttle($1, $2, $3, $4) w`, [
+        key,
+        limit,
+        win,
+        block,
+      ])
+    ).w,
+  );
+await expect(
+  "fixed window: limit passes, the next hit blocks for block_seconds",
+  async () => {
+    const k = "test:0078:basic";
+    const waits = [await hit(k), await hit(k), await hit(k), await hit(k)];
+    assert(JSON.stringify(waits) === "[0,0,0,120]", `waits ${waits}`);
+    const blocked = await hit(k);
+    assert(blocked > 0 && blocked <= 120, `blocked wait ${blocked}`);
+    await asRole(null);
+    const r = await one(`select attempts from auth_throttle where key = $1`, [
+      k,
+    ]);
+    assert(r.attempts === 4, `blocked hits were counted: ${r.attempts}`);
+  },
+);
+await expect(
+  "an expired block with an expired window opens a new window",
+  async () => {
+    const k = "test:0078:basic";
+    await asRole(null);
+    await db.query(
+      `update auth_throttle set blocked_until = now() - interval '1 second',
+       first_attempt_at = now() - interval '2 minutes' where key = $1`,
+      [k],
+    );
+    await asRole("service_role", null);
+    assert((await hit(k)) === 0, "not reopened");
+    await asRole(null);
+    const r = await one(
+      `select attempts, blocked_until from auth_throttle where key = $1`,
+      [k],
+    );
+    assert(r.attempts === 1 && r.blocked_until === null, JSON.stringify(r));
+  },
+);
+await expect(
+  "an expired block inside the same window blocks again",
+  async () => {
+    const k = "test:0078:reblock";
+    await asRole("service_role", null);
+    for (let i = 0; i < 4; i += 1) await hit(k);
+    await asRole(null);
+    await db.query(
+      `update auth_throttle set blocked_until = now() - interval '1 second' where key = $1`,
+      [k],
+    );
+    await asRole("service_role", null);
+    assert((await hit(k)) === 120, "window still open, should block again");
+  },
+);
+await expect("the window, not the first hit, decides reset", async () => {
+  const k = "test:0078:window";
+  await asRole("service_role", null);
+  await hit(k);
+  await hit(k);
+  await asRole(null);
+  await db.query(
+    `update auth_throttle set first_attempt_at = now() - interval '61 seconds' where key = $1`,
+    [k],
+  );
+  await asRole("service_role", null);
+  assert((await hit(k)) === 0, "not allowed");
+  await asRole(null);
+  const r = await one(`select attempts from auth_throttle where key = $1`, [k]);
+  assert(r.attempts === 1, `attempts ${r.attempts}`);
+});
+await expectThrows(
+  "nonsense limits are refused rather than silently allowing everything",
+  async () => {
+    await asRole("service_role", null);
+    await one(`select hit_auth_throttle('test:0078:bad', 0, 60, 60)`);
+  },
+  "required",
+);
+await asRole("authenticated", m1.id);
+await expect("members cannot call or read the auth throttle", async () => {
+  for (const sql of [
+    `select hit_auth_throttle('x', 5, 60, 60)`,
+    `select clear_auth_throttle('x')`,
+    `select count(*) from auth_throttle`,
+  ]) {
+    const err = await callRolledBack(sql);
+    assert(err?.code === "42501", `${sql} -> ${err?.message ?? "allowed"}`);
+  }
+});
+await asRole(null);
+
+// ── bounded read RPCs (0080) ──────────────────────────────────────────────
+// PGlite has no PostgREST, so it cannot reproduce the 1000-row response cap
+// itself (src/lib/db/paging.test.ts covers that boundary). What it can prove is
+// that the SQL aggregates are right at a size the old app-side sum could not
+// see: 400 submissions x 3 materials = 1200 lines, and 20 suppliers carrying
+// 1200 listings between them.
+console.log("\nBounded read RPCs (0080)");
+await asRole(null);
+const bulkMonth = "2024-02-01";
+await db.exec(`
+  insert into auth.users (email)
+  select 'bulk' || g || '@test' from generate_series(1, 400) g;
+  insert into members (user_id, username, display_name, role, status)
+  select u.id, 'bulk_' || substr(u.email, 5, length(u.email) - 9),
+         'Bulk ' || lpad(substr(u.email, 5, length(u.email) - 9), 3, '0'),
+         'MEMBER', 'ACTIVE'
+  from auth.users u where u.email like 'bulk%@test';
+  insert into submission_periods (period_month) values ('${bulkMonth}');
+  insert into member_submissions (period_id, member_id, status, submitted_at)
+  select p.id, m.id,
+         (array['PENDING','CONFIRMED','REJECTED'])[1 + (row_number() over (order by m.id))::int % 3]::member_submission_status,
+         now()
+  from members m, submission_periods p
+  where m.username like 'bulk_%' and p.period_month = '${bulkMonth}';
+  insert into member_submission_lines
+    (member_submission_id, material_type_id, name_snapshot, unit_snapshot, quantity)
+  select s.id, mt.id, mt.name, mt.unit, 7
+  from member_submissions s
+  join submission_periods p on p.id = s.period_id and p.period_month = '${bulkMonth}'
+  cross join submission_material_types mt;
+`);
+const bulk = await one(
+  `select count(*)::int lines, count(distinct l.member_submission_id)::int subs
+   from member_submission_lines l join member_submissions s on s.id = l.member_submission_id
+   join submission_periods p on p.id = s.period_id where p.period_month = $1`,
+  [bulkMonth],
+);
+await expect("fixture exceeds the 1000-row cap (1200 lines)", async () => {
+  assert(bulk.lines === 1200 && bulk.subs === 400, JSON.stringify(bulk));
+});
+await asRole("authenticated", admin.id);
+await expect(
+  "admin_submission_month totals every line, not the first 1000",
+  async () => {
+    const r = await one(`select admin_submission_month($1::date) p`, [
+      bulkMonth,
+    ]);
+    const p = r.p;
+    const mtCount = Number(
+      (await one(`select count(*)::int n from submission_material_types`)).n,
+    );
+    assert(
+      Object.keys(p.totals).length === mtCount,
+      `totals ${JSON.stringify(p.totals)}`,
+    );
+    for (const [id, total] of Object.entries(p.totals)) {
+      assert(Number(total) === 400 * 7, `${id}: ${total}`);
+    }
+    const withSub = p.rows.filter((x) => x.submissionId);
+    assert(withSub.length === 400, `rows with a submission: ${withSub.length}`);
+    assert(
+      withSub.every((x) => Object.values(x.quantities).length === mtCount),
+      "a row is missing quantities",
+    );
+    const c = p.counts;
+    assert(c.confirmed + c.pending + c.rejected === 400, JSON.stringify(c));
+    assert(
+      c.members === p.rows.length,
+      `members ${c.members} vs rows ${p.rows.length}`,
+    );
+    assert(
+      c.missing === p.rows.filter((x) => !x.status).length,
+      "missing miscounted",
+    );
+    assert(p.hasPeriod === true, "hasPeriod");
+  },
+);
+await expect(
+  "admin_submission_month orders rows deterministically",
+  async () => {
+    const a = (
+      await one(`select admin_submission_month($1::date) p`, [bulkMonth])
+    ).p;
+    const names = a.rows
+      .filter((x) => x.active)
+      .map((x) => `${x.memberName}|${x.memberId}`);
+    const sorted = [...names].sort((x, y) => {
+      const [nx, ix] = x.split("|");
+      const [ny, iy] = y.split("|");
+      return nx < ny ? -1 : nx > ny ? 1 : ix < iy ? -1 : ix > iy ? 1 : 0;
+    });
+    assert(
+      JSON.stringify(names) === JSON.stringify(sorted),
+      "active rows not in name, id order",
+    );
+  },
+);
+await expect(
+  "admin_submission_month does not open an unopened month",
+  async () => {
+    const r = await one(`select admin_submission_month('1999-01-01'::date) p`);
+    assert(
+      r.p.hasPeriod === false && r.p.counts.missing === r.p.rows.length,
+      JSON.stringify(r.p.counts),
+    );
+    await asRole(null);
+    const n = await one(
+      `select count(*)::int n from submission_periods where period_month = '1999-01-01'`,
+    );
+    assert(n.n === 0, "reading a month created its period");
+    await asRole("authenticated", admin.id);
+  },
+);
+await asRole("authenticated", m1.id);
+await expect(
+  "a member cannot read the admin grid or supplier counts",
+  async () => {
+    for (const sql of [
+      `select admin_submission_month('${bulkMonth}'::date)`,
+      `select * from supplier_item_counts(array[gen_random_uuid()])`,
+    ]) {
+      const err = await callRolledBack(sql);
+      assert(err?.code === "42501", `${sql} -> ${err?.message ?? "allowed"}`);
+    }
+  },
+);
+
+// history: 30 months for one member, paged 12 at a time across equal months
+await asRole(null);
+const histUser = await one(
+  `insert into auth.users (email) values ('hist@test') returning id`,
+);
+const histMember = await one(
+  `insert into members (user_id, username, display_name, role, status)
+   values ($1, 'hist_member', 'Hist Member', 'MEMBER', 'ACTIVE') returning id`,
+  [histUser.id],
+);
+await db.query(
+  `insert into submission_periods (period_month)
+   select (date '2020-01-01' + make_interval(months => g))::date
+   from generate_series(0, 29) g
+   on conflict (period_month) do nothing`,
+);
+await db.query(
+  `insert into member_submissions (period_id, member_id, status, submitted_at)
+   select p.id, $1, 'PENDING', now()
+   from submission_periods p
+   where p.period_month between '2020-01-01' and '2022-06-01'`,
+  [histMember.id],
+);
+await asRole("authenticated", histUser.id);
+await expect(
+  "my_submission_history pages without repeats or gaps",
+  async () => {
+    const seen = [];
+    let total = null;
+    for (let page = 0; page < 3; page += 1) {
+      const r = (
+        await one(`select my_submission_history(12, $1) p`, [page * 12])
+      ).p;
+      total = Number(r.total);
+      for (const row of r.rows) seen.push(row.submission.id);
+    }
+    assert(total === 30, `total ${total}`);
+    assert(
+      seen.length === 30 && new Set(seen).size === 30,
+      `seen ${seen.length}, unique ${new Set(seen).size}`,
+    );
+  },
+);
+await expect(
+  "my_submission_history is caller-scoped and clamps its inputs",
+  async () => {
+    const r = (await one(`select my_submission_history(100000, -5) p`)).p;
+    assert(r.rows.length === 30, `rows ${r.rows.length}`);
+    assert(
+      r.rows.every((x) => x.submission.member_id === histMember.id),
+      "another member's submission leaked",
+    );
+    await asRole("authenticated", admin.id);
+    const a = (await one(`select my_submission_history(100, 0) p`)).p;
+    assert(
+      a.rows.every((x) => x.submission.member_id === memberId.admin),
+      "a Super Admin got the organisation's history",
+    );
+  },
+);
+
+// suppliers: 20 suppliers x 60 items = 1200 listings
+await asRole(null);
+await db.exec(`
+  insert into suppliers (name)
+  select 'Bulk Supplier ' || lpad(g::text, 2, '0')
+  from generate_series(1, 20) g;
+  insert into items (name, category, unit, price)
+  select 'Bulk Item ' || lpad(g::text, 2, '0'), 'OTHER', 'UNIT', 1
+  from generate_series(1, 60) g;
+  insert into supplier_items (supplier_id, item_id, buy_price, sell_price)
+  select s.id, i.id, 1, case when (row_number() over (order by s.id, i.id)) % 2 = 0 then 2 else null end
+  from suppliers s cross join items i
+  where s.name like 'Bulk Supplier %' and i.name like 'Bulk Item %';
+`);
+await asRole("authenticated", admin.id);
+await expect(
+  "supplier_item_counts counts 1200 listings across a 20-supplier page",
+  async () => {
+    const ids = (
+      await db.query(
+        `select id from suppliers where name like 'Bulk Supplier %' order by name`,
+      )
+    ).rows.map((r) => r.id);
+    const r = await db.query(`select * from supplier_item_counts($1::uuid[])`, [
+      ids,
+    ]);
+    assert(r.rows.length === 20, `rows ${r.rows.length}`);
+    const total = r.rows.reduce((s, x) => s + Number(x.item_count), 0);
+    const orderable = r.rows.reduce((s, x) => s + Number(x.orderable_count), 0);
+    assert(total === 1200, `total ${total}`);
+    assert(orderable === 600, `orderable ${orderable}`);
+    assert(
+      r.rows.every((x) => Number(x.item_count) === 60),
+      "per-supplier count wrong",
+    );
+  },
+);
+await expectThrows(
+  "supplier_item_counts refuses an oversized id list",
+  () =>
+    db.query(
+      `select * from supplier_item_counts(array(select gen_random_uuid() from generate_series(1, 101)))`,
+    ),
+  "Too many",
+);
+await asRole(null);
+
+// ── upgrade path ──────────────────────────────────────────────────────────
+// A clean install proves the files compose; it does not prove an existing
+// database survives them. Build the BASE branch's schema from the base
+// branch's own copies of its migrations, put real rows in it, then apply only
+// the migrations that are new on this branch — twice: once in version order
+// (`supabase db push --include-all`) and once skipping the out-of-order 0068,
+// which is what a database that reached the base tip without it would do.
+console.log("\nUpgrade path");
+const baseRef = resolveUpgradeBase();
+if (!baseRef) {
+  console.log(
+    "  - SKIPPED: no git base ref (origin/main, main or BASE_REF) — upgrade path unverified",
+  );
+} else {
+  const baseFiles = gitOut([
+    "ls-tree",
+    "--name-only",
+    baseRef.commit,
+    "supabase/migrations/",
+  ])
+    .split("\n")
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => f.split("/").pop())
+    .sort();
+  const newFiles = files.filter((f) => !baseFiles.includes(f));
+  console.log(
+    `  base ${baseRef.ref} (${baseRef.commit.slice(0, 8)}): ${baseFiles.length} migrations; new: ${newFiles.join(", ") || "none"}`,
+  );
+
+  for (const [label, applied] of [
+    ["in version order", newFiles],
+    ["skipping 0068", newFiles.filter((f) => !f.startsWith("0068_"))],
+  ]) {
+    await expect(`upgrade from the base schema (${label})`, async () => {
+      const up = await PGlite.create();
+      try {
+        await bootstrapAuthStub(up);
+        for (const f of baseFiles) {
+          await up.exec(
+            gitOut(["show", `${baseRef.commit}:supabase/migrations/${f}`], {
+              raw: true,
+            }),
+          );
+        }
+        const upOne = async (sql, params) =>
+          (await up.query(sql, params)).rows[0];
+        const as = async (role, sub) => {
+          await up.exec(`reset role;`);
+          await up.exec(
+            `select set_config('request.jwt.claim.sub', '${sub ?? ""}', false);`,
+          );
+          if (role) await up.exec(`set role ${role};`);
+        };
+
+        // existing data, written through the base branch's own RPCs
+        const u = await upOne(
+          `insert into auth.users (email) values ('up@test') returning id`,
+        );
+        const a = await upOne(
+          `insert into auth.users (email) values ('upadmin@test') returning id`,
+        );
+        await up.query(
+          `insert into members (user_id, username, display_name, role, status) values
+           ($1, 'up_member', 'Up Member', 'MEMBER', 'ACTIVE'),
+           ($2, 'up_admin', 'Up Admin', 'SUPER_ADMIN', 'ACTIVE')`,
+          [u.id, a.id],
+        );
+        const upAdmin = await upOne(
+          `select id from members where user_id = $1`,
+          [a.id],
+        );
+        const upItem = await upOne(
+          `insert into items (name, category, unit, price) values ('Up Item', 'AMMO', 'ROUND', 3) returning id`,
+        );
+        await as("authenticated", u.id);
+        const oldOrder = await upOne(
+          `select * from create_order($1::jsonb, null)`,
+          [JSON.stringify([{ item_id: upItem.id, quantity: 2 }])],
+        );
+        const upMt = (
+          await up.query(`select id from submission_material_types`)
+        ).rows;
+        await upOne(
+          `select * from submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+          [
+            JSON.stringify(
+              upMt.map((r) => ({ material_type_id: r.id, quantity: 5 })),
+            ),
+            upAdmin.id,
+          ],
+        );
+        await as(null);
+
+        for (const f of applied) {
+          await up.exec(readFileSync(join(MIGRATIONS_DIR, f), "utf8"));
+        }
+
+        const gone = await upOne(
+          `select count(*)::int n from pg_proc where proname = 'create_distributable_item'`,
+        );
+        assert(gone.n === 0, "create_distributable_item survived the upgrade");
+        const kept = await upOne(
+          `select total, status from orders where id = $1`,
+          [oldOrder.id],
+        );
+        assert(
+          Number(kept.total) === 6 && kept.status === "PENDING",
+          JSON.stringify(kept),
+        );
+
+        await as("authenticated", u.id);
+        const next = await upOne(
+          `select * from create_order($1::jsonb, null)`,
+          [JSON.stringify([{ item_id: upItem.id, quantity: 1 }])],
+        );
+        assert(
+          Number(next.total) === 3,
+          `post-upgrade order total ${next.total}`,
+        );
+        const hist = (await upOne(`select my_submission_history() p`)).p;
+        assert(Number(hist.total) === 1, `history total ${hist.total}`);
+        await as("authenticated", a.id);
+        const grid = (
+          await upOne(
+            `select admin_submission_month(date_trunc('month', current_date)::date) p`,
+          )
+        ).p;
+        assert(
+          grid.counts.pending === 1,
+          `grid ${JSON.stringify(grid.counts)}`,
+        );
+        await as("service_role", null);
+        const w = await upOne(
+          `select hit_auth_throttle('up:key', 2, 60, 60) w`,
+        );
+        assert(Number(w.w) === 0, `throttle ${w.w}`);
+        await as(null);
+        const q = await upOne(
+          `select hits from member_action_throttle m join members x on x.id = m.member_id
+           where x.user_id = $1 and action = 'order:create'`,
+          [u.id],
+        );
+        assert(q?.hits === 1, `quota after upgrade ${q?.hits}`);
+      } finally {
+        await up.close();
+      }
+    });
+  }
+}
+
 printSummaryAndExit();
+
+/** git stdout, or null on failure. `raw` keeps file contents untrimmed. */
+function gitOut(args, { raw = false } = {}) {
+  const r = spawnSync("git", args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (r.status !== 0) return null;
+  return raw ? r.stdout : r.stdout.trim();
+}
+
+/** Same base resolution as scripts/check-migrations.mjs: the fork point. */
+function resolveUpgradeBase() {
+  const ciBase = process.env.GITHUB_BASE_REF
+    ? `origin/${process.env.GITHUB_BASE_REF}`
+    : null;
+  for (const ref of [process.env.BASE_REF, ciBase, "origin/main", "main"]) {
+    if (!ref) continue;
+    if (!gitOut(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]))
+      continue;
+    const commit = gitOut(["merge-base", "HEAD", ref]);
+    if (commit) return { ref, commit };
+  }
+  return null;
+}
 
 function printSummaryAndExit() {
   console.log(`\n${pass} passed, ${fail} failed\n`);

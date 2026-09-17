@@ -49,7 +49,9 @@ export default async function AdminSuppliersPage({
   );
 
   if (view === "catalogue") {
-    const groups = await listSupplierGroups();
+    const { groups, total, page, pageSize } = await listSupplierGroups({
+      page: one(sp.page),
+    });
     return (
       <>
         <PageHeader
@@ -72,13 +74,15 @@ export default async function AdminSuppliersPage({
             }
           />
         ) : (
-          <SupplierCatalogue groups={groups} />
+          <div className="flex flex-col gap-4">
+            <SupplierCatalogue groups={groups} />
+            <Pagination page={page} pageSize={pageSize} total={total} />
+          </div>
         )}
       </>
     );
   }
 
-  const page = Math.max(1, Number(one(sp.page)) || 1);
   const search = one(sp.q) ?? "";
 
   const rawStatus = one(sp.status);
@@ -95,8 +99,8 @@ export default async function AdminSuppliersPage({
     ? (rawSort as SupplierListSort)
     : "name";
 
-  const { rows, total, pageSize } = await listSuppliers({
-    page,
+  const { rows, total, page, pageSize } = await listSuppliers({
+    page: one(sp.page),
     search,
     status,
     sort,

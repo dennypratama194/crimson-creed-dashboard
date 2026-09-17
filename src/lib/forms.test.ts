@@ -20,6 +20,13 @@ describe("rpcErrorMessage", () => {
     ).toBe("Only PENDING orders can be cancelled");
   });
 
+  it("passes through a member quota refusal (CC429, migration 0079)", () => {
+    const message = "You're submitting too fast. Try again in about 1 minute.";
+    expect(rpcErrorMessage({ code: "CC429", message }, "fallback")).toBe(
+      message,
+    );
+  });
+
   it("hides unexpected database error codes", () => {
     expect(
       rpcErrorMessage(

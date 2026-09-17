@@ -13,6 +13,7 @@ import {
   MEMBER_LIST_STATUSES,
   type MemberListStatus,
 } from "@/lib/validation/member";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { LinkedTableRow } from "@/components/patterns/linked-table-row";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -40,7 +41,7 @@ export default async function AdminMembersPage({
   searchParams,
 }: PageProps<"/admin/members">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const search = one(sp.q) ?? "";
   const rawStatus = one(sp.status);
   const status: MemberListStatus = (

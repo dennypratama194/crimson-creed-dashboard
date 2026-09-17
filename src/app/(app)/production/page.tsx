@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { cn } from "@/lib/utils";
+import { clampPage } from "@/lib/db/paging";
 import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { MyAssignmentsTable } from "@/app/(app)/production/my-assignments-table";
 
@@ -33,7 +34,7 @@ export default async function ProductionPage({
 }: PageProps<"/production">) {
   // requireActiveMember is the gate; the list RPC scopes itself to the caller.
   const [, sp] = await Promise.all([requireActiveMember(), searchParams]);
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const rawScope = one(sp.scope);
   const scope: ProductionListScope = (
     PRODUCTION_LIST_SCOPES as readonly string[]

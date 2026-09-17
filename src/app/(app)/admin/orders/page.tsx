@@ -11,6 +11,7 @@ import {
   type PaymentStatus,
 } from "@/lib/constants/enums";
 import { listAdminOrders } from "@/lib/db/orders";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
@@ -36,7 +37,7 @@ export default async function AdminOrdersPage({
   searchParams,
 }: PageProps<"/admin/orders">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const search = one(sp.q) ?? "";
   const status = pick<OrderStatus>(one(sp.status), ORDER_STATUSES);
   const paymentStatus = pick<PaymentStatus>(one(sp.payment), PAYMENT_STATUSES);

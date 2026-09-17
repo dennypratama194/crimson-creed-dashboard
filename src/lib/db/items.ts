@@ -2,6 +2,8 @@ import "server-only";
 
 import type { ItemCategory } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import { isUuid } from "@/lib/db/ids";
+import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 import type { ItemListSort, ItemListStatus } from "@/lib/validation/item";
 
@@ -32,9 +34,8 @@ export async function listItems(options: ListItemsOptions): Promise<{
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = ITEM_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   // The catalogue screen is member-facing goods only; raw materials, tools and
   // seized stock live in the company stash (`/admin/inventory`).
@@ -61,35 +62,44 @@ export async function listItems(options: ListItemsOptions): Promise<{
     query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
   }
 
+  // Prices, names and import timestamps all repeat; every sort ends on `id` in
+  // the same direction so a page boundary never repeats or skips an item.
   switch (options.sort ?? "name") {
     case "price_desc":
-      query = query.order("price", { ascending: false });
+      query = query
+        .order("price", { ascending: false })
+        .order("id", { ascending: false });
       break;
     case "price_asc":
-      query = query.order("price", { ascending: true });
+      query = query
+        .order("price", { ascending: true })
+        .order("id", { ascending: true });
       break;
     case "recent":
-      query = query.order("created_at", { ascending: false });
+      query = query
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false });
       break;
     default:
-      query = query.order("name", { ascending: true });
+      query = query
+        .order("name", { ascending: true })
+        .order("id", { ascending: true });
   }
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   return { rows: data ?? [], total: count ?? 0, page, pageSize };
 }
 
 export async function getItem(id: string): Promise<Item | null> {
+  if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("items")
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  return data ?? null;
+  if (error) throw error;
+  return data;
 }

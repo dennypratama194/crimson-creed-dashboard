@@ -3,6 +3,7 @@ import "server-only";
 import type { AuditAction } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
+import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActivityEntry = Tables<"activity_logs"> & {
@@ -31,15 +32,15 @@ export async function listActivity(options: { page?: number }): Promise<{
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = FEED_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   const { data, error, count } = await supabase
     .from("activity_logs")
     .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
-    .range(offset, offset + pageSize - 1);
+    .order("id", { ascending: false })
+    .range(from, to);
   if (error) throw error;
 
   return {
@@ -60,21 +61,18 @@ export async function listAudit(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = FEED_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("audit_logs")
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (options.action) query = query.eq("action", options.action);
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   return {

@@ -2,7 +2,9 @@ import "server-only";
 
 import type { StockType } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import { isUuid } from "@/lib/db/ids";
 import { getMemberNames } from "@/lib/db/members";
+import { pageBounds } from "@/lib/db/paging";
 import { stockState, type StockState } from "@/lib/stock";
 import { createClient } from "@/lib/supabase/server";
 
@@ -45,9 +47,8 @@ export async function listInventory(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = INVENTORY_PAGE_SIZE;
-  const start = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("items")
@@ -72,11 +73,7 @@ export async function listInventory(options: {
   if (options.stockType && options.stockType !== "all")
     query = query.eq("stock_type", options.stockType);
 
-  const {
-    data: items,
-    error,
-    count,
-  } = await query.range(start, start + pageSize - 1);
+  const { data: items, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const pageItems = items ?? [];
@@ -125,31 +122,43 @@ export async function getInventoryDetail(
   movementPage: number;
   movementPageSize: number;
 } | null> {
+  if (!isUuid(itemId)) return null;
   const supabase = await createClient();
 
-  const { data: item } = await supabase
+  // Absence (no such item, or RLS hides it) is null -> 404. A failed query
+  // throws: it must not render as a missing item or as zero stock.
+  const { data: item, error: itemError } = await supabase
     .from("items")
     .select("*")
     .eq("id", itemId)
     .maybeSingle();
+  if (itemError) throw itemError;
   if (!item) return null;
 
-  const { data: inv } = await supabase
-    .from("inventory")
-    .select("current_quantity")
-    .eq("item_id", itemId)
-    .maybeSingle();
-
   const pageSize = MOVEMENT_PAGE_SIZE;
-  const page = Math.max(1, movementPage);
-  const start = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(movementPage, pageSize);
 
-  const { data: movements, count } = await supabase
-    .from("inventory_movements")
-    .select("*", { count: "exact" })
-    .eq("item_id", itemId)
-    .order("created_at", { ascending: false })
-    .range(start, start + pageSize - 1);
+  const [invRes, movementsRes] = await Promise.all([
+    supabase
+      .from("inventory")
+      .select("current_quantity")
+      .eq("item_id", itemId)
+      .maybeSingle(),
+    // One statement can post several movements for an item (a draw and its
+    // reversal, a batch adjustment), so created_at ties; `id` settles them.
+    supabase
+      .from("inventory_movements")
+      .select("*", { count: "exact" })
+      .eq("item_id", itemId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to),
+  ]);
+  if (invRes.error) throw invRes.error;
+  if (movementsRes.error) throw movementsRes.error;
+  const inv = invRes.data;
+  const movements = movementsRes.data;
+  const count = movementsRes.count;
 
   const names = await getMemberNames(
     (movements ?? [])

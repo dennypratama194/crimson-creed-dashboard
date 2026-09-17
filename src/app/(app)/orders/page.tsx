@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { clampPage } from "@/lib/db/paging";
 import { OrdersTable } from "@/app/(app)/orders/orders-table";
 
 export const metadata: Metadata = { title: "Orders" };
@@ -28,7 +29,7 @@ export default async function OrdersPage({
   searchParams,
 }: PageProps<"/orders">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const rawScope = one(sp.scope);
   const scope: OrderListScope = (
     ORDER_LIST_SCOPES as readonly string[]

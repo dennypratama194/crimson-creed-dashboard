@@ -16,6 +16,7 @@ import {
 import { formatDate, formatMonth, formatQuantity } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
+import { Pagination } from "@/components/patterns/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,7 +33,11 @@ import { SubmitMaterialsDialog } from "@/app/(app)/submissions/submit-materials-
 
 export const metadata: Metadata = { title: "Monthly submissions" };
 
-export default async function SubmissionsPage() {
+export default async function SubmissionsPage({
+  searchParams,
+}: PageProps<"/submissions">) {
+  const sp = await searchParams;
+  const pageParam = Array.isArray(sp.page) ? sp.page[0] : sp.page;
   const periodMonth = currentPeriodMonth();
   const monthLabel = formatMonth(periodMonth);
   const member = await requireActiveMember();
@@ -48,7 +53,7 @@ export default async function SubmissionsPage() {
     getMaterialTypes(),
     getMyMonthSubmission(periodMonth, member.id),
     getMonthTargets(periodMonth),
-    listMyMemberSubmissions(member.id),
+    listMyMemberSubmissions({ page: pageParam }),
     getMySubmissionDebt(),
     listSubmissionReceivers(),
   ]);
@@ -201,57 +206,71 @@ export default async function SubmissionsPage() {
           <h2 className="text-sm font-semibold text-muted-foreground">
             History
           </h2>
-          {history.length === 0 ? (
+          {history.total === 0 ? (
             <EmptyState
               icon={Recycle}
               title="No submissions yet"
               description="Your monthly hand-ins will show up here once you submit."
             />
           ) : (
-            <Table className="min-w-[640px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Month</TableHead>
-                  {materials.map((m) => (
-                    <TableHead key={m.id} className="text-right">
-                      {m.code}
-                    </TableHead>
-                  ))}
-                  <TableHead>Status</TableHead>
-                  <TableHead>Received by</TableHead>
-                  <TableHead>Submitted</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((row) => (
-                  <TableRow key={row.submission.id}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {row.periodMonth ? formatMonth(row.periodMonth) : "—"}
-                    </TableCell>
+            <>
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
                     {materials.map((m) => (
-                      <TableCell key={m.id} className="text-right tabular-nums">
-                        {formatQuantity(row.quantities[m.id] ?? 0)}
-                      </TableCell>
+                      <TableHead key={m.id} className="text-right">
+                        {m.code}
+                      </TableHead>
                     ))}
-                    <TableCell>
-                      <Badge
-                        tone={
-                          MEMBER_SUBMISSION_STATUS_TONE[row.submission.status]
-                        }
-                      >
-                        {MEMBER_SUBMISSION_STATUS_LABEL[row.submission.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {row.submission.received_by_name ?? "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDate(row.submission.submitted_at)}
-                    </TableCell>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Received by</TableHead>
+                    <TableHead>Submitted</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {history.rows.map((row) => (
+                    <TableRow key={row.submission.id}>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {row.periodMonth ? formatMonth(row.periodMonth) : "—"}
+                      </TableCell>
+                      {materials.map((m) => (
+                        <TableCell
+                          key={m.id}
+                          className="text-right tabular-nums"
+                        >
+                          {formatQuantity(row.quantities[m.id] ?? 0)}
+                        </TableCell>
+                      ))}
+                      <TableCell>
+                        <Badge
+                          tone={
+                            MEMBER_SUBMISSION_STATUS_TONE[row.submission.status]
+                          }
+                        >
+                          {
+                            MEMBER_SUBMISSION_STATUS_LABEL[
+                              row.submission.status
+                            ]
+                          }
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {row.submission.received_by_name ?? "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(row.submission.submitted_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <Pagination
+                page={history.page}
+                pageSize={history.pageSize}
+                total={history.total}
+              />
+            </>
           )}
         </section>
       </div>

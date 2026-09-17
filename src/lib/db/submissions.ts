@@ -6,7 +6,12 @@ import type {
   MemberSubmissionStatus,
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
-import { getMemberNames } from "@/lib/db/members";
+import {
+  adminSubmissionMonthPayload,
+  mySubmissionHistoryPayload,
+  parseRpcPayload,
+} from "@/lib/db/contracts";
+import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 
 export type MaterialType = Tables<"submission_material_types">;
@@ -42,49 +47,40 @@ export async function getMaterialTypes(): Promise<MaterialType[]> {
     .from("submission_material_types")
     .select("*")
     .eq("active", true)
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
 
-/** materialTypeId -> quantity, for a set of submissions. */
-async function quantitiesBySubmission(
-  submissionIds: string[],
-): Promise<Map<string, Record<string, number>>> {
-  const out = new Map<string, Record<string, number>>();
-  if (submissionIds.length === 0) return out;
-
+/**
+ * The period row for a month, or null when nobody has opened that month yet —
+ * a real state (periods are created lazily), not a failure. Failures throw.
+ */
+async function findPeriodId(periodMonth: string): Promise<string | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("member_submission_lines")
-    .select("member_submission_id, material_type_id, quantity")
-    .in("member_submission_id", submissionIds);
+    .from("submission_periods")
+    .select("id")
+    .eq("period_month", periodMonth)
+    .maybeSingle();
   if (error) throw error;
-
-  for (const line of data ?? []) {
-    const bucket = out.get(line.member_submission_id) ?? {};
-    bucket[line.material_type_id] = line.quantity;
-    out.set(line.member_submission_id, bucket);
-  }
-  return out;
+  return data?.id ?? null;
 }
 
 /** materialTypeId -> target quantity for a month (0 when unset). */
 export async function getMonthTargets(
   periodMonth: string,
 ): Promise<Record<string, number>> {
-  const supabase = await createClient();
-  const { data: period } = await supabase
-    .from("submission_periods")
-    .select("id")
-    .eq("period_month", periodMonth)
-    .maybeSingle();
-  if (!period) return {};
+  const periodId = await findPeriodId(periodMonth);
+  if (!periodId) return {};
 
-  const { data } = await supabase
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("submission_period_targets")
     .select("material_type_id, target_quantity")
-    .eq("period_id", period.id);
+    .eq("period_id", periodId);
+  if (error) throw error;
 
   const out: Record<string, number> = {};
   for (const row of data ?? []) out[row.material_type_id] = row.target_quantity;
@@ -101,28 +97,34 @@ export async function getMyMonthSubmission(
   periodMonth: string,
   memberId: string,
 ): Promise<MyMonthSubmission> {
-  const supabase = await createClient();
+  const periodId = await findPeriodId(periodMonth);
+  if (!periodId) return { submission: null, quantities: {} };
 
-  const { data: period } = await supabase
-    .from("submission_periods")
-    .select("id")
-    .eq("period_month", periodMonth)
-    .maybeSingle();
-  if (!period) return { submission: null, quantities: {} };
+  const supabase = await createClient();
 
   // Scope to the caller explicitly: RLS lets a Super Admin see every member's
   // row for the period, so `.maybeSingle()` would throw without this filter.
   const { data: submission, error } = await supabase
     .from("member_submissions")
     .select("*")
-    .eq("period_id", period.id)
+    .eq("period_id", periodId)
     .eq("member_id", memberId)
     .maybeSingle();
   if (error) throw error;
   if (!submission) return { submission: null, quantities: {} };
 
-  const quantities = await quantitiesBySubmission([submission.id]);
-  return { submission, quantities: quantities.get(submission.id) ?? {} };
+  // One submission carries one line per material type — a handful of rows.
+  const { data: lines, error: linesError } = await supabase
+    .from("member_submission_lines")
+    .select("material_type_id, quantity")
+    .eq("member_submission_id", submission.id);
+  if (linesError) throw linesError;
+
+  const quantities: Record<string, number> = {};
+  for (const line of lines ?? []) {
+    quantities[line.material_type_id] = line.quantity;
+  }
+  return { submission, quantities };
 }
 
 export type MyHistoryRow = {
@@ -131,41 +133,37 @@ export type MyHistoryRow = {
   quantities: Record<string, number>;
 };
 
-export async function listMyMemberSubmissions(
-  memberId: string,
-): Promise<MyHistoryRow[]> {
+export const SUBMISSION_HISTORY_PAGE_SIZE = 12;
+
+/**
+ * One page of the caller's own submission history, newest month first. Paged
+ * and counted in SQL by `my_submission_history()` (0080), which is scoped to
+ * the session's member — there is no member id to pass, or to widen.
+ */
+export async function listMyMemberSubmissions(options: {
+  page?: number | string;
+}): Promise<{
+  rows: MyHistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
   const supabase = await createClient();
+  const pageSize = SUBMISSION_HISTORY_PAGE_SIZE;
+  const { page, from } = pageBounds(options.page, pageSize);
 
-  // Scope to the caller explicitly — a Super Admin's RLS view is every member's
-  // rows, not just their own.
-  const { data: submissions, error } = await supabase
-    .from("member_submissions")
-    .select("*")
-    .eq("member_id", memberId)
-    .order("submitted_at", { ascending: false });
+  const { data, error } = await supabase.rpc("my_submission_history", {
+    p_limit: pageSize,
+    p_offset: from,
+  });
   if (error) throw error;
-  if (!submissions || submissions.length === 0) return [];
 
-  const periodIds = [...new Set(submissions.map((s) => s.period_id))];
-  const [{ data: periods }, quantities] = await Promise.all([
-    supabase
-      .from("submission_periods")
-      .select("id, period_month")
-      .in("id", periodIds),
-    quantitiesBySubmission(submissions.map((s) => s.id)),
-  ]);
-
-  const monthByPeriod = new Map(
-    (periods ?? []).map((p) => [p.id, p.period_month]),
+  const payload = parseRpcPayload(
+    mySubmissionHistoryPayload,
+    data,
+    "my_submission_history",
   );
-
-  return submissions
-    .map((submission) => ({
-      periodMonth: monthByPeriod.get(submission.period_id) ?? "",
-      submission,
-      quantities: quantities.get(submission.id) ?? {},
-    }))
-    .sort((a, b) => b.periodMonth.localeCompare(a.periodMonth));
+  return { rows: payload.rows, total: payload.total, page, pageSize };
 }
 
 export type MemberSubmissionAlert = {
@@ -246,126 +244,51 @@ export type AdminSubmissionMonth = {
   };
 };
 
+/**
+ * The Super Admin month grid. Rows, per-material totals and status counts are
+ * built in SQL by `admin_submission_month()` (0080) and arrive as one jsonb
+ * value, so neither the lines nor the totals can be cut short by the PostgREST
+ * row cap however many members submit.
+ */
 export async function getAdminSubmissionMonth(
   periodMonth: string,
 ): Promise<AdminSubmissionMonth> {
   const supabase = await createClient();
 
-  const [materials, periodRes, membersRes] = await Promise.all([
+  const [materials, { data, error }] = await Promise.all([
     getMaterialTypes(),
-    supabase
-      .from("submission_periods")
-      .select("id")
-      .eq("period_month", periodMonth)
-      .maybeSingle(),
-    supabase
-      .from("members")
-      .select("id, display_name, rank")
-      .eq("status", "ACTIVE")
-      .order("display_name", { ascending: true }),
+    supabase.rpc("admin_submission_month", { p_period_month: periodMonth }),
   ]);
+  if (error) throw error;
 
-  const period = periodRes.data;
-  const activeMembers = membersRes.data ?? [];
-
-  const [targetsRes, submissionsRes] = await Promise.all([
-    period
-      ? supabase
-          .from("submission_period_targets")
-          .select("material_type_id, target_quantity")
-          .eq("period_id", period.id)
-      : Promise.resolve({ data: null }),
-    period
-      ? supabase
-          .from("member_submissions")
-          .select(
-            "id, member_id, status, submitted_at, confirmed_at, note, review_note, received_by, received_by_name",
-          )
-          .eq("period_id", period.id)
-      : Promise.resolve({ data: null }),
-  ]);
-
-  const targetByMaterial = new Map(
-    (targetsRes.data ?? []).map((t) => [t.material_type_id, t.target_quantity]),
+  const payload = parseRpcPayload(
+    adminSubmissionMonthPayload,
+    data,
+    "admin_submission_month",
   );
+
   const columns: AdminMaterialColumn[] = materials.map((m) => ({
     id: m.id,
     code: m.code,
     name: m.name,
     unit: m.unit,
-    target: targetByMaterial.get(m.id) ?? 0,
+    target: payload.targets[m.id] ?? 0,
   }));
 
-  const submissions = submissionsRes.data ?? [];
-  const submissionByMember = new Map(submissions.map((s) => [s.member_id, s]));
-  const quantities = await quantitiesBySubmission(submissions.map((s) => s.id));
-
-  const activeIds = new Set(activeMembers.map((m) => m.id));
-  const stragglerIds = submissions
-    .map((s) => s.member_id)
-    .filter((id) => !activeIds.has(id));
-  const stragglerNames = await getMemberNames(stragglerIds);
-
-  const rows: AdminSubmissionRow[] = activeMembers.map((m) => {
-    const s = submissionByMember.get(m.id);
-    return {
-      memberId: m.id,
-      memberName: m.display_name,
-      rank: m.rank,
-      active: true,
-      submissionId: s?.id ?? null,
-      status: s?.status ?? null,
-      submittedAt: s?.submitted_at ?? null,
-      confirmedAt: s?.confirmed_at ?? null,
-      note: s?.note ?? null,
-      reviewNote: s?.review_note ?? null,
-      receivedById: s?.received_by ?? null,
-      receivedByName: s?.received_by_name ?? null,
-      quantities: s ? (quantities.get(s.id) ?? {}) : {},
-    };
-  });
-
-  for (const id of stragglerIds) {
-    const s = submissionByMember.get(id)!;
-    rows.push({
-      memberId: id,
-      memberName: stragglerNames.get(id) ?? "Former member",
-      rank: "SOLDIER",
-      active: false,
-      submissionId: s.id,
-      status: s.status,
-      submittedAt: s.submitted_at,
-      confirmedAt: s.confirmed_at,
-      note: s.note,
-      reviewNote: s.review_note,
-      receivedById: s.received_by ?? null,
-      receivedByName: s.received_by_name ?? null,
-      quantities: quantities.get(s.id) ?? {},
-    });
-  }
-
+  // Totals are reported for the material columns on screen, as before.
   const totals: Record<string, number> = {};
-  for (const col of columns) {
-    totals[col.id] = rows.reduce(
-      (sum, r) => sum + (r.quantities[col.id] ?? 0),
-      0,
-    );
-  }
-
-  const counts = {
-    members: rows.length,
-    confirmed: rows.filter((r) => r.status === "CONFIRMED").length,
-    pending: rows.filter((r) => r.status === "PENDING").length,
-    rejected: rows.filter((r) => r.status === "REJECTED").length,
-    missing: rows.filter((r) => r.status === null).length,
-  };
+  for (const col of columns) totals[col.id] = payload.totals[col.id] ?? 0;
 
   return {
     periodMonth,
-    hasPeriod: !!period,
+    hasPeriod: payload.hasPeriod,
     materials: columns,
-    rows,
+    rows: payload.rows.map((r) => ({
+      ...r,
+      memberName: r.memberName ?? "Former member",
+      rank: r.rank ?? "SOLDIER",
+    })),
     totals,
-    counts,
+    counts: payload.counts,
   };
 }

@@ -14,6 +14,7 @@ import {
   type InventoryStatus,
 } from "@/lib/db/inventory";
 import { formatQuantity } from "@/lib/format";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { ItemThumb } from "@/components/patterns/item-thumb";
 import { LinkedTableRow } from "@/components/patterns/linked-table-row";
@@ -43,7 +44,7 @@ export default async function AdminInventoryPage({
   searchParams,
 }: PageProps<"/admin/inventory">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const search = one(sp.q) ?? "";
 
   const rawType = one(sp.type);

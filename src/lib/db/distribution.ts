@@ -7,6 +7,7 @@ import {
   type DistributionSummaryPayload,
 } from "@/lib/db/contracts";
 import { getMemberNames } from "@/lib/db/members";
+import { chunk, ID_CHUNK, pageBounds, readAllRows } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 import type { DrawListScope } from "@/lib/validation/distribution";
 
@@ -18,6 +19,23 @@ const SCOPE_STATUS = {
   open: "OPEN",
   settled: "SETTLED",
 } as const;
+
+type RateRow = Pick<
+  Tables<"distribution_rates">,
+  "item_id" | "unit_rate" | "updated_at"
+>;
+
+/** Every company cut. One row per drawable item, read in bounded batches. */
+async function readAllRates(): Promise<RateRow[]> {
+  const supabase = await createClient();
+  return readAllRows((from, to) =>
+    supabase
+      .from("distribution_rates")
+      .select("item_id, unit_rate, updated_at")
+      .order("item_id", { ascending: true })
+      .range(from, to),
+  );
+}
 
 // ── drawable items ─────────────────────────────────────────────────────────
 export type DrawableItem = {
@@ -35,37 +53,35 @@ export type DrawableItem = {
  */
 export async function getDrawableItems(): Promise<DrawableItem[]> {
   const supabase = await createClient();
-  const { data: rates, error: ratesErr } = await supabase
-    .from("distribution_rates")
-    .select("item_id, unit_rate");
-  if (ratesErr) throw ratesErr;
+  const rates = await readAllRates();
+  if (rates.length === 0) return [];
 
-  const itemIds = (rates ?? []).map((r) => r.item_id);
-  if (itemIds.length === 0) return [];
+  const rateByItem = new Map(rates.map((r) => [r.item_id, r.unit_rate]));
+  const qtyByItem = new Map<string, number>();
+  const items: { id: string; name: string; unit: DrawableItem["unit"] }[] = [];
 
-  const [{ data: items, error: itemsErr }, { data: stock, error: stockErr }] =
-    await Promise.all([
+  // Small id groups instead of one `in (<every cut>)` list.
+  for (const ids of chunk([...rateByItem.keys()], ID_CHUNK)) {
+    const [itemsRes, stockRes] = await Promise.all([
       supabase
         .from("items")
         .select("id, name, unit")
-        .in("id", itemIds)
+        .in("id", ids)
         .is("archived_at", null),
       supabase
         .from("inventory")
         .select("item_id, current_quantity")
-        .in("item_id", itemIds),
+        .in("item_id", ids),
     ]);
-  if (itemsErr) throw itemsErr;
-  if (stockErr) throw stockErr;
+    if (itemsRes.error) throw itemsRes.error;
+    if (stockRes.error) throw stockRes.error;
+    items.push(...(itemsRes.data ?? []));
+    for (const s of stockRes.data ?? []) {
+      qtyByItem.set(s.item_id, s.current_quantity);
+    }
+  }
 
-  const rateByItem = new Map(
-    (rates ?? []).map((r) => [r.item_id, r.unit_rate]),
-  );
-  const qtyByItem = new Map(
-    (stock ?? []).map((s) => [s.item_id, s.current_quantity]),
-  );
-
-  return (items ?? [])
+  return items
     .map((i) => ({
       id: i.id,
       name: i.name,
@@ -73,7 +89,7 @@ export async function getDrawableItems(): Promise<DrawableItem[]> {
       unit_rate: rateByItem.get(i.id)!,
       current_quantity: qtyByItem.get(i.id) ?? 0,
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
 // ── admin: the company cut list ────────────────────────────────────────────
@@ -92,24 +108,26 @@ export type DistributionRateRow = {
  */
 export async function listDistributionRates(): Promise<DistributionRateRow[]> {
   const supabase = await createClient();
-  const { data: rates, error: ratesErr } = await supabase
-    .from("distribution_rates")
-    .select("item_id, unit_rate, updated_at");
-  if (ratesErr) throw ratesErr;
-  if ((rates ?? []).length === 0) return [];
+  const rates = await readAllRates();
+  if (rates.length === 0) return [];
 
-  const { data: items, error: itemsErr } = await supabase
-    .from("items")
-    .select("id, name, unit, stock_type")
-    .in(
-      "id",
-      (rates ?? []).map((r) => r.item_id),
-    );
-  if (itemsErr) throw itemsErr;
+  const byItem = new Map<
+    string,
+    Pick<Tables<"items">, "id" | "name" | "unit" | "stock_type">
+  >();
+  for (const ids of chunk(
+    rates.map((r) => r.item_id),
+    ID_CHUNK,
+  )) {
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, name, unit, stock_type")
+      .in("id", ids);
+    if (error) throw error;
+    for (const i of data ?? []) byItem.set(i.id, i);
+  }
 
-  const byItem = new Map((items ?? []).map((i) => [i.id, i]));
-
-  return (rates ?? [])
+  return rates
     .flatMap((r) => {
       const item = byItem.get(r.item_id);
       if (!item) return [];
@@ -124,7 +142,10 @@ export async function listDistributionRates(): Promise<DistributionRateRow[]> {
         },
       ];
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name) || a.item_id.localeCompare(b.item_id),
+    );
 }
 
 export type PriceableItem = {
@@ -142,21 +163,22 @@ export type PriceableItem = {
  */
 export async function listPriceableItems(): Promise<PriceableItem[]> {
   const supabase = await createClient();
-  const [{ data: items, error: itemsErr }, { data: rates, error: ratesErr }] =
-    await Promise.all([
+  const [items, rates] = await Promise.all([
+    readAllRows((from, to) =>
       supabase
         .from("items")
         .select("id, name, unit, stock_type")
         .eq("category", "PRODUCT")
         .is("archived_at", null)
-        .order("name", { ascending: true }),
-      supabase.from("distribution_rates").select("item_id"),
-    ]);
-  if (itemsErr) throw itemsErr;
-  if (ratesErr) throw ratesErr;
+        .order("name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    readAllRates(),
+  ]);
 
-  const priced = new Set((rates ?? []).map((r) => r.item_id));
-  return (items ?? []).filter((i) => !priced.has(i.id));
+  const priced = new Set(rates.map((r) => r.item_id));
+  return items.filter((i) => !priced.has(i.id));
 }
 
 // ── member: my draws ───────────────────────────────────────────────────────
@@ -171,9 +193,8 @@ export async function listMyDistributions(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = DISTRIBUTION_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   // Scope to the caller explicitly — a Super Admin's RLS view is every
   // member's draws, not just their own.
@@ -188,10 +209,7 @@ export async function listMyDistributions(options: {
     query = query.eq("status", SCOPE_STATUS[options.scope]);
   }
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   return { rows: data ?? [], total: count ?? 0, page, pageSize };
@@ -228,9 +246,8 @@ export async function listAdminDistributions(options: {
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = DISTRIBUTION_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase
     .from("distributions")
@@ -253,10 +270,7 @@ export async function listAdminDistributions(options: {
     );
   }
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const rows = data ?? [];
@@ -283,17 +297,4 @@ export async function getDistributionSummary(): Promise<DistributionSummaryPaylo
     data,
     "distribution_summary",
   );
-}
-
-export async function getDistribution(
-  id: string,
-): Promise<Distribution | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("distributions")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
 }

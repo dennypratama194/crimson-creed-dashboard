@@ -54,14 +54,19 @@ file is wrong about process; fix the one that strayed.
   `--tone-*`), never raw palette hex.
 - Server data access lives in `src/lib/db/*`; orchestration in
   `src/lib/services/*`; Zod schemas in `src/lib/validation/*`.
-- Rate limiting goes through `src/lib/rate-limit.ts` (`checkRateLimit` /
-  `rateLimitHit`), backed by the `hit_auth_throttle` RPC. Member-facing mutating
-  server actions that fan out notifications (orders, production, submissions) are
-  capped per member; auth endpoints use a 15-minute window. If the RPC is
-  unreachable, member actions fail open and auth endpoints
-  (`rateLimitHit(…, "local")`) fall back to an in-process limiter; the per-IP
-  sign-in key trusts platform headers only (`src/lib/client-ip.ts`). Never rely
-  on the limiter as an authorization boundary.
+- Two separate limiters, both fixed-window. **Auth endpoints** go through
+  `src/lib/rate-limit.ts` (`rateLimitHit`), backed by the `hit_auth_throttle`
+  RPC (concurrency-safe since 0078), with a 15-minute window; if the RPC is
+  unreachable they fall back to an in-process limiter
+  (`rateLimitHit(…, "local")`), and the per-IP sign-in key trusts platform
+  headers only (`src/lib/client-ip.ts`). **Member mutations** that fan out
+  notifications (`create_order`, `submit_order_payment`, `cancel_order`,
+  `submit_material_submission`) are capped per member **inside the RPC**
+  (`app.consume_member_action`, 0079), so a direct PostgREST call cannot skip
+  it; the Server Actions keep no second counter. A refusal raises SQLSTATE
+  `CC429`, which `rpcErrorMessage` passes through. A new member-facing mutating
+  RPC that notifies admins should call `app.consume_member_action` first. Never
+  rely on either limiter as an authorization boundary.
 - Free-text columns writable from the browser carry a length ceiling
   (`*_max_len` CHECK constraints, migration 0046). Add one for any new
   user-supplied text column.

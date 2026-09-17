@@ -41,7 +41,8 @@ These enum sets live in one place: `src/lib/constants/enums.ts` +
 
 ## Database (migrations, in order)
 
-The authoritative list is `supabase/migrations/` — **58 files, `0001` → `0058`**,
+The authoritative list is `supabase/migrations/` itself — read the directory
+rather than a count copied here, which goes stale with the next file. It is
 forward-only (`DEPLOYMENT.md` → Migration rules). The Phase 1 list directly below
 is the original plan and its names differ from the files that shipped
 (`0001_init_helpers` … `0017_item_images`); the later phase notes use the real

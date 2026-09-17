@@ -30,12 +30,14 @@ export function AppShell({
   role,
   displayName,
   unreadCount,
+  unreadCountedAt,
   defaultCollapsed = false,
   children,
 }: {
   role: AppRole;
   displayName: string;
-  unreadCount: number;
+  unreadCount: number | null;
+  unreadCountedAt: number;
   defaultCollapsed?: boolean;
   children: ReactNode;
 }) {
@@ -137,7 +139,10 @@ export function AppShell({
 
           <div className="flex-1" />
 
-          <NotificationBell initialCount={unreadCount} />
+          <NotificationBell
+            initialCount={unreadCount}
+            countedAt={unreadCountedAt}
+          />
           <ThemeToggle />
           <UserMenu displayName={displayName} role={role} />
         </header>

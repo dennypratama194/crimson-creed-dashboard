@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Activity } from "lucide-react";
 
 import { listActivity } from "@/lib/db/activity";
+import { clampPage } from "@/lib/db/paging";
 import { formatDateTime } from "@/lib/format";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
@@ -13,10 +14,7 @@ export default async function AdminActivityPage({
   searchParams,
 }: PageProps<"/admin/activity">) {
   const sp = await searchParams;
-  const page = Math.max(
-    1,
-    Number(Array.isArray(sp.page) ? sp.page[0] : sp.page) || 1,
-  );
+  const page = clampPage(Array.isArray(sp.page) ? sp.page[0] : sp.page);
 
   const { rows, total, pageSize } = await listActivity({ page });
 

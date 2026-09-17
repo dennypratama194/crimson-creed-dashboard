@@ -1,7 +1,7 @@
 export type RateLimitRule = {
   /** Max attempts allowed inside the window before the block kicks in. */
   limit: number;
-  /** Rolling window, seconds. Default 60. */
+  /** Fixed window, seconds, opened by the first hit. Default 60. */
   windowSeconds?: number;
   /** How long a tripped limiter stays blocked, seconds. Default = windowSeconds. */
   blockSeconds?: number;
@@ -21,7 +21,8 @@ export type LocalLimiter = {
 
 /**
  * In-process limiter with the same window / block semantics as the
- * `hit_auth_throttle` RPC (migrations 0022 / 0047). It is only a fallback for
+ * `hit_auth_throttle` RPC (0022, concurrency-safe since 0078) — a fixed window
+ * opened by the first hit, then a block once the limit is passed. It is only a fallback for
  * when that RPC is unreachable: state lives in one server instance's memory, so
  * on a multi-instance deployment an attacker spread across instances gets
  * `limit` attempts per instance. That is still far better than no limit at all,

@@ -2,7 +2,9 @@ import "server-only";
 
 import type { Tables } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/db/ids";
 import { getMemberNames } from "@/lib/db/members";
+import { pageBounds } from "@/lib/db/paging";
 import type { RelationListSort } from "@/lib/validation/relation";
 
 export type Relation = Tables<"relations">;
@@ -32,9 +34,8 @@ export async function listRelations(options: ListRelationsOptions): Promise<{
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = RELATION_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase.from("relations").select("*", { count: "exact" });
 
@@ -42,17 +43,17 @@ export async function listRelations(options: ListRelationsOptions): Promise<{
   if (search) query = query.ilike("name", `%${search}%`);
 
   if ((options.sort ?? "recent") === "name") {
-    query = query.order("name", { ascending: true });
+    query = query
+      .order("name", { ascending: true })
+      .order("id", { ascending: true });
   } else {
     query = query
       .order("joined_on", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
   }
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const relations = data ?? [];
@@ -72,11 +73,13 @@ export async function listRelations(options: ListRelationsOptions): Promise<{
 }
 
 export async function getRelation(id: string): Promise<Relation | null> {
+  if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("relations")
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  return data ?? null;
+  if (error) throw error;
+  return data;
 }

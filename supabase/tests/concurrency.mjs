@@ -1,5 +1,7 @@
 /**
- * Concurrency regression suite for the production assignment board (0074).
+ * Concurrency regression suite: the production assignment board (0074), item
+ * deletion (0076), auth throttle bucket creation (0078) and member mutation
+ * quotas (0079).
  *
  * WHY THIS IS A SEPARATE FILE FROM schema.mjs
  * -------------------------------------------
@@ -141,6 +143,13 @@ await setup.query(`drop schema if exists app cascade`);
 await setup.query(`drop schema if exists auth cascade`);
 await setup.query(`drop schema if exists storage cascade`);
 await setup.query(`create schema public`);
+// A recreated `public` loses the default USAGE grant Supabase gives the API
+// roles. Without it `authenticated` cannot resolve a single RPC, and every
+// member-side case fails with "function ... does not exist" instead of testing
+// anything.
+await setup.query(
+  `grant usage on schema public to anon, authenticated, service_role`,
+);
 await setup.query(`
   do $$ begin
     if not exists (select 1 from pg_roles where rolname = 'anon') then
@@ -721,6 +730,322 @@ await expect("an order placed mid-delete blocks the delete", async () => {
     assert(still === 1, "the item vanished despite the refusal");
   } finally {
     await Promise.all([a.end(), b.end(), probe.end()]);
+  }
+});
+
+// ── 10. auth throttle bucket creation (0078) ───────────────────────────────
+console.log("\nAuth throttle concurrency (0078)");
+const svc = async () => {
+  const c = await connect();
+  await c.query(`set role service_role`);
+  return c;
+};
+const hitOn = (c, key, limit = 5, win = 60, block = 60) =>
+  c
+    .query(`select hit_auth_throttle($1, $2, $3, $4) w`, [
+      key,
+      limit,
+      win,
+      block,
+    ])
+    .then((r) => Number(r.rows[0].w));
+const attemptsOf = async (key) =>
+  (
+    await setup.query(`select attempts from auth_throttle where key = $1`, [
+      key,
+    ])
+  ).rows[0]?.attempts ?? null;
+
+await expect(
+  "a first hit that waits on another first hit is counted, not an error",
+  async () => {
+    const key = "conc:first-hit:forced";
+    const a = await svc();
+    const b = await svc();
+    const probe = await connect();
+    try {
+      await a.query("begin");
+      assert((await hitOn(a, key)) === 0, "A refused");
+      // B's insert conflicts with A's uncommitted row and must WAIT on it —
+      // under 0047 it found no row, inserted, and died on the primary key.
+      const bPid = await pidOf(b);
+      const bDone = hitOn(b, key).then(
+        (w) => ({ ok: true, w }),
+        (err) => ({ ok: false, err }),
+      );
+      await waitUntilBlocked(probe, bPid);
+      await a.query("commit");
+      const r = await bDone;
+      assert(r.ok, `B failed instead of counting: ${r.err?.message}`);
+      assert(r.w === 0, `B wait ${r.w}`);
+      assert(
+        (await attemptsOf(key)) === 2,
+        `attempts ${await attemptsOf(key)}`,
+      );
+    } finally {
+      await Promise.all([a.end(), b.end(), probe.end()]);
+    }
+  },
+);
+
+await expect(
+  "a parallel burst of first hits allows exactly the limit",
+  async () => {
+    const key = "conc:first-hit:burst";
+    const clients = await Promise.all(Array.from({ length: 25 }, () => svc()));
+    try {
+      const results = await Promise.all(
+        clients.map((c) =>
+          hitOn(c, key, 5, 60, 60).then(
+            (w) => ({ ok: true, w }),
+            (err) => ({ ok: false, err }),
+          ),
+        ),
+      );
+      const errors = results.filter((r) => !r.ok);
+      assert(
+        errors.length === 0,
+        `${errors.length} errors: ${errors[0]?.err?.message}`,
+      );
+      const allowed = results.filter((r) => r.w === 0).length;
+      assert(allowed === 5, `allowed ${allowed} of 25 (limit 5)`);
+      // 5 allowed + the one that tripped the block; blocked hits do not count
+      assert(
+        (await attemptsOf(key)) === 6,
+        `attempts ${await attemptsOf(key)}`,
+      );
+    } finally {
+      await Promise.all(clients.map((c) => c.end()));
+    }
+  },
+);
+
+await expect("different keys do not wait on each other", async () => {
+  const a = await svc();
+  const b = await svc();
+  try {
+    await a.query("begin");
+    await hitOn(a, "conc:keys:one");
+    // A holds key one's row lock until commit. Key two must not queue behind it.
+    await b.query(`set statement_timeout = '2s'`);
+    const w = await hitOn(b, "conc:keys:two");
+    assert(w === 0, `key two wait ${w}`);
+    await a.query("commit");
+  } finally {
+    await Promise.all([a.end(), b.end()]);
+  }
+});
+
+/** A seed after which the next random() is below the 1% sweep threshold. */
+async function sweepSeed(c) {
+  for (let i = 0; i < 20000; i += 1) {
+    const seed = (i / 20000) * 2 - 1;
+    await c.query(`select setseed($1)`, [seed]);
+    const r = (await c.query(`select random() r`)).rows[0].r;
+    if (r < 0.01) return seed;
+  }
+  throw new Error("no seed triggers the sweep");
+}
+
+await expect(
+  "the sweep skips a bucket another hit holds, and loses no update",
+  async () => {
+    const held = "conc:sweep:held";
+    const idle = "conc:sweep:idle";
+    await setup.query(
+      `insert into auth_throttle (key, attempts, first_attempt_at)
+       values ($1, 3, now() - interval '3 hours'), ($2, 3, now() - interval '3 hours')`,
+      [held, idle],
+    );
+    const a = await svc();
+    const b = await svc();
+    try {
+      // A resets the stale `held` bucket and keeps it locked.
+      await a.query("begin");
+      assert((await hitOn(a, held)) === 0, "A refused");
+
+      // B sweeps. It must skip `held` (locked) rather than wait on it, and
+      // delete `idle`, which nobody holds.
+      await b.query(`set statement_timeout = '2s'`);
+      await b.query(`select setseed($1)`, [await sweepSeed(b)]);
+      assert((await hitOn(b, "conc:sweep:sweeper")) === 0, "sweeper refused");
+
+      await a.query("commit");
+      assert(
+        (await attemptsOf(held)) === 1,
+        `held bucket lost A's reset: ${await attemptsOf(held)}`,
+      );
+      assert((await attemptsOf(idle)) === null, "idle stale bucket not swept");
+    } finally {
+      await Promise.all([a.end(), b.end()]);
+    }
+  },
+);
+
+await expect(
+  "a hit on a bucket being swept re-creates it instead of failing",
+  async () => {
+    const key = "conc:sweep:recreate";
+    await setup.query(
+      `insert into auth_throttle (key, attempts, first_attempt_at)
+       values ($1, 4, now() - interval '3 hours')`,
+      [key],
+    );
+    // table owner: stands in for the sweep inside hit_auth_throttle
+    const sweeper = await connect();
+    const hitter = await svc();
+    const probe = await connect();
+    try {
+      // Stand in for a sweep: lock the stale row and delete it, uncommitted.
+      await sweeper.query("begin");
+      await sweeper.query(`delete from auth_throttle where key = $1`, [key]);
+      const pid = await pidOf(hitter);
+      const done = hitOn(hitter, key, 5).then(
+        (w) => ({ ok: true, w }),
+        (err) => ({ ok: false, err }),
+      );
+      await waitUntilBlocked(probe, pid);
+      await sweeper.query("commit");
+      const r = await done;
+      assert(r.ok, `hit failed: ${r.err?.message}`);
+      assert(r.w === 0, `wait ${r.w}`);
+      assert(
+        (await attemptsOf(key)) === 1,
+        `attempts ${await attemptsOf(key)}`,
+      );
+    } finally {
+      await Promise.all([sweeper.end(), hitter.end(), probe.end()]);
+    }
+  },
+);
+
+// ── 11. member mutation quotas under concurrency (0079) ───────────────────
+console.log("\nMember quota concurrency (0079)");
+const quotaItem = (
+  await setup.query(
+    `insert into items (name, category, unit, price, stock_type, orderable, active)
+     values ('Quota Item', 'AMMO', 'ROUND', 1, 'CATALOGUE', true, true)
+     returning *`,
+  )
+).rows[0];
+const quotaLine = JSON.stringify([{ item_id: quotaItem.id, quantity: 1 }]);
+const asMember = async (member) => {
+  const c = await connect();
+  await c.query(`set role authenticated`);
+  await actAs(c, member.user_id);
+  return c;
+};
+const setHits = (member, hits) =>
+  setup.query(
+    `insert into member_action_throttle (member_id, action, window_started_at, hits)
+     values ($1, 'order:create', clock_timestamp(), $2)
+     on conflict (member_id, action) do update
+       set window_started_at = excluded.window_started_at, hits = excluded.hits`,
+    [member.id, hits],
+  );
+const ordersOf = async (member) =>
+  (
+    await setup.query(
+      `select count(*)::int n from orders where member_id = $1`,
+      [member.id],
+    )
+  ).rows[0].n;
+
+await expect(
+  "the last slot goes to one call; the queued one is refused on commit",
+  async () => {
+    await setHits(m1, 14);
+    const a = await asMember(m1);
+    const b = await asMember(m1);
+    const probe = await connect();
+    try {
+      await a.query("begin");
+      await a.query(`select create_order($1::jsonb, null)`, [quotaLine]);
+      const bPid = await pidOf(b);
+      const bDone = b
+        .query(`select create_order($1::jsonb, null)`, [quotaLine])
+        .then(
+          () => ({ ok: true }),
+          (err) => ({ ok: false, err }),
+        );
+      await waitUntilBlocked(probe, bPid);
+      await a.query("commit");
+      const r = await bDone;
+      assert(!r.ok, "both calls took the last slot");
+      assert(r.err.code === "CC429", `code ${r.err.code}: ${r.err.message}`);
+    } finally {
+      await Promise.all([a.end(), b.end(), probe.end()]);
+    }
+  },
+);
+
+await expect(
+  "a rolled-back call releases its slot to the call queued behind it",
+  async () => {
+    await setHits(m2, 14);
+    const a = await asMember(m2);
+    const b = await asMember(m2);
+    const probe = await connect();
+    try {
+      await a.query("begin");
+      await a.query(`select create_order($1::jsonb, null)`, [quotaLine]);
+      const bPid = await pidOf(b);
+      const bDone = b
+        .query(`select create_order($1::jsonb, null)`, [quotaLine])
+        .then(
+          () => ({ ok: true }),
+          (err) => ({ ok: false, err }),
+        );
+      await waitUntilBlocked(probe, bPid);
+      await a.query("rollback");
+      const r = await bDone;
+      assert(r.ok, `B refused after A rolled back: ${r.err?.message}`);
+    } finally {
+      await Promise.all([a.end(), b.end(), probe.end()]);
+    }
+  },
+);
+
+await expect(
+  "a parallel burst from one member creates exactly 15 orders",
+  async () => {
+    await setup.query(
+      `delete from member_action_throttle where member_id = $1`,
+      [m3.id],
+    );
+    const before = await ordersOf(m3);
+    const clients = await Promise.all(
+      Array.from({ length: 22 }, () => asMember(m3)),
+    );
+    try {
+      const results = await Promise.all(
+        clients.map((c) =>
+          c.query(`select create_order($1::jsonb, null)`, [quotaLine]).then(
+            () => ({ ok: true }),
+            (err) => ({ ok: false, err }),
+          ),
+        ),
+      );
+      const ok = results.filter((r) => r.ok).length;
+      const other = results.filter((r) => !r.ok && r.err.code !== "CC429");
+      assert(other.length === 0, `unexpected: ${other[0]?.err?.message}`);
+      assert(ok === 15, `${ok} orders succeeded (limit 15)`);
+      assert((await ordersOf(m3)) - before === 15, "order count disagrees");
+    } finally {
+      await Promise.all(clients.map((c) => c.end()));
+    }
+  },
+);
+
+await expect("one member's burst does not spend another's quota", async () => {
+  await setup.query(`delete from member_action_throttle where member_id = $1`, [
+    m1.id,
+  ]);
+  const c = await asMember(m1);
+  try {
+    await c.query(`select create_order($1::jsonb, null)`, [quotaLine]);
+  } finally {
+    await c.end();
   }
 });
 

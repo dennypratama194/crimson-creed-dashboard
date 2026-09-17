@@ -2,6 +2,8 @@ import "server-only";
 
 import type { ItemCategory } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import { isUuid } from "@/lib/db/ids";
+import { chunk, ID_CHUNK, pageBounds, readAllRows } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
 import type {
   SupplierListSort,
@@ -12,6 +14,8 @@ export type Supplier = Tables<"suppliers">;
 export type SupplierItem = Tables<"supplier_items">;
 
 export const SUPPLIER_PAGE_SIZE = 20;
+/** Suppliers per page of the grouped "By supplier" catalogue view. */
+export const SUPPLIER_GROUP_PAGE_SIZE = 10;
 
 /** A supplier row plus how many items it lists (and how many reach members). */
 export type SupplierWithCounts = Supplier & {
@@ -19,13 +23,13 @@ export type SupplierWithCounts = Supplier & {
   orderable_count: number;
 };
 
+type CatalogueItem = Pick<
+  Tables<"items">,
+  "name" | "category" | "unit" | "image_url" | "active" | "orderable"
+>;
+
 /** One price-book line joined to the catalogue item it points at. */
-export type SupplierCatalogueLine = SupplierItem & {
-  item: Pick<
-    Tables<"items">,
-    "name" | "category" | "unit" | "image_url" | "active" | "orderable"
-  >;
-};
+export type SupplierCatalogueLine = SupplierItem & { item: CatalogueItem };
 
 export type SupplierGroup = {
   supplier: Supplier;
@@ -39,8 +43,78 @@ function sanitizeSearch(input: string): string {
     .slice(0, 80);
 }
 
+const byCategoryThenName = (
+  a: SupplierCatalogueLine,
+  b: SupplierCatalogueLine,
+) =>
+  a.item.category.localeCompare(b.item.category) ||
+  a.item.name.localeCompare(b.item.name) ||
+  a.id.localeCompare(b.id);
+
+/**
+ * Every price-book line matching `filter`, read in batches ordered by id, then
+ * joined to its item in small id groups. Neither side can be cut short by the
+ * PostgREST row cap, however many lines a supplier carries.
+ */
+async function readCatalogueLines(
+  filter: { supplierIds: string[] } | { itemId: string },
+): Promise<SupplierItem[]> {
+  const supabase = await createClient();
+
+  if ("itemId" in filter) {
+    return readAllRows((from, to) =>
+      supabase
+        .from("supplier_items")
+        .select("*")
+        .eq("item_id", filter.itemId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+  }
+
+  const lines: SupplierItem[] = [];
+  for (const ids of chunk(filter.supplierIds, ID_CHUNK)) {
+    lines.push(
+      ...(await readAllRows((from, to) =>
+        supabase
+          .from("supplier_items")
+          .select("*")
+          .in("supplier_id", ids)
+          .order("id", { ascending: true })
+          .range(from, to),
+      )),
+    );
+  }
+  return lines;
+}
+
+async function joinItems(
+  lines: SupplierItem[],
+): Promise<SupplierCatalogueLine[]> {
+  if (lines.length === 0) return [];
+  const supabase = await createClient();
+
+  const itemById = new Map<string, CatalogueItem>();
+  for (const ids of chunk(
+    [...new Set(lines.map((l) => l.item_id))],
+    ID_CHUNK,
+  )) {
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, name, category, unit, image_url, active, orderable")
+      .in("id", ids);
+    if (error) throw error;
+    for (const { id, ...rest } of data ?? []) itemById.set(id, rest);
+  }
+
+  return lines.flatMap((line) => {
+    const item = itemById.get(line.item_id);
+    return item ? [{ ...line, item }] : [];
+  });
+}
+
 export type ListSuppliersOptions = {
-  page?: number;
+  page?: number | string;
   search?: string;
   status?: SupplierListStatus;
   sort?: SupplierListSort;
@@ -53,9 +127,8 @@ export async function listSuppliers(options: ListSuppliersOptions): Promise<{
   pageSize: number;
 }> {
   const supabase = await createClient();
-  const page = Math.max(1, options.page ?? 1);
   const pageSize = SUPPLIER_PAGE_SIZE;
-  const offset = (page - 1) * pageSize;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
   let query = supabase.from("suppliers").select("*", { count: "exact" });
 
@@ -74,35 +147,33 @@ export async function listSuppliers(options: ListSuppliersOptions): Promise<{
   }
 
   if ((options.sort ?? "name") === "recent") {
-    query = query.order("created_at", { ascending: false });
+    query = query
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
   } else {
-    query = query.order("name", { ascending: true });
+    query = query
+      .order("name", { ascending: true })
+      .order("id", { ascending: true });
   }
 
-  const { data, error, count } = await query.range(
-    offset,
-    offset + pageSize - 1,
-  );
+  const { data, error, count } = await query.range(from, to);
   if (error) throw error;
 
   const suppliers = data ?? [];
   const counts = new Map<string, { total: number; orderable: number }>();
 
+  // Counted in SQL (0080): the page is bounded, its suppliers' listings are not.
   if (suppliers.length > 0) {
-    const { data: lines, error: linesError } = await supabase
-      .from("supplier_items")
-      .select("supplier_id, sell_price")
-      .in(
-        "supplier_id",
-        suppliers.map((s) => s.id),
-      );
-    if (linesError) throw linesError;
-
-    for (const line of lines ?? []) {
-      const entry = counts.get(line.supplier_id) ?? { total: 0, orderable: 0 };
-      entry.total += 1;
-      if (line.sell_price !== null) entry.orderable += 1;
-      counts.set(line.supplier_id, entry);
+    const { data: countRows, error: countError } = await supabase.rpc(
+      "supplier_item_counts",
+      { p_supplier_ids: suppliers.map((s) => s.id) },
+    );
+    if (countError) throw countError;
+    for (const row of countRows ?? []) {
+      counts.set(row.supplier_id, {
+        total: row.item_count,
+        orderable: row.orderable_count,
+      });
     }
   }
 
@@ -118,14 +189,17 @@ export async function listSuppliers(options: ListSuppliersOptions): Promise<{
   };
 }
 
+/** One supplier, or null when absent. Query failures throw. */
 export async function getSupplier(id: string): Promise<Supplier | null> {
+  if (!isUuid(id)) return null;
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("suppliers")
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  return data ?? null;
+  if (error) throw error;
+  return data;
 }
 
 /** Every price-book line for one supplier, each joined to its catalogue item,
@@ -133,94 +207,57 @@ export async function getSupplier(id: string): Promise<Supplier | null> {
 export async function getSupplierCatalogue(
   supplierId: string,
 ): Promise<SupplierCatalogueLine[]> {
-  const supabase = await createClient();
-
-  const { data: lines, error } = await supabase
-    .from("supplier_items")
-    .select("*")
-    .eq("supplier_id", supplierId);
-  if (error) throw error;
-  if (!lines || lines.length === 0) return [];
-
-  const { data: items, error: itemsError } = await supabase
-    .from("items")
-    .select("id, name, category, unit, image_url, active, orderable")
-    .in(
-      "id",
-      lines.map((l) => l.item_id),
-    );
-  if (itemsError) throw itemsError;
-
-  const byId = new Map((items ?? []).map((i) => [i.id, i]));
-
-  return lines
-    .map((line) => {
-      const item = byId.get(line.item_id);
-      if (!item) return null;
-      const { id: _id, ...itemRest } = item;
-      void _id;
-      return { ...line, item: itemRest } satisfies SupplierCatalogueLine;
-    })
-    .filter((x): x is SupplierCatalogueLine => x !== null)
-    .sort(
-      (a, b) =>
-        a.item.category.localeCompare(b.item.category) ||
-        a.item.name.localeCompare(b.item.name),
-    );
+  if (!isUuid(supplierId)) return [];
+  const lines = await readCatalogueLines({ supplierIds: [supplierId] });
+  return (await joinItems(lines)).sort(byCategoryThenName);
 }
 
-/** Every non-archived supplier with its full catalogue — powers the
- *  "by supplier" grouped view that mirrors the sourcing sheet. */
-export async function listSupplierGroups(): Promise<SupplierGroup[]> {
+/**
+ * The "by supplier" grouped view that mirrors the sourcing sheet, one page of
+ * non-archived suppliers at a time, each with its complete catalogue.
+ */
+export async function listSupplierGroups(options: {
+  page?: number | string;
+}): Promise<{
+  groups: SupplierGroup[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
   const supabase = await createClient();
+  const pageSize = SUPPLIER_GROUP_PAGE_SIZE;
+  const { page, from, to } = pageBounds(options.page, pageSize);
 
-  const { data: suppliers, error } = await supabase
+  const { data, error, count } = await supabase
     .from("suppliers")
-    .select("*")
+    .select("*", { count: "exact" })
     .is("archived_at", null)
-    .order("name", { ascending: true });
+    .order("name", { ascending: true })
+    .order("id", { ascending: true })
+    .range(from, to);
   if (error) throw error;
-  if (!suppliers || suppliers.length === 0) return [];
 
-  const { data: lines, error: linesError } = await supabase
-    .from("supplier_items")
-    .select("*")
-    .in(
-      "supplier_id",
-      suppliers.map((s) => s.id),
-    );
-  if (linesError) throw linesError;
+  const suppliers = data ?? [];
+  const lines = await joinItems(
+    await readCatalogueLines({ supplierIds: suppliers.map((s) => s.id) }),
+  );
 
-  const itemIds = [...new Set((lines ?? []).map((l) => l.item_id))];
-  const { data: items, error: itemsError } = itemIds.length
-    ? await supabase
-        .from("items")
-        .select("id, name, category, unit, image_url, active, orderable")
-        .in("id", itemIds)
-    : { data: [], error: null };
-  if (itemsError) throw itemsError;
-
-  const itemById = new Map((items ?? []).map((i) => [i.id, i]));
   const linesBySupplier = new Map<string, SupplierCatalogueLine[]>();
-
-  for (const line of lines ?? []) {
-    const item = itemById.get(line.item_id);
-    if (!item) continue;
-    const { id: _id, ...itemRest } = item;
-    void _id;
+  for (const line of lines) {
     const list = linesBySupplier.get(line.supplier_id) ?? [];
-    list.push({ ...line, item: itemRest });
+    list.push(line);
     linesBySupplier.set(line.supplier_id, list);
   }
 
-  return suppliers.map((supplier) => ({
-    supplier,
-    lines: (linesBySupplier.get(supplier.id) ?? []).sort(
-      (a, b) =>
-        a.item.category.localeCompare(b.item.category) ||
-        a.item.name.localeCompare(b.item.name),
-    ),
-  }));
+  return {
+    groups: suppliers.map((supplier) => ({
+      supplier,
+      lines: (linesBySupplier.get(supplier.id) ?? []).sort(byCategoryThenName),
+    })),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
 }
 
 /** Which suppliers carry one catalogue item (item edit page panel). */
@@ -231,33 +268,34 @@ export type ItemSupplierLine = SupplierItem & {
 export async function getItemSuppliers(
   itemId: string,
 ): Promise<ItemSupplierLine[]> {
+  if (!isUuid(itemId)) return [];
+  const lines = await readCatalogueLines({ itemId });
+  if (lines.length === 0) return [];
+
   const supabase = await createClient();
-
-  const { data: lines, error } = await supabase
-    .from("supplier_items")
-    .select("*")
-    .eq("item_id", itemId);
-  if (error) throw error;
-  if (!lines || lines.length === 0) return [];
-
-  const { data: suppliers, error: suppliersError } = await supabase
-    .from("suppliers")
-    .select("id, name, archived_at")
-    .in(
-      "id",
-      lines.map((l) => l.supplier_id),
-    );
-  if (suppliersError) throw suppliersError;
-
-  const byId = new Map((suppliers ?? []).map((s) => [s.id, s]));
+  const byId = new Map<string, ItemSupplierLine["supplier"]>();
+  for (const ids of chunk(
+    [...new Set(lines.map((l) => l.supplier_id))],
+    ID_CHUNK,
+  )) {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("id, name, archived_at")
+      .in("id", ids);
+    if (error) throw error;
+    for (const s of data ?? []) byId.set(s.id, s);
+  }
 
   return lines
-    .map((line) => {
+    .flatMap((line) => {
       const supplier = byId.get(line.supplier_id);
-      return supplier ? { ...line, supplier } : null;
+      return supplier ? [{ ...line, supplier }] : [];
     })
-    .filter((x): x is ItemSupplierLine => x !== null)
-    .sort((a, b) => a.supplier.name.localeCompare(b.supplier.name));
+    .sort(
+      (a, b) =>
+        a.supplier.name.localeCompare(b.supplier.name) ||
+        a.id.localeCompare(b.id),
+    );
 }
 
 export type PickerItem = { id: string; name: string; category: ItemCategory };
@@ -265,11 +303,13 @@ export type PickerItem = { id: string; name: string; category: ItemCategory };
 /** Non-archived catalogue items for the "add item to supplier" combobox. */
 export async function listCatalogueItemsForPicker(): Promise<PickerItem[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("items")
-    .select("id, name, category")
-    .is("archived_at", null)
-    .order("name", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
+  return readAllRows((from, to) =>
+    supabase
+      .from("items")
+      .select("id, name, category")
+      .is("archived_at", null)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 }

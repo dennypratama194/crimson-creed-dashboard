@@ -7,6 +7,7 @@ import {
   RELATION_LIST_SORTS,
   type RelationListSort,
 } from "@/lib/validation/relation";
+import { clampPage } from "@/lib/db/paging";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
@@ -24,7 +25,7 @@ export default async function AdminRelationsPage({
   searchParams,
 }: PageProps<"/admin/relations">) {
   const sp = await searchParams;
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const search = one(sp.q) ?? "";
 
   const rawSort = one(sp.sort);

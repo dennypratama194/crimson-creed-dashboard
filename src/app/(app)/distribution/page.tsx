@@ -17,6 +17,7 @@ import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
 import { Pagination } from "@/components/patterns/pagination";
 import { cn } from "@/lib/utils";
+import { clampPage } from "@/lib/db/paging";
 import { DirtyMoneyNote } from "@/components/patterns/dirty-money-note";
 import { MyDrawsTable } from "@/app/(app)/distribution/my-draws-table";
 
@@ -36,7 +37,7 @@ export default async function DistributionPage({
   searchParams,
 }: PageProps<"/distribution">) {
   const [member, sp] = await Promise.all([requireActiveMember(), searchParams]);
-  const page = Math.max(1, Number(one(sp.page)) || 1);
+  const page = clampPage(one(sp.page));
   const rawScope = one(sp.scope);
   const scope: DrawListScope = (DRAW_LIST_SCOPES as readonly string[]).includes(
     rawScope ?? "",

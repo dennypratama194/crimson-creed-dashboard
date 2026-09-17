@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 
 import { requireActiveMember } from "@/lib/auth/session";
 import { rpcErrorMessage } from "@/lib/forms";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { submitMaterialSubmissionSchema } from "@/lib/validation/submission";
 
@@ -17,14 +16,8 @@ export type ActionResult<T = undefined> = {
 export async function submitMaterialSubmissionAction(
   input: unknown,
 ): Promise<ActionResult<{ submissionId: string }>> {
-  const member = await requireActiveMember();
-
-  const limited = await checkRateLimit(
-    `submission:submit:${member.id}`,
-    { limit: 15 },
-    "You're submitting too fast.",
-  );
-  if (limited) return { ok: false, error: limited };
+  // Rate-limited inside submit_material_submission (0079).
+  await requireActiveMember();
 
   const parsed = submitMaterialSubmissionSchema.safeParse(input);
   if (!parsed.success) {

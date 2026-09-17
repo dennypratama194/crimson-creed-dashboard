@@ -10,7 +10,6 @@ import {
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   requireActiveMember: vi.fn(),
-  checkRateLimit: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
@@ -20,7 +19,6 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth/session", () => ({
   requireActiveMember: mocks.requireActiveMember,
 }));
-vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 const ITEM = "3f1c2a4e-8b7d-4c1e-9a2b-5d6e7f8a9b0c";
@@ -31,7 +29,6 @@ const OTHER_MEMBER = "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b";
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.requireActiveMember.mockResolvedValue({ id: "member-1" });
-  mocks.checkRateLimit.mockResolvedValue(null);
   mocks.rpc.mockResolvedValue({ data: { id: ORDER }, error: null });
 });
 
@@ -54,22 +51,24 @@ describe("createOrderAction", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/orders");
   });
 
-  it("keys the rate limit on the session member, not browser input", async () => {
-    await createOrderAction({ items: [{ item_id: ITEM, quantity: 1 }] });
-    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
-      "order:create:member-1",
-      { limit: 15 },
-      expect.any(String),
-    );
-  });
-
-  it("stops before the database when rate-limited", async () => {
-    mocks.checkRateLimit.mockResolvedValue("You're placing orders too fast.");
+  it("surfaces the database quota refusal (0079) with its retry guidance", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: "CC429",
+        message: "You're placing orders too fast. Try again in about 1 minute.",
+        details: "retry_after_seconds=42",
+      },
+    });
     const result = await createOrderAction({
       items: [{ item_id: ITEM, quantity: 1 }],
     });
-    expect(result.ok).toBe(false);
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: false,
+      error: "You're placing orders too fast. Try again in about 1 minute.",
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("stops before the database on invalid input", async () => {

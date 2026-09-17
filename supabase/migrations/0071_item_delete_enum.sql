@@ -5,4 +5,4 @@
 -- enum value be used in the same transaction.
 -- ============================================================================
 
-alter type public.audit_action add value if not exists 'ITEM_DELETED';
+alter type audit_action add value if not exists 'ITEM_DELETED';
