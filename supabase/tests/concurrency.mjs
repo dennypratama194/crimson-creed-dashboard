@@ -143,13 +143,6 @@ await setup.query(`drop schema if exists app cascade`);
 await setup.query(`drop schema if exists auth cascade`);
 await setup.query(`drop schema if exists storage cascade`);
 await setup.query(`create schema public`);
-// A recreated `public` loses the default USAGE grant Supabase gives the API
-// roles. Without it `authenticated` cannot resolve a single RPC, and every
-// member-side case fails with "function ... does not exist" instead of testing
-// anything.
-await setup.query(
-  `grant usage on schema public to anon, authenticated, service_role`,
-);
 await setup.query(`
   do $$ begin
     if not exists (select 1 from pg_roles where rolname = 'anon') then
@@ -160,6 +153,12 @@ await setup.query(`
       create role service_role nologin noinherit bypassrls; end if;
   end $$;
   grant anon, authenticated, service_role to current_user;
+
+  -- A recreated public schema loses the default USAGE grant Supabase gives the
+  -- API roles. Without it, authenticated cannot resolve a single RPC, and every
+  -- member-side case fails with "function ... does not exist". Granted here,
+  -- after the roles exist: a fresh CI Postgres has none until the block above.
+  grant usage on schema public to anon, authenticated, service_role;
 
   create schema auth;
   create table auth.users (
