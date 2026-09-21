@@ -62,6 +62,31 @@ describe("accountState", () => {
   });
 });
 
+describe("getUser", () => {
+  it("reads the session locally from claims, never via the Auth server", async () => {
+    const getClaims = vi.fn(async () => ({
+      data: { claims: { sub: USER.id } },
+    }));
+    const getUser = vi.fn();
+    state.fake = { client: { auth: { getClaims, getUser } } };
+    const { getUser: read } = await import("@/lib/auth/session");
+    await expect(read()).resolves.toEqual({ id: USER.id });
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it("a token without a subject (e.g. the anon key) is signed out", async () => {
+    state.fake = {
+      client: {
+        auth: {
+          getClaims: async () => ({ data: { claims: { role: "anon" } } }),
+        },
+      },
+    };
+    const { getUser: read } = await import("@/lib/auth/session");
+    await expect(read()).resolves.toBeNull();
+  });
+});
+
 describe("requireActiveMember", () => {
   it("signed out -> /login", async () => {
     signedOut();

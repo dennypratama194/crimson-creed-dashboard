@@ -62,7 +62,6 @@ export function NotificationList({
                 if (unread) {
                   startTransition(async () => {
                     await markNotificationRead(n.id);
-                    if (!href) router.refresh();
                   });
                 }
                 if (href) router.push(href);

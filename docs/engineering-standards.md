@@ -188,6 +188,44 @@ list>)`. Past PostgREST's row cap (1000 on Supabase) the list came back
   come from it. Narrow the column list when the contract is genuinely narrower
   (a picker, a count, a name lookup). There is no blanket ban.
 
+### Caching and revalidation
+
+Cache Components is **off** (`next.config.ts`), so this is the previous model:
+routes are dynamic, and the only persistent cache is one `unstable_cache`.
+
+- **The one persistent cache is the orderable catalogue**
+  (`getOrderableItems`, tag `ORDERABLE_ITEMS_CACHE_TAG`, 5-minute backstop). It
+  is global on purpose: every active member sees the same rows, and it reads
+  with the service role behind the exact filter RLS would apply. Every item
+  write (`create_item`, `update_item`, `archive_item`, `restore_item`,
+  `delete_item`) goes through `revalidateItemViews()` in
+  `admin/items/actions.ts`; `admin/items/actions.test.ts` pins that. A new path
+  that mutates `items` must do the same.
+- **What must never be cached across requests:** anything a checkout, payment,
+  stock, cash or authorization decision reads. The catalogue may show a stale
+  price; `create_order` prices from the database regardless.
+- **Within one request, dedupe with `React.cache`.** `getUser`,
+  `getCurrentMember` and `getUnreadNotificationCount` are memoized so the layout
+  and the page share one lookup. Do not build a cross-request cache for these.
+  `getUser` reads `getClaims()` (local JWT verification, no Auth round trip), so
+  a session revoked elsewhere lives until its access token expires; the live
+  `members` row check is what actually gates access. It needs asymmetric JWT
+  signing keys.
+- **A Server Action that calls `revalidatePath` must not be followed by
+  `router.refresh()`.** Next renders the affected page inside the action's own
+  response (`skipPageRendering` is false once a path was revalidated), so the
+  extra `refresh()` is a second full render — layout auth, unread count and
+  every page query again. Revalidate the page being viewed in the action and
+  leave the client alone. `router.refresh()` is only right when no action
+  revalidated the view.
+- **Log retention is a database rule, not a cache.** `activity_logs` keeps 90
+  days and `audit_logs` 365 (`app.log_retention()`, migration 0081). Both stay
+  append-only; rows leave only through `app.purge_expired_logs()`, which the
+  insert triggers run on ~2% of statements, a bounded batch at a time. A purge
+  is permanent — recovery is a database restore.
+- **Independent reads go in one `Promise.all`.** A child read that needs only an
+  id (`getOrderDetail`'s lines and timeline) does not wait for its parent row.
+
 ---
 
 ## E. Application structure

@@ -4512,6 +4512,146 @@ await expectThrows(
 );
 await asRole(null);
 
+// ── log retention (0081) ──────────────────────────────────────────────────
+// activity_logs keeps 90 days, audit_logs 365. Both stay append-only for every
+// caller; only app.purge_expired_logs() may delete, and only rows past their
+// table's retention. The random sweep triggers are switched off while the
+// fixture is built so a 2% sweep cannot delete a row mid-test.
+console.log("\nLog retention (0081)");
+await asRole(null);
+await db.exec(`
+  alter table activity_logs disable trigger activity_logs_sweep;
+  alter table audit_logs disable trigger audit_logs_sweep;
+  insert into activity_logs (verb, summary, created_at) values
+    ('retention.old',    'expired',  now() - interval '100 days'),
+    ('retention.edge',   'kept',     now() - interval '89 days'),
+    ('retention.recent', 'kept',     now());
+  insert into audit_logs (action, entity_type, created_at) values
+    ('ORDER_CREATED', 'retention-old',    now() - interval '400 days'),
+    ('ORDER_CREATED', 'retention-edge',   now() - interval '200 days'),
+    ('ORDER_CREATED', 'retention-recent', now());
+`);
+const logCount = async (table, col, val) =>
+  (await one(`select count(*)::int n from ${table} where ${col} = $1`, [val]))
+    .n;
+
+await expect(
+  "an expired row cannot be deleted by an ordinary DELETE",
+  async () => {
+    const err = await callRolledBack(
+      `delete from audit_logs where entity_type = 'retention-old'`,
+    );
+    assert(err !== null, "an audit row was deleted");
+    assert(/append-only/i.test(err.message), `wrong refusal: ${err.message}`);
+  },
+);
+await expect("UPDATE is refused, expired or not", async () => {
+  for (const sql of [
+    `update audit_logs set entity_type = 'x' where entity_type = 'retention-old'`,
+    `update activity_logs set summary = 'x' where verb = 'retention.old'`,
+  ]) {
+    const err = await callRolledBack(sql);
+    assert(err !== null, "a log row was updated");
+    assert(/append-only/i.test(err.message), `wrong refusal: ${err.message}`);
+  }
+});
+await expect(
+  "a hand-set purge flag still cannot delete a row inside its retention",
+  async () => {
+    await db.exec("begin");
+    try {
+      await db.query(`select set_config('app.purging_logs', 'on', true)`);
+      let refused = null;
+      try {
+        await db.query(
+          `delete from audit_logs where entity_type = 'retention-edge'`,
+        );
+      } catch (err) {
+        refused = err;
+      }
+      assert(refused !== null, "a 200-day-old audit row was deleted");
+      assert(/append-only/i.test(refused.message), refused.message);
+    } finally {
+      await db.exec("rollback");
+    }
+  },
+);
+await asRole("authenticated", admin.id);
+await expectThrows(
+  "a signed-in Super Admin cannot call the purge directly",
+  () => db.query(`select app.purge_expired_logs()`),
+  "permission denied",
+);
+await asRole(null);
+await expect(
+  "the purge removes only rows past each table's retention",
+  async () => {
+    const r = (await one(`select app.purge_expired_logs() r`)).r;
+    assert(r.activity === 1 && r.audit === 1, JSON.stringify(r));
+    assert(
+      (await logCount("activity_logs", "verb", "retention.old")) === 0,
+      "old activity survived",
+    );
+    assert(
+      (await logCount("activity_logs", "verb", "retention.edge")) === 1,
+      "89-day activity was purged",
+    );
+    assert(
+      (await logCount("activity_logs", "verb", "retention.recent")) === 1,
+      "recent activity was purged",
+    );
+    assert(
+      (await logCount("audit_logs", "entity_type", "retention-old")) === 0,
+      "400-day audit survived",
+    );
+    assert(
+      (await logCount("audit_logs", "entity_type", "retention-edge")) === 1,
+      "200-day audit was purged (audit keeps a year)",
+    );
+    assert(
+      (await logCount("audit_logs", "entity_type", "retention-recent")) === 1,
+      "recent audit was purged",
+    );
+  },
+);
+await expect(
+  "the purge is bounded per run and idempotent once clear",
+  async () => {
+    await db.exec(`
+    insert into activity_logs (verb, summary, created_at)
+    select 'retention.bulk', 'expired', now() - interval '120 days' from generate_series(1, 5);
+  `);
+    const runs = [];
+    for (let i = 0; i < 4; i++) {
+      runs.push((await one(`select app.purge_expired_logs(2) r`)).r.activity);
+    }
+    assert(runs.join() === "2,2,1,0", `batches ${runs.join()}`);
+    assert(
+      (await logCount("activity_logs", "verb", "retention.bulk")) === 0,
+      "bulk rows survived",
+    );
+  },
+);
+await expect("every insert path sweeps on both tables", async () => {
+  const r = await one(
+    `select count(*)::int n from pg_trigger
+     where tgname in ('activity_logs_sweep', 'audit_logs_sweep') and tgenabled = 'D'`,
+  );
+  assert(
+    r.n === 2,
+    `expected both sweep triggers present (disabled by this test), got ${r.n}`,
+  );
+  await db.exec(`
+    alter table activity_logs enable trigger activity_logs_sweep;
+    alter table audit_logs enable trigger audit_logs_sweep;
+  `);
+  const on = await one(
+    `select count(*)::int n from pg_trigger
+     where tgname in ('activity_logs_sweep', 'audit_logs_sweep') and tgenabled = 'O'`,
+  );
+  assert(on.n === 2, `sweep triggers not enabled: ${on.n}`);
+});
+
 // ── upgrade path ──────────────────────────────────────────────────────────
 // A clean install proves the files compose; it does not prove an existing
 // database survives them. Build the BASE branch's schema from the base

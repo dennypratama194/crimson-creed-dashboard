@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { ITEM_UNIT_LABEL } from "@/lib/constants/labels";
 import { getOrderDetail, listPaymentRecipients } from "@/lib/db/orders";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { canSubmitOrderPayment } from "@/lib/order-payment";
 import { PageHeader } from "@/components/patterns/page-header";
 import {
   DistributionStatusBadge,
@@ -35,7 +36,10 @@ export default async function OrderDetailPage({
   if (!detail) notFound();
 
   const { order, items, timeline } = detail;
-  const recipients = await listPaymentRecipients();
+  // Only the "I've paid" dialog reads this, so skip the RPC when it won't render.
+  const recipients = canSubmitOrderPayment(order.status, order.payment_status)
+    ? await listPaymentRecipients()
+    : [];
 
   return (
     <>

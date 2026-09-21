@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
 import { ITEM_UNIT_LABEL, STOCK_TYPE_LABEL } from "@/lib/constants/labels";
@@ -41,7 +40,6 @@ export function AddCutDialog({
   items: PriceableItem[];
   trigger: ReactNode;
 }) {
-  const router = useRouter();
   const rateId = useId();
 
   const [open, setOpen] = useState(false);
@@ -84,7 +82,6 @@ export function AddCutDialog({
       }
       setOpen(false);
       toast.success("Company cut set.");
-      router.refresh();
     });
   }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -40,7 +39,6 @@ export function StockDialog({
   currentQuantity: number;
   trigger: React.ReactNode;
 }) {
-  const router = useRouter();
   const qtyId = useId();
   const notesId = useId();
 
@@ -80,7 +78,6 @@ export function StockDialog({
       }
       setOpen(false);
       toast.success(`Stock updated for ${itemName}.`);
-      router.refresh();
     });
   }
 

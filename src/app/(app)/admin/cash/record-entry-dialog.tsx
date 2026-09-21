@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useMemo, useState, useTransition, type ReactNode } from "react";
 
 import { cashCategoriesFor } from "@/lib/constants/cash";
@@ -50,7 +49,6 @@ export function RecordEntryDialog({
   admins: AdminOption[];
   defaultHandledById?: string;
 }) {
-  const router = useRouter();
   const amountId = useId();
   const dateId = useId();
   const noteId = useId();
@@ -119,7 +117,6 @@ export function RecordEntryDialog({
       }
       setOpen(false);
       toast.success(`${direction === "IN" ? "Income" : "Expense"} recorded.`);
-      router.refresh();
     });
   }
 

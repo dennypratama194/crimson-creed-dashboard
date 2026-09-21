@@ -12,13 +12,24 @@ export type CurrentMember = Tables<"members">;
 /** Where a signed-in session without a usable member row is sent. */
 export const ACCOUNT_UNAVAILABLE_PATH = "/account-unavailable";
 
-/** The authenticated Supabase user (token validated), or null. Per-request memoized. */
-export const getUser = cache(async () => {
+/**
+ * The signed-in user's id, or null. Per-request memoized.
+ *
+ * Reads the session with `getClaims()`: the JWT signature and expiry are
+ * verified locally against the project's cached signing keys, so this costs no
+ * Supabase Auth round trip (`getUser()` made one per render, action and poll).
+ * The trade-off is that a session revoked elsewhere stays valid until its access
+ * token expires — the same window RLS and PostgREST already honour. What this
+ * app treats as authoritative is the `members` row read right after (status and
+ * role), which is checked live on every request. Needs asymmetric JWT signing
+ * keys; on a symmetric-secret project `getClaims()` falls back to a network
+ * check, so nothing breaks, it just saves nothing.
+ */
+export const getUser = cache(async (): Promise<{ id: string } | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
+  const { data } = await supabase.auth.getClaims();
+  const id = data?.claims.sub;
+  return id ? { id } : null;
 });
 
 /**

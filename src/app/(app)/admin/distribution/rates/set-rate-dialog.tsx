@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 
 import { ITEM_UNIT_LABEL } from "@/lib/constants/labels";
@@ -31,7 +30,6 @@ function RateForm({
   row: DistributionRateRow;
   onDone: () => void;
 }) {
-  const router = useRouter();
   const rateId = useId();
 
   const [rate, setRate] = useState(
@@ -62,7 +60,6 @@ function RateForm({
       }
       onDone();
       toast.success("Company cut saved.");
-      router.refresh();
     });
   }
 

@@ -26,11 +26,11 @@ export default async function NotificationsPage({
   const page = clampPage(one(sp.page));
   const unreadOnly = one(sp.filter) === "unread";
 
-  const member = await getCurrentMember();
-  const { rows, total, pageSize, unreadCount } = await listNotifications({
-    page,
-    unreadOnly,
-  });
+  // getCurrentMember is already in flight from the layout; list alongside it.
+  const [member, { rows, total, pageSize, unreadCount }] = await Promise.all([
+    getCurrentMember(),
+    listNotifications({ page, unreadOnly }),
+  ]);
 
   const tabs: { key: string; label: string; href: Route }[] = [
     { key: "all", label: "All", href: "/notifications" },

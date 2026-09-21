@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import type { MemberStatus } from "@/lib/constants/enums";
 import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -14,7 +12,6 @@ export function MemberStatusButton({
   memberId: string;
   currentStatus: MemberStatus;
 }) {
-  const router = useRouter();
   const next: MemberStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
   const deactivating = next === "INACTIVE";
 
@@ -40,7 +37,6 @@ export function MemberStatusButton({
       }
       onConfirm={async () => {
         const result = await setMemberStatusAction(memberId, next);
-        if (result.ok) router.refresh();
         return result;
       }}
     />

@@ -41,7 +41,7 @@ export default async function AdminAuditPage({
     <>
       <PageHeader
         title="Audit log"
-        description="Append-only record of sensitive actions."
+        description="Append-only record of sensitive actions, kept for one year."
       />
 
       <div className="flex flex-col gap-4">

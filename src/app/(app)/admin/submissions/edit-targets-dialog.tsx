@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
 
 import type { AdminMaterialColumn } from "@/lib/db/submissions";
@@ -32,8 +31,6 @@ export function EditTargetsDialog({
   materials: AdminMaterialColumn[];
   trigger: ReactNode;
 }) {
-  const router = useRouter();
-
   const initial = () =>
     Object.fromEntries(materials.map((m) => [m.id, String(m.target ?? 0)]));
 
@@ -71,7 +68,6 @@ export function EditTargetsDialog({
       }
       setOpen(false);
       toast.success("Targets saved.");
-      router.refresh();
     });
   }
 

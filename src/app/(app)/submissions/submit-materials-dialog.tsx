@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
 import type { MaterialType, SubmissionReceiver } from "@/lib/db/submissions";
@@ -52,7 +51,6 @@ export function SubmitMaterialsDialog({
   periodMonth?: string;
   trigger: ReactNode;
 }) {
-  const router = useRouter();
   const noteId = useId();
   const receivedById = useId();
 
@@ -121,7 +119,6 @@ export function SubmitMaterialsDialog({
       }
       setOpen(false);
       toast.success("Submitted — a Super Admin will confirm it.");
-      router.refresh();
     });
   }
 

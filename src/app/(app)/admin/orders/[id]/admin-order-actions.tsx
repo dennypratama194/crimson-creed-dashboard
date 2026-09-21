@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import type {
   DistributionStatus,
   OrderStatus,
@@ -37,12 +35,6 @@ export function AdminOrderActions({
   /** The recipient the member already named on this order, if any. */
   paidToId: string | null;
 }) {
-  const router = useRouter();
-  const after = (r: { ok: boolean; error?: string }) => {
-    if (r.ok) router.refresh();
-    return r;
-  };
-
   const paidToOptions = recipients.map((r) => ({
     value: r.id,
     label: r.display_name,
@@ -92,7 +84,7 @@ export function AdminOrderActions({
             placeholder: "e.g. Cash handed over at the lock-up",
           }}
           onConfirm={async (note, paidTo) =>
-            after(await recordOrderPaymentAction(orderId, note, paidTo))
+            recordOrderPaymentAction(orderId, note, paidTo)
           }
         />
       ) : null}
@@ -104,7 +96,7 @@ export function AdminOrderActions({
           warning="Once processing starts, the member can no longer cancel this order."
           confirmLabel="Start processing"
           successMessage="Order moved to processing."
-          onConfirm={async () => after(await startProcessingAction(orderId))}
+          onConfirm={async () => startProcessingAction(orderId)}
         />
       ) : null}
 
@@ -126,7 +118,7 @@ export function AdminOrderActions({
             placeholder: "e.g. Confirmed in-game",
           }}
           onConfirm={async (note, paidTo) =>
-            after(await verifyPaymentAction(orderId, note, paidTo))
+            verifyPaymentAction(orderId, note, paidTo)
           }
         />
       ) : null}
@@ -144,9 +136,7 @@ export function AdminOrderActions({
             placeholder: "Why is the payment being rejected?",
             required: true,
           }}
-          onConfirm={async (reason) =>
-            after(await rejectPaymentAction(orderId, reason))
-          }
+          onConfirm={async (reason) => rejectPaymentAction(orderId, reason)}
         />
       ) : null}
 
@@ -161,9 +151,7 @@ export function AdminOrderActions({
             label: "Note",
             placeholder: "e.g. Handed over at the lock-up",
           }}
-          onConfirm={async (note) =>
-            after(await recordDistributionAction(orderId, note))
-          }
+          onConfirm={async (note) => recordDistributionAction(orderId, note)}
         />
       ) : null}
 
@@ -174,7 +162,7 @@ export function AdminOrderActions({
           description="Marks the order finished. It is paid and distributed."
           confirmLabel="Complete order"
           successMessage="Order completed."
-          onConfirm={async () => after(await completeOrderAction(orderId))}
+          onConfirm={async () => completeOrderAction(orderId)}
         />
       ) : null}
 
@@ -189,9 +177,7 @@ export function AdminOrderActions({
             label: "Reason",
             placeholder: "Optional note for the member",
           }}
-          onConfirm={async (reason) =>
-            after(await adminCancelOrderAction(orderId, reason))
-          }
+          onConfirm={async (reason) => adminCancelOrderAction(orderId, reason)}
         />
       ) : null}
 
@@ -208,9 +194,7 @@ export function AdminOrderActions({
             placeholder: "Why is this order being rejected?",
             required: true,
           }}
-          onConfirm={async (reason) =>
-            after(await adminRejectOrderAction(orderId, reason))
-          }
+          onConfirm={async (reason) => adminRejectOrderAction(orderId, reason)}
         />
       ) : null}
     </div>

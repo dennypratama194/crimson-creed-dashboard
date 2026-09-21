@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX } from "lucide-react";
 
@@ -35,7 +34,6 @@ export function MembersRowActions({
   displayName: string;
   status: MemberStatus;
 }) {
-  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +133,6 @@ export function MembersRowActions({
                   const result = await setMemberStatusAction(memberId, next);
                   if (result.ok) {
                     setConfirmOpen(false);
-                    router.refresh();
                   } else {
                     setError(result.error ?? "Something went wrong.");
                   }

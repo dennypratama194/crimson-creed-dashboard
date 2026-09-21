@@ -1,9 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import type { OrderStatus, PaymentStatus } from "@/lib/constants/enums";
 import type { PaymentRecipient } from "@/lib/db/orders";
+import { canSubmitOrderPayment } from "@/lib/order-payment";
 import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { cancelOrderAction } from "@/app/(app)/orders/actions";
@@ -20,14 +19,8 @@ export function OrderActions({
   paymentStatus: PaymentStatus;
   recipients: PaymentRecipient[];
 }) {
-  const router = useRouter();
-
   const canCancel = status === "PENDING";
-  const canSubmitPayment =
-    (paymentStatus === "UNPAID" || paymentStatus === "PAYMENT_REJECTED") &&
-    status !== "CANCELLED" &&
-    status !== "REJECTED" &&
-    status !== "COMPLETED";
+  const canSubmitPayment = canSubmitOrderPayment(status, paymentStatus);
 
   if (!canCancel && !canSubmitPayment) return null;
 
@@ -51,7 +44,6 @@ export function OrderActions({
           successMessage="Order cancelled."
           onConfirm={async () => {
             const result = await cancelOrderAction(orderId);
-            if (result.ok) router.refresh();
             return result;
           }}
         />

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Ban, Users } from "lucide-react";
 import { useState } from "react";
 
@@ -35,7 +34,6 @@ export function AssignmentsTable({
 }: {
   rows: ProductionAssignmentWithCrew[];
 }) {
-  const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Read the live row back out of props so the dialog reflects the latest
@@ -135,7 +133,6 @@ export function AssignmentsTable({
                               reason: text || null,
                             },
                           );
-                          if (result.ok) router.refresh();
                           return result;
                         }}
                       />

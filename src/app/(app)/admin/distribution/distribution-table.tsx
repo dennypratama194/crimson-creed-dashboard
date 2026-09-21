@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Check, Undo2 } from "lucide-react";
 
 import { DRAW_STATUS_LABEL } from "@/lib/constants/labels";
@@ -24,8 +23,6 @@ import {
 } from "@/app/(app)/admin/distribution/actions";
 
 export function DistributionTable({ rows }: { rows: AdminDistributionRow[] }) {
-  const router = useRouter();
-
   // Proportional widths so every column grows together as the viewport widens,
   // rather than two auto columns taking all the slack.
   return (
@@ -112,7 +109,6 @@ export function DistributionTable({ rows }: { rows: AdminDistributionRow[] }) {
                           distributionId: draw.id,
                           note: text || null,
                         });
-                        if (result.ok) router.refresh();
                         return result;
                       }}
                     />
@@ -143,7 +139,6 @@ export function DistributionTable({ rows }: { rows: AdminDistributionRow[] }) {
                         distributionId: draw.id,
                         reason: text,
                       });
-                      if (result.ok) router.refresh();
                       return result;
                     }}
                   />

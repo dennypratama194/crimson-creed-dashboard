@@ -132,17 +132,13 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!isUuid(id)) return null;
   const supabase = await createClient();
 
-  const { data: order, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  if (!order) return null;
-
+  // The lines and timeline only need the id, so all three reads share one round
+  // trip. For an order that does not exist (or that RLS hides) the child reads
+  // come back empty and are dropped, which costs nothing.
   // An order has a few lines and a handful of timeline entries; read in
   // batches anyway so neither list can be cut short by the row cap.
-  const [items, timeline] = await Promise.all([
+  const [orderRes, items, timeline] = await Promise.all([
+    supabase.from("orders").select("*").eq("id", id).maybeSingle(),
     readAllRows((from, to) =>
       supabase
         .from("order_items")
@@ -162,8 +158,10 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         .range(from, to),
     ),
   ]);
+  if (orderRes.error) throw orderRes.error;
+  if (!orderRes.data) return null;
 
-  return { order, items, timeline };
+  return { order: orderRes.data, items, timeline };
 }
 
 export type OrderableItem = Pick<

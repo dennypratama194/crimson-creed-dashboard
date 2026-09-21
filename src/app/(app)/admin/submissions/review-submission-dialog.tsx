@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
 import type { MemberOption } from "@/lib/db/members";
@@ -55,7 +54,6 @@ export function ReviewSubmissionDialog({
   alreadyConfirmed: boolean;
   trigger: ReactNode;
 }) {
-  const router = useRouter();
   const noteId = useId();
   const receivedById = useId();
 
@@ -113,7 +111,6 @@ export function ReviewSubmissionDialog({
       toast.success(
         alreadyConfirmed ? "Submission adjusted." : "Submission confirmed.",
       );
-      router.refresh();
     });
   }
 
@@ -136,7 +133,6 @@ export function ReviewSubmissionDialog({
       }
       setOpen(false);
       toast.success("Submission rejected.");
-      router.refresh();
     });
   }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 
@@ -57,7 +56,6 @@ export function SupplierCatalogueEditor({
   lines: SupplierCatalogueLine[];
   pickerItems: PickerItem[];
 }) {
-  const router = useRouter();
   const [dialog, setDialog] = useState<DialogState>(null);
 
   const listedItemIds = useMemo(
@@ -181,7 +179,6 @@ export function SupplierCatalogueEditor({
                           line.id,
                           supplierId,
                         );
-                        if (res.ok) router.refresh();
                         return res;
                       }}
                     />
@@ -208,7 +205,6 @@ export function SupplierCatalogueEditor({
               availableItems={availableItems}
               onDone={() => {
                 setDialog(null);
-                router.refresh();
               }}
             />
           ) : null}

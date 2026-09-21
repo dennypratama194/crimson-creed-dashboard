@@ -112,7 +112,6 @@ export function MemberDeleteDialog({
                   setOpen(false);
                   toast.success(`${displayName} deleted.`);
                   if (redirectTo) router.push(redirectTo);
-                  else router.refresh();
                 } else {
                   const message = result.error ?? "Something went wrong.";
                   setError(message);

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
 import type { PaymentRecipient } from "@/lib/db/orders";
@@ -35,7 +34,6 @@ export function MarkPaidDialog({
   recipients: PaymentRecipient[];
   trigger: ReactNode;
 }) {
-  const router = useRouter();
   const paidToId = useId();
 
   const [open, setOpen] = useState(false);
@@ -64,7 +62,6 @@ export function MarkPaidDialog({
       }
       setOpen(false);
       toast.success("Payment reported — a Super Admin will verify it.");
-      router.refresh();
     });
   }
 

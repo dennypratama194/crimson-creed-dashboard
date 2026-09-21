@@ -43,7 +43,9 @@ file is wrong about process; fix the one that strayed.
   DELETE only while the transaction-local `app.purging_item` GUC names that
   exact item. Archiving / deactivating stays the path for anything with orders
   or draws.
-- Audit log is append-only for non-service roles.
+- Audit log is append-only for non-service roles. Retention (0081): `audit_logs`
+  365 days, `activity_logs` 90 days; the only delete path is
+  `app.purge_expired_logs()`, and only for rows past retention.
 
 ## Conventions
 

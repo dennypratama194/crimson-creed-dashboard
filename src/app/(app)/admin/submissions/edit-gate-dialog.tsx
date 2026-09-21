@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type ReactNode } from "react";
 
 import { toast } from "@/lib/toast";
@@ -33,7 +32,6 @@ export function EditGateDialog({
   maxMonth: string;
   trigger: ReactNode;
 }) {
-  const router = useRouter();
   const enabledId = useId();
   const monthId = useId();
 
@@ -69,7 +67,6 @@ export function EditGateDialog({
       }
       setOpen(false);
       toast.success(on ? "Order gate enabled." : "Order gate disabled.");
-      router.refresh();
     });
   }
 

@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import { ActionDialog } from "@/components/patterns/action-dialog";
 import { Button } from "@/components/ui/button";
 import { reverseCashEntryAction } from "@/app/(app)/admin/cash/actions";
@@ -13,8 +11,6 @@ export function ReverseEntryButton({
   entryId: string;
   entryNumber: string;
 }) {
-  const router = useRouter();
-
   return (
     <ActionDialog
       trigger={<Button variant="secondary">Reverse entry</Button>}
@@ -30,7 +26,6 @@ export function ReverseEntryButton({
       successMessage="Entry reversed."
       onConfirm={async (reason) => {
         const result = await reverseCashEntryAction({ entryId, reason });
-        if (result.ok) router.refresh();
         return result;
       }}
     />

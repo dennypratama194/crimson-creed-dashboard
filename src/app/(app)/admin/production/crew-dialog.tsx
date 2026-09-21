@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Check, CheckCheck, Undo2 } from "lucide-react";
 import { useState, useTransition } from "react";
 
@@ -38,7 +37,6 @@ export function CrewDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -57,7 +55,6 @@ export function CrewDialog({
         return;
       }
       toast.success(paid ? "Marked as paid." : "Marked as not paid.");
-      router.refresh();
     });
   }
 
@@ -75,7 +72,6 @@ export function CrewDialog({
         return;
       }
       toast.success(paid ? "Whole crew marked paid." : "Whole crew reopened.");
-      router.refresh();
     });
   }
 

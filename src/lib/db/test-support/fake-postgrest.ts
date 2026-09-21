@@ -195,7 +195,9 @@ export function createFakeSupabase(options: FakeOptions = {}) {
       return { data: handler(args), error: null };
     },
     auth: {
-      getUser: async () => ({ data: { user: options.user ?? null } }),
+      getClaims: async () => ({
+        data: options.user ? { claims: { sub: options.user.id } } : null,
+      }),
     },
   };
 

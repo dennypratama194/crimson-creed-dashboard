@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import type { Tables } from "@/lib/database.types";
 import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
@@ -32,30 +34,31 @@ export async function listNotifications(options: {
 
   if (options.unreadOnly) query = query.is("read_at", null);
 
-  const [{ data, error, count }, unread] = await Promise.all([
+  const [{ data, error, count }, unreadCount] = await Promise.all([
     query.range(from, to),
-    supabase
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .is("read_at", null),
+    getUnreadNotificationCount(),
   ]);
   if (error) throw error;
-  if (unread.error) throw unread.error;
 
   return {
     rows: data ?? [],
     total: count ?? 0,
     page,
     pageSize,
-    unreadCount: unread.count ?? 0,
+    unreadCount,
   };
 }
 
 /**
  * The caller's unread count (RLS scopes `notifications` to the recipient).
  * Throws on failure: a zero here would clear the badge during an outage.
+ *
+ * Per-request memoized: the (app) layout renders the badge and the
+ * notifications page renders its Unread tab in the same request, so they share
+ * one query. Nothing in a render writes notifications, so the shared value
+ * cannot be stale within it.
  */
-export async function getUnreadNotificationCount(): Promise<number> {
+export const getUnreadNotificationCount = cache(async (): Promise<number> => {
   const supabase = await createClient();
   const { count, error } = await supabase
     .from("notifications")
@@ -63,4 +66,4 @@ export async function getUnreadNotificationCount(): Promise<number> {
     .is("read_at", null);
   if (error) throw error;
   return count ?? 0;
-}
+});

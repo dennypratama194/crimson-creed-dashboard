@@ -22,7 +22,7 @@ export default async function AdminActivityPage({
     <>
       <PageHeader
         title="Activity"
-        description="A readable feed of everything that happens in the system."
+        description="A readable feed of everything that happens in the system, kept for 90 days."
       />
 
       {rows.length === 0 ? (

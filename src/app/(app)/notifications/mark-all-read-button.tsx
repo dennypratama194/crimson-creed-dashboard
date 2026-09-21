@@ -1,7 +1,6 @@
 "use client";
 
 import { CheckCheck } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 import { toast } from "@/lib/toast";
@@ -9,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { markAllNotificationsRead } from "@/app/(app)/notifications/actions";
 
 export function MarkAllReadButton({ disabled }: { disabled: boolean }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -25,7 +23,6 @@ export function MarkAllReadButton({ disabled }: { disabled: boolean }) {
           } else {
             toast.success("All notifications marked as read.");
           }
-          router.refresh();
         })
       }
     >

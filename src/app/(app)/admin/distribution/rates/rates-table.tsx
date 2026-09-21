@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -22,7 +21,6 @@ import { removeDistributionRateAction } from "@/app/(app)/admin/distribution/act
 import { SetRateDialog } from "@/app/(app)/admin/distribution/rates/set-rate-dialog";
 
 export function RatesTable({ rows }: { rows: DistributionRateRow[] }) {
-  const router = useRouter();
   const [editing, setEditing] = useState<DistributionRateRow | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -95,7 +93,6 @@ export function RatesTable({ rows }: { rows: DistributionRateRow[] }) {
                       const result = await removeDistributionRateAction({
                         itemId: row.item_id,
                       });
-                      if (result.ok) router.refresh();
                       return result;
                     }}
                   />
