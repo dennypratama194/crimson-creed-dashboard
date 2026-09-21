@@ -92,6 +92,16 @@ export async function getDrawableItems(): Promise<DrawableItem[]> {
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
+/** Count configured company cuts for the dashboard KPI without loading a picker. */
+export async function countDrawableItems(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("distribution_rates")
+    .select("item_id", { count: "exact", head: true });
+  if (error) throw error;
+  return count ?? 0;
+}
+
 // ── admin: the company cut list ────────────────────────────────────────────
 export type DistributionRateRow = {
   item_id: string;
