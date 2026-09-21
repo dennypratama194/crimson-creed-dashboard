@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useMemo, useState, useTransition, type ReactNode } from "react";
 
 import { ITEM_UNIT_LABEL } from "@/lib/constants/labels";
@@ -29,22 +28,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { issueDistributionAction } from "@/app/(app)/admin/distribution/actions";
+import {
+  getDistributionIssueOptionsAction,
+  issueDistributionAction,
+} from "@/app/(app)/admin/distribution/actions";
 
-export function IssueDrawDialog({
-  members,
-  items,
-  trigger,
-}: {
-  members: MemberOption[];
-  items: DrawableItem[];
-  trigger: ReactNode;
-}) {
-  const router = useRouter();
+export function IssueDrawDialog({ trigger }: { trigger: ReactNode }) {
   const qtyId = useId();
   const noteId = useId();
 
   const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [items, setItems] = useState<DrawableItem[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [memberId, setMemberId] = useState("");
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -67,6 +64,27 @@ export function IssueDrawDialog({
     setQuantity("");
     setNote("");
     setError(null);
+  }
+
+  async function loadOptions() {
+    if (loadingOptions || (members.length > 0 && items.length > 0)) return;
+    setLoadingOptions(true);
+    setOptionsError(null);
+    const result = await getDistributionIssueOptionsAction();
+    if (result.ok) {
+      setMembers(result.members);
+      setItems(result.items);
+      if (result.members.length === 0 || result.items.length === 0) {
+        setOptionsError(
+          result.members.length === 0
+            ? "No active members are available for a draw."
+            : "No drawable items are available. Set a company cut first.",
+        );
+      }
+    } else {
+      setOptionsError(result.error);
+    }
+    setLoadingOptions(false);
   }
 
   function submit() {
@@ -99,7 +117,6 @@ export function IssueDrawDialog({
       }
       setOpen(false);
       toast.success("Draw recorded and stock released.");
-      router.refresh();
     });
   }
 
@@ -108,7 +125,8 @@ export function IssueDrawDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (next) void loadOptions();
+        else reset();
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -121,10 +139,22 @@ export function IssueDrawDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {loadingOptions ? (
+          <p className="text-sm text-muted-foreground">
+            Loading available members and items…
+          </p>
+        ) : null}
+        {optionsError ? (
+          <p className="text-sm text-tone-error-fg">{optionsError}</p>
+        ) : null}
+
         <div className="flex flex-col gap-1.5">
           <Label>Member</Label>
           <Select value={memberId} onValueChange={setMemberId}>
-            <SelectTrigger aria-label="Member">
+            <SelectTrigger
+              aria-label="Member"
+              disabled={loadingOptions || !!optionsError}
+            >
               <SelectValue placeholder="Who took the stock?" />
             </SelectTrigger>
             <SelectContent>
@@ -140,7 +170,10 @@ export function IssueDrawDialog({
         <div className="flex flex-col gap-1.5">
           <Label>Item</Label>
           <Select value={itemId} onValueChange={setItemId}>
-            <SelectTrigger aria-label="Item">
+            <SelectTrigger
+              aria-label="Item"
+              disabled={loadingOptions || !!optionsError}
+            >
               <SelectValue placeholder="Choose an item" />
             </SelectTrigger>
             <SelectContent>
@@ -225,7 +258,12 @@ export function IssueDrawDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button onClick={submit} disabled={pending || shortStock === true}>
+          <Button
+            onClick={submit}
+            disabled={
+              pending || shortStock === true || loadingOptions || !!optionsError
+            }
+          >
             {pending ? "Recording…" : "Record draw"}
           </Button>
         </DialogFooter>
