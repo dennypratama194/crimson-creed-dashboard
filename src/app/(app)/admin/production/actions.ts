@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
+import { listMemberOptions } from "@/lib/db/members";
+import { getAssignableProducts } from "@/lib/db/production";
 import { rpcErrorMessage } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -14,10 +16,32 @@ import {
 
 export type ActionResult = { ok: boolean; error?: string };
 
+export type ProductionAssignmentOptionsResult =
+  | {
+      ok: true;
+      members: Awaited<ReturnType<typeof listMemberOptions>>;
+      products: Awaited<ReturnType<typeof getAssignableProducts>>;
+    }
+  | { ok: false; error: string };
+
 function revalidateAssignments() {
   revalidatePath("/admin/production");
   revalidatePath("/production");
   revalidatePath("/dashboard");
+}
+
+/** Loaded when the assignment dialog opens, not on every board navigation. */
+export async function getProductionAssignmentOptionsAction(): Promise<ProductionAssignmentOptionsResult> {
+  await requireSuperAdmin();
+  try {
+    const [members, products] = await Promise.all([
+      listMemberOptions(),
+      getAssignableProducts(),
+    ]);
+    return { ok: true, members, products };
+  } catch {
+    return { ok: false, error: "Could not load the assignment options." };
+  }
 }
 
 export async function createProductionAssignmentAction(

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
+import { getDrawableItems } from "@/lib/db/distribution";
+import { listMemberOptions } from "@/lib/db/members";
 import { rpcErrorMessage } from "@/lib/forms";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -15,12 +17,34 @@ import {
 
 export type ActionResult = { ok: boolean; error?: string };
 
+export type DistributionIssueOptionsResult =
+  | {
+      ok: true;
+      members: Awaited<ReturnType<typeof listMemberOptions>>;
+      items: Awaited<ReturnType<typeof getDrawableItems>>;
+    }
+  | { ok: false; error: string };
+
 /** A draw changes stash levels, so the stash views go stale alongside it. */
 function revalidateDraw() {
   revalidatePath("/admin/distribution");
   revalidatePath("/admin/inventory");
   revalidatePath("/distribution");
   revalidatePath("/dashboard");
+}
+
+/** Loaded when the draw dialog opens, not on every distribution-page visit. */
+export async function getDistributionIssueOptionsAction(): Promise<DistributionIssueOptionsResult> {
+  await requireSuperAdmin();
+  try {
+    const [members, items] = await Promise.all([
+      listMemberOptions(),
+      getDrawableItems(),
+    ]);
+    return { ok: true, members, items };
+  } catch {
+    return { ok: false, error: "Could not load the draw options." };
+  }
 }
 
 export async function setDistributionRateAction(

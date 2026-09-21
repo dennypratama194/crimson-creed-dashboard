@@ -10,11 +10,10 @@ import {
 
 import { requireSuperAdmin } from "@/lib/auth/session";
 import {
+  countDrawableItems,
   getDistributionSummary,
-  getDrawableItems,
   listAdminDistributions,
 } from "@/lib/db/distribution";
-import { listMemberOptions } from "@/lib/db/members";
 import { formatMoney } from "@/lib/format";
 import {
   DRAW_LIST_SCOPES,
@@ -52,17 +51,14 @@ export default async function AdminDistributionPage({
     : "all";
   const search = one(sp.q) ?? undefined;
 
-  const [draws, summary, members, items] = await Promise.all([
+  const [draws, summary, drawableItemCount] = await Promise.all([
     listAdminDistributions({ page, scope, search }),
     getDistributionSummary(),
-    listMemberOptions(),
-    getDrawableItems(),
+    countDrawableItems(),
   ]);
 
-  const canIssue = items.length > 0 && members.length > 0;
-
   const issueTrigger = (
-    <Button disabled={!canIssue}>
+    <Button>
       <Plus aria-hidden />
       Record draw
     </Button>
@@ -81,15 +77,7 @@ export default async function AdminDistributionPage({
                 Company cut
               </Link>
             </Button>
-            {canIssue ? (
-              <IssueDrawDialog
-                members={members}
-                items={items}
-                trigger={issueTrigger}
-              />
-            ) : (
-              issueTrigger
-            )}
+            <IssueDrawDialog trigger={issueTrigger} />
           </div>
         }
       />
@@ -112,7 +100,7 @@ export default async function AdminDistributionPage({
           />
           <KpiCard
             label="Drawable items"
-            value={String(items.length)}
+            value={String(drawableItemCount)}
             icon={PackageCheck}
             hint="Stash items with a company cut set"
           />
@@ -126,11 +114,9 @@ export default async function AdminDistributionPage({
               icon={PackageCheck}
               title={scope === "all" ? "No draws recorded yet" : "Nothing here"}
               description={
-                items.length === 0
-                  ? "No stash item has a company cut yet. Set one under Company cut before recording a draw."
-                  : scope === "all"
-                    ? "Record a draw when a member takes stock out to sell."
-                    : "No draws match this filter."
+                scope === "all"
+                  ? "Record a draw when a member takes stock out to sell."
+                  : "No draws match this filter."
               }
             />
           ) : (

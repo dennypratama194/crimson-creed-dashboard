@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 
 import {
   FIVEM_LABELS,
+  FIVEM_OFFLINE_REFRESH_INTERVAL_MS,
   FIVEM_PLAYERS_PER_PAGE,
   FIVEM_REFRESH_INTERVAL_MS,
 } from "@/lib/constants/fivem";
@@ -61,7 +62,12 @@ export function FivemMonitor({
     queryKey: ["fivem-snapshot"],
     queryFn: fetchSnapshot,
     initialData: initialSnapshot,
-    refetchInterval: auto ? FIVEM_REFRESH_INTERVAL_MS : false,
+    refetchInterval: (query) => {
+      if (!auto) return false;
+      return query.state.data?.online
+        ? FIVEM_REFRESH_INTERVAL_MS
+        : FIVEM_OFFLINE_REFRESH_INTERVAL_MS;
+    },
     refetchOnWindowFocus: auto,
   });
 

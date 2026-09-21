@@ -24,8 +24,11 @@ export const FIVEM_DEFAULT_ENDPOINT = "https://main.imeroleplay.com:30120";
  */
 export const FIVEM_FETCH_TIMEOUT_MS = 4000;
 
-/** Client auto-refresh cadence when the toggle is on. */
-export const FIVEM_REFRESH_INTERVAL_MS = 10_000;
+/** Client auto-refresh cadence while the server is online. */
+export const FIVEM_REFRESH_INTERVAL_MS = 30_000;
+
+/** Retry less aggressively when the upstream server is unreachable. */
+export const FIVEM_OFFLINE_REFRESH_INTERVAL_MS = 60_000;
 
 /**
  * How long a computed snapshot is reused before `/api/fivem` fetches again.

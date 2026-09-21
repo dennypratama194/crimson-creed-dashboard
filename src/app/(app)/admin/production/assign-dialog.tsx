@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { useId, useMemo, useState, useTransition, type ReactNode } from "react";
 
@@ -38,22 +37,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createProductionAssignmentAction } from "@/app/(app)/admin/production/actions";
+import {
+  createProductionAssignmentAction,
+  getProductionAssignmentOptionsAction,
+} from "@/app/(app)/admin/production/actions";
 
-export function AssignDialog({
-  members,
-  products,
-  trigger,
-}: {
-  members: MemberOption[];
-  products: AssignableProduct[];
-  trigger: ReactNode;
-}) {
-  const router = useRouter();
+export function AssignDialog({ trigger }: { trigger: ReactNode }) {
   const qtyId = useId();
   const noteId = useId();
 
   const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [products, setProducts] = useState<AssignableProduct[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -91,6 +88,27 @@ export function AssignDialog({
     setError(null);
   }
 
+  async function loadOptions() {
+    if (loadingOptions || (members.length > 0 && products.length > 0)) return;
+    setLoadingOptions(true);
+    setOptionsError(null);
+    const result = await getProductionAssignmentOptionsAction();
+    if (result.ok) {
+      setMembers(result.members);
+      setProducts(result.products);
+      if (result.members.length === 0 || result.products.length === 0) {
+        setOptionsError(
+          result.members.length === 0
+            ? "No active members are available for an assignment."
+            : "No active PRODUCT items are available for an assignment.",
+        );
+      }
+    } else {
+      setOptionsError(result.error);
+    }
+    setLoadingOptions(false);
+  }
+
   function submit() {
     setError(null);
     if (memberIds.length === 0) {
@@ -125,7 +143,6 @@ export function AssignDialog({
           ? "Assignment created."
           : `Assignment created for ${memberIds.length} people.`,
       );
-      router.refresh();
     });
   }
 
@@ -134,7 +151,8 @@ export function AssignDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (next) void loadOptions();
+        else reset();
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -148,6 +166,15 @@ export function AssignDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {loadingOptions ? (
+          <p className="text-sm text-muted-foreground">
+            Loading available members and products…
+          </p>
+        ) : null}
+        {optionsError ? (
+          <p className="text-sm text-tone-error-fg">{optionsError}</p>
+        ) : null}
+
         <div className="flex flex-col gap-1.5">
           <Label>In charge</Label>
           <DropdownMenu>
@@ -155,6 +182,7 @@ export function AssignDialog({
               <Button
                 variant="secondary"
                 className="w-full justify-between font-normal"
+                disabled={loadingOptions || !!optionsError}
               >
                 <span
                   className={cn(
@@ -195,7 +223,10 @@ export function AssignDialog({
         <div className="flex flex-col gap-1.5">
           <Label>Product</Label>
           <Select value={itemId} onValueChange={setItemId}>
-            <SelectTrigger aria-label="Product">
+            <SelectTrigger
+              aria-label="Product"
+              disabled={loadingOptions || !!optionsError}
+            >
               <SelectValue placeholder="Choose a product" />
             </SelectTrigger>
             <SelectContent>
@@ -253,7 +284,10 @@ export function AssignDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button onClick={submit} disabled={pending}>
+          <Button
+            onClick={submit}
+            disabled={pending || loadingOptions || !!optionsError}
+          >
             {pending ? "Assigning…" : "Assign"}
           </Button>
         </DialogFooter>

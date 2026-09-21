@@ -56,6 +56,18 @@ export async function getAssignableProducts(): Promise<AssignableProduct[]> {
   );
 }
 
+/** Count eligible products for the board KPI without loading picker data. */
+export async function countAssignableProducts(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("category", "PRODUCT")
+    .is("archived_at", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 /**
  * A crew is capped at 50 (create_production_assignment). A 20-job page could
  * therefore ask for 1000 crew lines in one request — exactly PostgREST's
@@ -185,4 +197,29 @@ export async function listAdminProductionAssignments(options: {
     page,
     pageSize,
   };
+}
+
+/** Count only the assignments needed for an admin KPI. Never hydrate crews. */
+export async function countAdminProductionAssignments(options: {
+  scope?: ProductionListScope;
+  search?: string;
+}): Promise<number> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("production_assignments")
+    .select("id", { count: "exact", head: true });
+
+  if (options.scope && options.scope !== "all") {
+    query = query.eq("status", SCOPE_STATUS[options.scope]);
+  }
+
+  const search = options.search
+    ?.replace(/[,()%*]/g, " ")
+    .trim()
+    .slice(0, 60);
+  if (search) query = query.ilike("item_name_snapshot", `%${search}%`);
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
 }
