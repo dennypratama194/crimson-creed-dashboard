@@ -40,6 +40,7 @@ export function AdminOrdersTable({ rows }: { rows: AdminOrderListRow[] }) {
             <TableCell>
               <Link
                 href={`/admin/orders/${order.id}`}
+                prefetch={false}
                 className="font-mono text-sm font-medium hover:underline"
               >
                 {order.order_number}

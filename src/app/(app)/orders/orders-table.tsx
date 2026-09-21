@@ -46,6 +46,7 @@ export function OrdersTable({
             <TableCell>
               <Link
                 href={hrefFor(order.id)}
+                prefetch={false}
                 className="font-mono text-sm font-medium hover:underline"
               >
                 {order.order_number}

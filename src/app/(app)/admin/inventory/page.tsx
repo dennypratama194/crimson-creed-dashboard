@@ -146,6 +146,7 @@ export default async function AdminInventoryPage({
                         />
                         <Link
                           href={`/admin/inventory/${line.id}`}
+                          prefetch={false}
                           className="font-medium hover:underline"
                         >
                           {line.name}

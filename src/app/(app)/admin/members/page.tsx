@@ -119,6 +119,7 @@ export default async function AdminMembersPage({
                     <TableCell>
                       <Link
                         href={`/admin/members/${m.id}`}
+                        prefetch={false}
                         className="font-medium hover:underline"
                       >
                         {m.display_name}

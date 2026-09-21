@@ -50,6 +50,7 @@ export function SidebarNav({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={onNavigate}
                 aria-current={active ? "page" : undefined}
                 aria-label={collapsed ? item.label : undefined}

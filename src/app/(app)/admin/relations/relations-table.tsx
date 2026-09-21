@@ -36,6 +36,7 @@ export function RelationsTable({ rows }: { rows: RelationListRow[] }) {
             <TableCell>
               <Link
                 href={`/admin/relations/${relation.id}/edit`}
+                prefetch={false}
                 className="font-medium hover:underline"
               >
                 {relation.name}

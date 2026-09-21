@@ -56,6 +56,7 @@ export function LedgerTable({ rows }: { rows: CashEntryRow[] }) {
             <TableCell>
               <Link
                 href={`/admin/cash/${entry.id}`}
+                prefetch={false}
                 className="font-mono text-sm font-medium hover:underline"
               >
                 {entry.entry_number}

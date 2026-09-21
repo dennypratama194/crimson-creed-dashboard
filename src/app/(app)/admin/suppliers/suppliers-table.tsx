@@ -43,6 +43,7 @@ export function SuppliersTable({ rows }: { rows: SupplierWithCounts[] }) {
             <TableCell>
               <Link
                 href={`/admin/suppliers/${supplier.id}`}
+                prefetch={false}
                 className="font-medium hover:underline"
               >
                 {supplier.name}

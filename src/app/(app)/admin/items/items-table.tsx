@@ -66,6 +66,7 @@ export function ItemsTable({ rows }: { rows: Item[] }) {
                   ) : (
                     <Link
                       href={`/admin/items/${item.id}/edit`}
+                      prefetch={false}
                       className="font-medium hover:underline"
                     >
                       {item.name}
