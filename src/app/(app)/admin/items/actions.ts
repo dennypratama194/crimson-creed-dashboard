@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath, revalidateTag } from "next/cache";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
@@ -10,6 +12,12 @@ import {
 } from "@/lib/db/contracts";
 import { ORDERABLE_ITEMS_CACHE_TAG } from "@/lib/db/orders";
 import { fieldErrorsFrom, rpcErrorMessage, type FormState } from "@/lib/forms";
+import {
+  ITEM_IMAGE_ACCEPTED_MIME_TYPES,
+  ITEM_IMAGE_CACHE_SECONDS,
+  ITEM_IMAGE_MAX_INPUT_BYTES,
+  optimizeItemImage,
+} from "@/lib/images/optimize-item-image";
 import { createClient } from "@/lib/supabase/server";
 import { parseItemForm } from "@/lib/validation/item";
 
@@ -20,6 +28,65 @@ function revalidateItemViews() {
   // `{ expire: 0 }` = drop it now, so the next /orders/new load rebuilds the
   // catalogue rather than serving a stale copy.
   revalidateTag(ORDERABLE_ITEMS_CACHE_TAG, { expire: 0 });
+}
+
+const ITEM_IMAGE_BUCKET = "item-images";
+
+export type UploadItemImageResult =
+  | { ok: true; url: string; width: number; height: number; bytes: number }
+  | { ok: false; error: string };
+
+/** Optimize a catalogue image once, then store the immutable WebP directly. */
+export async function uploadItemImageAction(
+  formData: FormData,
+): Promise<UploadItemImageResult> {
+  await requireSuperAdmin();
+
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Choose an image to upload." };
+  }
+  if (file.size > ITEM_IMAGE_MAX_INPUT_BYTES) {
+    return { ok: false, error: "Image must be 2 MB or smaller." };
+  }
+  if (
+    !ITEM_IMAGE_ACCEPTED_MIME_TYPES.includes(
+      file.type as (typeof ITEM_IMAGE_ACCEPTED_MIME_TYPES)[number],
+    )
+  ) {
+    return { ok: false, error: "Use a PNG, JPEG, WebP or GIF image." };
+  }
+
+  try {
+    const optimized = await optimizeItemImage(await file.arrayBuffer());
+    const path = `optimized/${optimized.digest.slice(0, 16)}-${randomUUID()}.webp`;
+    const supabase = await createClient();
+    const { error } = await supabase.storage
+      .from(ITEM_IMAGE_BUCKET)
+      .upload(path, optimized.bytes, {
+        cacheControl: ITEM_IMAGE_CACHE_SECONDS,
+        contentType: "image/webp",
+        upsert: false,
+      });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage
+      .from(ITEM_IMAGE_BUCKET)
+      .getPublicUrl(path);
+    return {
+      ok: true,
+      url: data.publicUrl,
+      width: optimized.width,
+      height: optimized.height,
+      bytes: optimized.bytes.byteLength,
+    };
+  } catch {
+    return {
+      ok: false,
+      error: "Could not process this image. Try another file.",
+    };
+  }
 }
 
 export async function createItemAction(

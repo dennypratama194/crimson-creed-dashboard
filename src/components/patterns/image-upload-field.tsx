@@ -3,23 +3,14 @@
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/toast";
+import { uploadItemImageAction } from "@/app/(app)/admin/items/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ItemThumb } from "@/components/patterns/item-thumb";
 
-const BUCKET = "item-images";
 const MAX_BYTES = 2 * 1024 * 1024;
-// The object key's extension comes from the validated MIME type, never the
-// user-supplied filename. The bucket enforces the same type + size list.
-const EXTENSION_BY_TYPE: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
-const ACCEPTED = Object.keys(EXTENSION_BY_TYPE);
+const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 export function ImageUploadField({
   name = "imageUrl",
@@ -37,8 +28,7 @@ export function ImageUploadField({
 
   async function onFile(file: File) {
     setError(null);
-    const ext = EXTENSION_BY_TYPE[file.type];
-    if (!ext) {
+    if (!ACCEPTED.includes(file.type)) {
       setError("Use a PNG, JPEG, WebP or GIF image.");
       return;
     }
@@ -49,16 +39,13 @@ export function ImageUploadField({
 
     setBusy(true);
     try {
-      const supabase = createClient();
-      const path = `${crypto.randomUUID()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { cacheControl: "3600", upsert: false });
-      if (uploadError) throw uploadError;
+      const formData = new FormData();
+      formData.set("image", file);
+      const result = await uploadItemImageAction(formData);
+      if (!result.ok) throw new Error(result.error);
 
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      setUrl(data.publicUrl);
-      toast.success("Image uploaded.");
+      setUrl(result.url);
+      toast.success("Image converted to WebP and uploaded.");
     } catch {
       const message = "Upload failed. Try again, or paste an image URL below.";
       setError(message);
@@ -113,7 +100,7 @@ export function ImageUploadField({
             ) : null}
           </div>
           <span className="text-xs text-muted-foreground">
-            PNG, JPEG, WebP or GIF, up to 2 MB.
+            PNG, JPEG, WebP or GIF, up to 2 MB. Saved as WebP, max 256px.
           </span>
         </div>
 

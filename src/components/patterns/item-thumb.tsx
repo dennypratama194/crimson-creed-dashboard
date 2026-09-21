@@ -39,6 +39,7 @@ export function ItemThumb({
       alt={name}
       width={px}
       height={px}
+      unoptimized
       className={cn(
         "shrink-0 rounded-md bg-subtle object-contain p-1",
         className,

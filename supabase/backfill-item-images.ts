@@ -5,10 +5,11 @@
  *   npm run db:item-images -- --force # replace existing image_url too
  *   npm run db:item-images -- --dry   # report only, write nothing
  *
- * Downloads the mapped PNGs from the upstream ox_inventory repo, uploads them to
- * the public `item-images` bucket under `catalogue/`, and sets items.image_url
- * by exact name match. Idempotent: the same file path is re-used per icon, so
- * re-running upserts rather than piling up copies.
+ * Downloads the mapped PNGs from the upstream ox_inventory repo, converts each
+ * unique icon to a max-256px WebP, uploads it to the public `item-images`
+ * bucket under `optimized/`, and sets items.image_url by exact name match.
+ * Content-addressed paths make the output immutable and deduplicate shared
+ * icons such as armour.png.
  *
  * Requires the same env as the seed (reads .env.local via tsx --env-file):
  *   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -20,6 +21,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "../src/lib/database.types";
+import {
+  ITEM_IMAGE_CACHE_SECONDS,
+  optimizeItemImage,
+  optimizedItemImagePath,
+} from "../src/lib/images/optimize-item-image";
 import { announceTarget } from "./_env-guard";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -122,15 +128,17 @@ async function publishIcon(image: string, cache: Map<string, string>) {
   if (!res.ok) {
     throw new Error(`Fetch ${image} failed: ${res.status} ${res.statusText}`);
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const path = `catalogue/${image}`;
+  const optimized = await optimizeItemImage(await res.arrayBuffer());
+  const path = optimizedItemImagePath(optimized.digest);
 
   if (!DRY) {
-    const { error } = await admin.storage.from(BUCKET).upload(path, bytes, {
-      contentType: "image/png",
-      cacheControl: "3600",
-      upsert: true,
-    });
+    const { error } = await admin.storage
+      .from(BUCKET)
+      .upload(path, optimized.bytes, {
+        contentType: "image/webp",
+        cacheControl: ITEM_IMAGE_CACHE_SECONDS,
+        upsert: true,
+      });
     if (error) throw error;
   }
 

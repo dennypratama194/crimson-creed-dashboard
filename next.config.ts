@@ -40,12 +40,18 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   experimental: {
     typedEnv: true,
+    serverActions: {
+      bodySizeLimit: "3mb",
+    },
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
   images: supabaseHost
     ? {
+        formats: ["image/webp"],
+        minimumCacheTTL: 2678400,
+        qualities: [75],
         remotePatterns: [
           {
             protocol: "https",
