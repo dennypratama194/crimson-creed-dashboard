@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { Banknote, FlaskConical, Plus } from "lucide-react";
 
 import { requireSuperAdmin } from "@/lib/auth/session";
-import { listMemberOptions } from "@/lib/db/members";
 import {
-  getAssignableProducts,
+  countAdminProductionAssignments,
+  countAssignableProducts,
   listAdminProductionAssignments,
 } from "@/lib/db/production";
 import {
@@ -43,16 +43,14 @@ export default async function AdminProductionPage({
     : "all";
   const search = one(sp.q) ?? undefined;
 
-  const [assignments, unpaid, members, products] = await Promise.all([
+  const [assignments, unpaidCount, productCount] = await Promise.all([
     listAdminProductionAssignments({ page, scope, search }),
-    listAdminProductionAssignments({ page: 1, scope: "unpaid" }),
-    listMemberOptions(),
-    getAssignableProducts(),
+    countAdminProductionAssignments({ scope: "unpaid" }),
+    countAssignableProducts(),
   ]);
 
-  const canAssign = products.length > 0 && members.length > 0;
   const assignTrigger = (
-    <Button disabled={!canAssign}>
+    <Button>
       <Plus aria-hidden />
       Assign production
     </Button>
@@ -63,17 +61,7 @@ export default async function AdminProductionPage({
       <PageHeader
         title="Production"
         description="Who is in charge of what, and whether they have been paid. The paid flag is a record only — it posts nothing to company cash."
-        actions={
-          canAssign ? (
-            <AssignDialog
-              members={members}
-              products={products}
-              trigger={assignTrigger}
-            />
-          ) : (
-            assignTrigger
-          )
-        }
+        actions={<AssignDialog trigger={assignTrigger} />}
       />
 
       <div className="flex flex-col gap-6">
@@ -82,15 +70,15 @@ export default async function AdminProductionPage({
         <div className="grid gap-4 sm:grid-cols-2">
           <KpiCard
             label="Awaiting payment"
-            value={String(unpaid.total)}
+            value={String(unpaidCount)}
             icon={Banknote}
             hint="Assignments not yet marked paid"
           />
           <KpiCard
             label="Products"
-            value={String(products.length)}
+            value={String(productCount)}
             icon={FlaskConical}
-            hint="Items production can be assigned against"
+            hint="Products that can be assigned"
           />
         </div>
 
@@ -102,11 +90,9 @@ export default async function AdminProductionPage({
               icon={FlaskConical}
               title={scope === "all" ? "No assignments yet" : "Nothing here"}
               description={
-                products.length === 0
-                  ? "No PRODUCT items exist yet. Add one under Items before assigning production."
-                  : scope === "all"
-                    ? "Assign a member to a production job to start tracking it."
-                    : "No assignments match this filter."
+                scope === "all"
+                  ? "Assign a member to a production job to start tracking it."
+                  : "No assignments match this filter."
               }
             />
           ) : (
