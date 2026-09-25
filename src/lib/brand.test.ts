@@ -12,6 +12,7 @@ describe("independent deployment branding", () => {
     const { brand, brandCss } = await import("./brand");
     expect(brand.name).toBe("Crimson Creed");
     expect(brand.icon).toBe("/brands/crimson/icon.png");
+    expect(brand.rankLabels).toBeNull();
     expect(brandCss()).toBe("");
   });
 
@@ -44,6 +45,13 @@ describe("independent deployment branding", () => {
       icon: null,
       light: "#b4232e",
       dark: "#f97078",
+      rankLabels: {
+        BOSS: "OG",
+        UNDER_BOSS: "Under OG",
+        SECRETARY: "Hood President",
+        CAPOREGIME: "Shot Caller",
+        SOLDIER: "Hangaround",
+      },
     });
   });
 

@@ -1,3 +1,4 @@
+import { brand } from "@/lib/brand";
 import type {
   AppRole,
   CashCategory,
@@ -26,12 +27,23 @@ export const APP_ROLE_LABEL: Record<AppRole, string> = {
   MEMBER: "Member",
 };
 
-export const MEMBER_RANK_LABEL: Record<MemberRank, string> = {
+const DEFAULT_MEMBER_RANK_LABEL: Record<MemberRank, string> = {
   BOSS: "Boss",
   UNDER_BOSS: "Under Boss",
   SECRETARY: "Secretary",
   CAPOREGIME: "Caporegime",
   SOLDIER: "Soldier",
+};
+
+/**
+ * Rank display text only — the underlying `MemberRank` enum values are shared
+ * by every brand's database (same migrations), so only the label changes per
+ * deployment. `brand.rankLabels` (src/lib/brand.ts) layers a brand's overrides
+ * on top of these defaults; a brand with none keeps the defaults untouched.
+ */
+export const MEMBER_RANK_LABEL: Record<MemberRank, string> = {
+  ...DEFAULT_MEMBER_RANK_LABEL,
+  ...brand.rankLabels,
 };
 
 export const MEMBER_STATUS_LABEL: Record<MemberStatus, string> = {

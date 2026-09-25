@@ -1,3 +1,5 @@
+import type { MemberRank } from "@/lib/constants/enums";
+
 /** Public, deployment-specific appearance. Each Vercel project builds this file
  * with its own NEXT_PUBLIC_* values; the default preserves Crimson exactly. */
 const id = process.env.NEXT_PUBLIC_BRAND_ID?.trim() || "crimson";
@@ -6,9 +8,28 @@ if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
   throw new Error("NEXT_PUBLIC_BRAND_ID must be a lowercase slug");
 }
 
-const presets: Record<string, { name: string; light: string; dark: string }> = {
+type BrandPreset = {
+  name: string;
+  light: string;
+  dark: string;
+  /** Rank labels only, never the role labels — see docs/engineering-standards.md. */
+  rankLabels?: Partial<Record<MemberRank, string>>;
+};
+
+const presets: Record<string, BrandPreset> = {
   crimson: { name: "Crimson Creed", light: "#a5502b", dark: "#c56a3e" },
-  "30s-fams": { name: "30s Fams", light: "#b4232e", dark: "#f97078" },
+  "30s-fams": {
+    name: "30s Fams",
+    light: "#b4232e",
+    dark: "#f97078",
+    rankLabels: {
+      BOSS: "OG",
+      UNDER_BOSS: "Under OG",
+      SECRETARY: "Hood President",
+      CAPOREGIME: "Shot Caller",
+      SOLDIER: "Hangaround",
+    },
+  },
 };
 const preset = presets[id];
 const isCrimson = id === "crimson";
@@ -62,6 +83,9 @@ export const brand = {
     isCrimson ? undefined : process.env.NEXT_PUBLIC_BRAND_COLOR_DARK,
     preset?.dark ?? "#94a3b8",
   ),
+  /** Rank-name overrides for this brand, layered onto MEMBER_RANK_LABEL's
+   * defaults in src/lib/constants/labels.ts. Null for any brand without one. */
+  rankLabels: preset?.rankLabels ?? null,
   isCrimson,
 } as const;
 
