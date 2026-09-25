@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { brand } from "@/lib/brand";
 
 import { DevQuickLogin } from "./dev-quick-login";
 import { LoginForm } from "./login-form";
@@ -19,13 +20,19 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col items-center gap-3 text-center">
-        <Image
-          src="/logo.webp"
-          alt="Crimson Creed"
-          width={104}
-          height={159}
-          priority
-        />
+        {brand.logo ? (
+          <Image
+            src={brand.logo}
+            alt={brand.name}
+            width={104}
+            height={159}
+            priority
+            unoptimized
+            className="h-auto max-h-40 w-auto object-contain"
+          />
+        ) : (
+          <span className="text-2xl font-semibold">{brand.name}</span>
+        )}
         <h1 className="text-2xl font-semibold tracking-tight">
           Operations System
         </h1>
@@ -46,7 +53,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <LoginForm next={next} />
 
       {/* DEV ONLY — remove this block (and dev-quick-login.tsx) for production. */}
-      {process.env.NODE_ENV === "development" ? (
+      {brand.isCrimson && process.env.NODE_ENV === "development" ? (
         <DevQuickLogin next={next} />
       ) : null}
     </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { brand } from "@/lib/brand";
+
 export default function GlobalError({
   reset,
 }: {
@@ -29,7 +31,7 @@ export default function GlobalError({
             style={{
               borderRadius: 8,
               border: "none",
-              background: "#a5502b",
+              background: brand.isCrimson ? "#a5502b" : brand.light,
               color: "#fff",
               padding: "8px 16px",
               fontSize: 14,

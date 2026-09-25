@@ -11,6 +11,7 @@ import {
   FIVEM_SNAPSHOT_CACHE_MS,
   FIVEM_UPLINK_MAX_AGE_MS,
 } from "@/lib/constants/fivem";
+import { brand } from "@/lib/brand";
 import { getFivemUplink } from "@/lib/db/fivem";
 import {
   fivemDirectorySchema,
@@ -101,7 +102,11 @@ async function resolveEndpoint(): Promise<ResolvedEndpoint> {
     return { base: strip(fromEnv), source: "env", publishedAt: null };
   }
 
-  return { base: FIVEM_DEFAULT_ENDPOINT, source: "default", publishedAt: null };
+  return {
+    base: brand.isCrimson ? FIVEM_DEFAULT_ENDPOINT : "",
+    source: "default",
+    publishedAt: null,
+  };
 }
 
 /**
@@ -161,7 +166,12 @@ function resolvePublicHost(
 ): string {
   const explicit = process.env.FIVEM_PUBLIC_HOST?.trim();
   if (explicit) return explicit;
-  if (source === "uplink") return hostFromEndpoint(FIVEM_DEFAULT_ENDPOINT);
+  if (source === "uplink") {
+    return hostFromEndpoint(
+      process.env.FIVEM_SERVER_URL?.trim() ||
+        (brand.isCrimson ? FIVEM_DEFAULT_ENDPOINT : ""),
+    );
+  }
   return hostFromEndpoint(readEndpoint);
 }
 
@@ -248,7 +258,9 @@ async function readDirectory(
   startedAt: number,
 ): Promise<FivemSnapshot | null> {
   const joinCode =
-    process.env.FIVEM_JOIN_CODE?.trim() || FIVEM_DEFAULT_JOIN_CODE;
+    process.env.FIVEM_JOIN_CODE?.trim() ||
+    (brand.isCrimson ? FIVEM_DEFAULT_JOIN_CODE : "");
+  if (!joinCode) return null;
   try {
     const res = await undiciFetch(`${FIVEM_DIRECTORY_URL}/${joinCode}`, {
       dispatcher: directoryDispatcher,
@@ -355,6 +367,13 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
 
 async function computeServerSnapshot(): Promise<FivemSnapshot> {
   const { candidates, source, publishedAt } = await candidateEndpoints();
+  if (!candidates[0]) {
+    return offlineSnapshot(
+      "",
+      "Configure the FiveM server for this deployment.",
+      null,
+    );
+  }
   const host = resolvePublicHost(candidates[0], source);
   const startedAt = Date.now();
 
@@ -495,7 +514,7 @@ export type FivemProbe = {
  */
 export async function probeServer(): Promise<FivemProbe> {
   const { candidates, source, publishedAt } = await candidateEndpoints();
-  const targets = candidates.map((base) => ({
+  const targets = candidates.filter(Boolean).map((base) => ({
     name: base.startsWith("https://") ? "https" : "http",
     url: `${base}/dynamic.json`,
   }));
