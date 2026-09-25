@@ -6,10 +6,13 @@ if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
   throw new Error("NEXT_PUBLIC_BRAND_ID must be a lowercase slug");
 }
 
+const presets: Record<string, { name: string; light: string; dark: string }> = {
+  crimson: { name: "Crimson Creed", light: "#a5502b", dark: "#c56a3e" },
+  "30s-fams": { name: "30s Fams", light: "#b4232e", dark: "#f97078" },
+};
+const preset = presets[id];
 const isCrimson = id === "crimson";
-const name = isCrimson
-  ? "Crimson Creed"
-  : process.env.NEXT_PUBLIC_BRAND_NAME?.trim();
+const name = preset?.name ?? process.env.NEXT_PUBLIC_BRAND_NAME?.trim();
 
 if (!name) {
   throw new Error("NEXT_PUBLIC_BRAND_NAME is required for another brand");
@@ -53,11 +56,11 @@ export const brand = {
     : asset(process.env.NEXT_PUBLIC_BRAND_ICON_URL),
   light: color(
     isCrimson ? undefined : process.env.NEXT_PUBLIC_BRAND_COLOR_LIGHT,
-    "#475569",
+    preset?.light ?? "#475569",
   ),
   dark: color(
     isCrimson ? undefined : process.env.NEXT_PUBLIC_BRAND_COLOR_DARK,
-    "#94a3b8",
+    preset?.dark ?? "#94a3b8",
   ),
   isCrimson,
 } as const;

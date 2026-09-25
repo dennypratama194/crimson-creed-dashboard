@@ -34,6 +34,19 @@ describe("independent deployment branding", () => {
     expect(MEMBER_EMAIL_DOMAIN).toBe("second-gang.local");
   });
 
+  it("loads the ready-to-use 30s Fams preset without logo configuration", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BRAND_ID", "30s-fams");
+    const { brand } = await import("./brand");
+    expect(brand).toMatchObject({
+      name: "30s Fams",
+      logo: null,
+      mark: null,
+      icon: null,
+      light: "#b4232e",
+      dark: "#f97078",
+    });
+  });
+
   it("refuses an unnamed second deployment", async () => {
     vi.stubEnv("NEXT_PUBLIC_BRAND_ID", "unnamed");
     vi.stubEnv("NEXT_PUBLIC_BRAND_NAME", "");

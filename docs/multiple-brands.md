@@ -4,7 +4,10 @@ The two brands share this repository and receive updates from the same `main`
 branch. They must have **separate Vercel projects and separate Supabase projects**.
 Never replace Crimson's existing Supabase variables to launch the second brand.
 
-1. Choose a lowercase brand slug, its display name, colors, and logo URLs.
+1. **30s Fams is already configured.** Set `NEXT_PUBLIC_BRAND_ID=30s-fams`;
+   its name and red palette are built in. The logo, mark and icon can be added
+   later through the corresponding environment variables. Other deployments can
+   choose a lowercase slug, display name, colors, and logo URLs.
    The logo, mark and icon accept public HTTPS image URLs or files in `public/`.
    Without artwork, the interface displays the brand name as text. Light and
    dark accent colors should contrast with white and near-black text respectively.
@@ -19,14 +22,12 @@ Never replace Crimson's existing Supabase variables to launch the second brand.
    project build settings, but enter the new project's own environment values:
 
    ```bash
-   NEXT_PUBLIC_BRAND_ID=other-gang
-   NEXT_PUBLIC_BRAND_NAME="Other Gang"
-   NEXT_PUBLIC_BRAND_COLOR_LIGHT="#475569"
-   NEXT_PUBLIC_BRAND_COLOR_DARK="#94a3b8"
-   NEXT_PUBLIC_BRAND_LOGO_URL="https://example.com/logo.png"
-   NEXT_PUBLIC_BRAND_MARK_URL="https://example.com/mark.png"
-   NEXT_PUBLIC_BRAND_ICON_URL="https://example.com/icon.png"
-   MEMBER_EMAIL_DOMAIN=other-gang.local
+   NEXT_PUBLIC_BRAND_ID=30s-fams
+   MEMBER_EMAIL_DOMAIN=30s-fams.local
+   # Add the logo when ready:
+   NEXT_PUBLIC_BRAND_LOGO_URL=https://example.com/logo.png
+   NEXT_PUBLIC_BRAND_MARK_URL=https://example.com/mark.png
+   NEXT_PUBLIC_BRAND_ICON_URL=https://example.com/icon.png
    NEXT_PUBLIC_SUPABASE_URL=https://new-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=<new-project-anon-key>
    SUPABASE_SERVICE_ROLE_KEY=<new-project-service-key>
