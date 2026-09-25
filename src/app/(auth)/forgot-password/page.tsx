@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { brand } from "@/lib/brand";
 
 import { Button } from "@/components/ui/button";
 
@@ -10,13 +11,19 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col items-center gap-3 text-center">
-        <Image
-          src="/logo.webp"
-          alt="Crimson Creed"
-          width={104}
-          height={159}
-          priority
-        />
+        {brand.logo ? (
+          <Image
+            src={brand.logo}
+            alt={brand.name}
+            width={104}
+            height={159}
+            priority
+            unoptimized
+            className="h-auto max-h-40 w-auto object-contain"
+          />
+        ) : (
+          <span className="text-2xl font-semibold">{brand.name}</span>
+        )}
         <h1 className="text-2xl font-semibold tracking-tight">
           Reset your password
         </h1>

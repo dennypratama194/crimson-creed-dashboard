@@ -14,6 +14,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import type { Database, MemberRank } from "../src/lib/database.types";
 import { assertSafeToWipe } from "./_env-guard";
+import { usernameToEmail } from "../src/lib/auth/member-credentials";
 import {
   CATALOGUE_ITEMS,
   SUPPLIER_ITEMS,
@@ -37,7 +38,6 @@ const admin = createClient<Database>(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const DOMAIN = "crimson.local";
 const rand = <T>(xs: readonly T[]): T =>
   xs[Math.floor(Math.random() * xs.length)]!;
 const chance = (p: number) => Math.random() < p;
@@ -188,7 +188,7 @@ async function seedMembers() {
     [];
 
   for (const person of PEOPLE) {
-    const email = `${person.username}@${DOMAIN}`;
+    const email = usernameToEmail(person.username);
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password: password(person.username),
@@ -316,7 +316,7 @@ async function clientFor(username: string) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { error } = await c.auth.signInWithPassword({
-    email: `${username}@${DOMAIN}`,
+    email: usernameToEmail(username),
     password: password(username),
   });
   if (error) throw error;
