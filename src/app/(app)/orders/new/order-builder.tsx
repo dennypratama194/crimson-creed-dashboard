@@ -4,7 +4,14 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Minus, Package, Plus, Search, X } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 
 import { ITEM_CATEGORIES } from "@/lib/constants/enums";
 import type { ItemCategory } from "@/lib/constants/enums";
@@ -62,8 +69,11 @@ export function OrderBuilder({
     [items],
   );
 
+  // Filtering the grid follows the typed search at low priority, so a
+  // keystroke paints immediately and the grid catches up.
+  const deferredSearch = useDeferredValue(search);
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return items.filter((i) => {
       if (category !== "ALL" && i.category !== category) return false;
       if (!q) return true;
@@ -72,7 +82,7 @@ export function OrderBuilder({
         (i.description?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [items, search, category]);
+  }, [items, deferredSearch, category]);
 
   const estimatedTotal = lines.reduce((sum, line) => {
     const item = itemsById.get(line.itemId);
@@ -81,22 +91,24 @@ export function OrderBuilder({
     return sum + item.price * qty;
   }, 0);
 
-  function addItem(itemId: string) {
+  // Stable callbacks (they only use state setters), so a quantity change or a
+  // keystroke re-renders the one card it touches, not the whole catalogue.
+  const addItem = useCallback((itemId: string) => {
     setError(null);
     setLines((prev) => [
       ...prev,
       { key: crypto.randomUUID(), itemId, quantity: "1" },
     ]);
-  }
+  }, []);
 
-  function setQuantity(itemId: string, value: string) {
+  const setQuantity = useCallback((itemId: string, value: string) => {
     const clean = value.replace(/[^\d]/g, "").slice(0, 4);
     setLines((prev) =>
       prev.map((l) => (l.itemId === itemId ? { ...l, quantity: clean } : l)),
     );
-  }
+  }, []);
 
-  function stepQuantity(itemId: string, delta: number) {
+  const stepQuantity = useCallback((itemId: string, delta: number) => {
     setLines((prev) =>
       prev.flatMap((l) => {
         if (l.itemId !== itemId) return [l];
@@ -105,7 +117,7 @@ export function OrderBuilder({
         return [{ ...l, quantity: String(Math.min(MAX_QTY, next)) }];
       }),
     );
-  }
+  }, []);
 
   function removeItem(itemId: string) {
     setLines((prev) => prev.filter((l) => l.itemId !== itemId));
@@ -211,9 +223,9 @@ export function OrderBuilder({
                   key={item.id}
                   item={item}
                   line={lineByItem.get(item.id)}
-                  onAdd={() => addItem(item.id)}
-                  onStep={(delta) => stepQuantity(item.id, delta)}
-                  onSetQuantity={(v) => setQuantity(item.id, v)}
+                  onAdd={addItem}
+                  onStep={stepQuantity}
+                  onSetQuantity={setQuantity}
                 />
               ))}
             </div>
@@ -336,7 +348,7 @@ function Thumb({ src, name }: { src: string | null; name: string }) {
   );
 }
 
-function ItemCard({
+const ItemCard = memo(function ItemCard({
   item,
   line,
   onAdd,
@@ -345,9 +357,9 @@ function ItemCard({
 }: {
   item: OrderableItem;
   line: Line | undefined;
-  onAdd: () => void;
-  onStep: (delta: number) => void;
-  onSetQuantity: (value: string) => void;
+  onAdd: (itemId: string) => void;
+  onStep: (itemId: string, delta: number) => void;
+  onSetQuantity: (itemId: string, value: string) => void;
 }) {
   return (
     <Card className="flex flex-col overflow-hidden">
@@ -390,15 +402,15 @@ function ItemCard({
               size="icon"
               className="size-8 shrink-0"
               aria-label={`Decrease quantity of ${item.name}`}
-              onClick={() => onStep(-1)}
+              onClick={() => onStep(item.id, -1)}
             >
               <Minus className="size-4" />
             </Button>
             <input
               value={line.quantity}
-              onChange={(e) => onSetQuantity(e.target.value)}
+              onChange={(e) => onSetQuantity(item.id, e.target.value)}
               onBlur={(e) => {
-                if (qtyValue(e.target.value) <= 0) onSetQuantity("1");
+                if (qtyValue(e.target.value) <= 0) onSetQuantity(item.id, "1");
               }}
               inputMode="numeric"
               aria-label={`Quantity of ${item.name}`}
@@ -410,7 +422,7 @@ function ItemCard({
               size="icon"
               className="size-8 shrink-0"
               aria-label={`Increase quantity of ${item.name}`}
-              onClick={() => onStep(1)}
+              onClick={() => onStep(item.id, 1)}
             >
               <Plus className="size-4" />
             </Button>
@@ -421,7 +433,7 @@ function ItemCard({
             variant="secondary"
             size="sm"
             className="w-full"
-            onClick={onAdd}
+            onClick={() => onAdd(item.id)}
           >
             <Plus className="size-4" />
             Add
@@ -430,4 +442,4 @@ function ItemCard({
       </div>
     </Card>
   );
-}
+});

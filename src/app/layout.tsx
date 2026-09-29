@@ -13,10 +13,14 @@ const inter = Inter({
   display: "swap",
 });
 
+// Secondary text only (ids, order numbers): not preloaded, so first load
+// spends its bandwidth on Inter and the page's LCP element. Swaps in from the
+// system monospace fallback.
 const geistMono = Geist_Mono({
   variable: "--font-mono-geist",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {

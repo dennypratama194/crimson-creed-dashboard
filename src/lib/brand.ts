@@ -63,11 +63,14 @@ export const brand = {
   id,
   name,
   appName: `${name} Operations`,
+  // Sized for display (2x of the login slot, 3x of the 30px sidebar mark):
+  // the login logo is that page's LCP element and the mark is preloaded on
+  // every app page. Full-size art stays in public/ as the source.
   logo: isCrimson
-    ? "/logo.webp"
+    ? "/brands/crimson/logo.webp"
     : asset(process.env.NEXT_PUBLIC_BRAND_LOGO_URL),
   mark: isCrimson
-    ? "/logo-mark.png"
+    ? "/brands/crimson/mark.webp"
     : asset(process.env.NEXT_PUBLIC_BRAND_MARK_URL),
   icon: isCrimson
     ? "/brands/crimson/icon.png"
