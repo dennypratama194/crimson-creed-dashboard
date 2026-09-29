@@ -2,9 +2,16 @@ import "server-only";
 
 import type { ItemCategory } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
+import {
+  parseRpcPayload,
+  supplierAvailableItemsPayload,
+  supplierCatalogueGroupsPayload,
+  supplierCataloguePagePayload,
+  type SupplierCatalogueLinePayload,
+} from "@/lib/db/contracts";
 import { isUuid } from "@/lib/db/ids";
 import { chunk, ID_CHUNK, pageBounds, readAllRows } from "@/lib/db/paging";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type ServerClient } from "@/lib/supabase/server";
 import type {
   SupplierListSort,
   SupplierListStatus,
@@ -16,6 +23,12 @@ export type SupplierItem = Tables<"supplier_items">;
 export const SUPPLIER_PAGE_SIZE = 20;
 /** Suppliers per page of the grouped "By supplier" catalogue view. */
 export const SUPPLIER_GROUP_PAGE_SIZE = 10;
+/** Lines shown on each card of the grouped view; the rest are a link away. */
+export const SUPPLIER_GROUP_LINES = 10;
+/** Price-book lines per page of a supplier's detail page. */
+export const SUPPLIER_CATALOGUE_PAGE_SIZE = 25;
+/** Rows per page of the Add item picker. */
+export const SUPPLIER_PICKER_PAGE_SIZE = 20;
 
 /** A supplier row plus how many items it lists (and how many reach members). */
 export type SupplierWithCounts = Supplier & {
@@ -23,17 +36,15 @@ export type SupplierWithCounts = Supplier & {
   orderable_count: number;
 };
 
-type CatalogueItem = Pick<
-  Tables<"items">,
-  "name" | "category" | "unit" | "image_url" | "active" | "orderable"
->;
-
 /** One price-book line joined to the catalogue item it points at. */
-export type SupplierCatalogueLine = SupplierItem & { item: CatalogueItem };
+export type SupplierCatalogueLine = SupplierCatalogueLinePayload;
 
 export type SupplierGroup = {
   supplier: Supplier;
+  /** The first `SUPPLIER_GROUP_LINES` lines, in catalogue order. */
   lines: SupplierCatalogueLine[];
+  /** Every line the supplier lists, not just the ones on the card. */
+  lineCount: number;
 };
 
 function sanitizeSearch(input: string): string {
@@ -43,74 +54,21 @@ function sanitizeSearch(input: string): string {
     .slice(0, 80);
 }
 
-const byCategoryThenName = (
-  a: SupplierCatalogueLine,
-  b: SupplierCatalogueLine,
-) =>
-  a.item.category.localeCompare(b.item.category) ||
-  a.item.name.localeCompare(b.item.name) ||
-  a.id.localeCompare(b.id);
-
 /**
- * Every price-book line matching `filter`, read in batches ordered by id, then
- * joined to its item in small id groups. Neither side can be cut short by the
- * PostgREST row cap, however many lines a supplier carries.
+ * Every supplier line for one item, read in batches ordered by id — the item
+ * edit page's "who supplies this" panel. Cannot be cut short by the PostgREST
+ * row cap however many suppliers list the item.
  */
-async function readCatalogueLines(
-  filter: { supplierIds: string[] } | { itemId: string },
-): Promise<SupplierItem[]> {
+async function readItemSupplierLines(itemId: string): Promise<SupplierItem[]> {
   const supabase = await createClient();
-
-  if ("itemId" in filter) {
-    return readAllRows((from, to) =>
-      supabase
-        .from("supplier_items")
-        .select("*")
-        .eq("item_id", filter.itemId)
-        .order("id", { ascending: true })
-        .range(from, to),
-    );
-  }
-
-  const lines: SupplierItem[] = [];
-  for (const ids of chunk(filter.supplierIds, ID_CHUNK)) {
-    lines.push(
-      ...(await readAllRows((from, to) =>
-        supabase
-          .from("supplier_items")
-          .select("*")
-          .in("supplier_id", ids)
-          .order("id", { ascending: true })
-          .range(from, to),
-      )),
-    );
-  }
-  return lines;
-}
-
-async function joinItems(
-  lines: SupplierItem[],
-): Promise<SupplierCatalogueLine[]> {
-  if (lines.length === 0) return [];
-  const supabase = await createClient();
-
-  const itemById = new Map<string, CatalogueItem>();
-  for (const ids of chunk(
-    [...new Set(lines.map((l) => l.item_id))],
-    ID_CHUNK,
-  )) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, name, category, unit, image_url, active, orderable")
-      .in("id", ids);
-    if (error) throw error;
-    for (const { id, ...rest } of data ?? []) itemById.set(id, rest);
-  }
-
-  return lines.flatMap((line) => {
-    const item = itemById.get(line.item_id);
-    return item ? [{ ...line, item }] : [];
-  });
+  return readAllRows((from, to) =>
+    supabase
+      .from("supplier_items")
+      .select("*")
+      .eq("item_id", itemId)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 }
 
 export type ListSuppliersOptions = {
@@ -202,19 +160,58 @@ export async function getSupplier(id: string): Promise<Supplier | null> {
   return data;
 }
 
-/** Every price-book line for one supplier, each joined to its catalogue item,
- *  ordered by item category then name. */
+export type SupplierCataloguePage = {
+  rows: SupplierCatalogueLine[];
+  /** Every line the supplier lists. */
+  total: number;
+  /** Lines with a sell price, across the whole catalogue. */
+  soldToMembers: number;
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * One page of a supplier's price book, each line joined to its catalogue item
+ * and ordered by item category, item name, then line id — joined, ordered,
+ * paged and counted in SQL by `supplier_catalogue_page()` (0082).
+ */
 export async function getSupplierCatalogue(
   supplierId: string,
-): Promise<SupplierCatalogueLine[]> {
-  if (!isUuid(supplierId)) return [];
-  const lines = await readCatalogueLines({ supplierIds: [supplierId] });
-  return (await joinItems(lines)).sort(byCategoryThenName);
+  options: { page?: number | string } = {},
+): Promise<SupplierCataloguePage> {
+  const pageSize = SUPPLIER_CATALOGUE_PAGE_SIZE;
+  const { page, from } = pageBounds(options.page, pageSize);
+  if (!isUuid(supplierId)) {
+    return { rows: [], total: 0, soldToMembers: 0, page, pageSize };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("supplier_catalogue_page", {
+    p_supplier_id: supplierId,
+    p_limit: pageSize,
+    p_offset: from,
+  });
+  if (error) throw error;
+
+  const payload = parseRpcPayload(
+    supplierCataloguePagePayload,
+    data,
+    "supplier_catalogue_page",
+  );
+  return {
+    rows: payload.rows,
+    total: payload.total,
+    soldToMembers: payload.soldToMembers,
+    page,
+    pageSize,
+  };
 }
 
 /**
- * The "by supplier" grouped view that mirrors the sourcing sheet, one page of
- * non-archived suppliers at a time, each with its complete catalogue.
+ * The "by supplier" grouped view that mirrors the sourcing sheet: one page of
+ * non-archived suppliers, each with its first `SUPPLIER_GROUP_LINES` lines and
+ * its real line count. Both the suppliers and their lines are bounded in SQL
+ * (`supplier_catalogue_groups()`, 0082); the detail page pages the rest.
  */
 export async function listSupplierGroups(options: {
   page?: number | string;
@@ -226,38 +223,21 @@ export async function listSupplierGroups(options: {
 }> {
   const supabase = await createClient();
   const pageSize = SUPPLIER_GROUP_PAGE_SIZE;
-  const { page, from, to } = pageBounds(options.page, pageSize);
+  const { page, from } = pageBounds(options.page, pageSize);
 
-  const { data, error, count } = await supabase
-    .from("suppliers")
-    .select("*", { count: "exact" })
-    .is("archived_at", null)
-    .order("name", { ascending: true })
-    .order("id", { ascending: true })
-    .range(from, to);
+  const { data, error } = await supabase.rpc("supplier_catalogue_groups", {
+    p_limit: pageSize,
+    p_offset: from,
+    p_lines: SUPPLIER_GROUP_LINES,
+  });
   if (error) throw error;
 
-  const suppliers = data ?? [];
-  const lines = await joinItems(
-    await readCatalogueLines({ supplierIds: suppliers.map((s) => s.id) }),
+  const payload = parseRpcPayload(
+    supplierCatalogueGroupsPayload,
+    data,
+    "supplier_catalogue_groups",
   );
-
-  const linesBySupplier = new Map<string, SupplierCatalogueLine[]>();
-  for (const line of lines) {
-    const list = linesBySupplier.get(line.supplier_id) ?? [];
-    list.push(line);
-    linesBySupplier.set(line.supplier_id, list);
-  }
-
-  return {
-    groups: suppliers.map((supplier) => ({
-      supplier,
-      lines: (linesBySupplier.get(supplier.id) ?? []).sort(byCategoryThenName),
-    })),
-    total: count ?? 0,
-    page,
-    pageSize,
-  };
+  return { groups: payload.groups, total: payload.total, page, pageSize };
 }
 
 /** Which suppliers carry one catalogue item (item edit page panel). */
@@ -269,7 +249,7 @@ export async function getItemSuppliers(
   itemId: string,
 ): Promise<ItemSupplierLine[]> {
   if (!isUuid(itemId)) return [];
-  const lines = await readCatalogueLines({ itemId });
+  const lines = await readItemSupplierLines(itemId);
   if (lines.length === 0) return [];
 
   const supabase = await createClient();
@@ -300,16 +280,41 @@ export async function getItemSuppliers(
 
 export type PickerItem = { id: string; name: string; category: ItemCategory };
 
-/** Non-archived catalogue items for the "add item to supplier" combobox. */
-export async function listCatalogueItemsForPicker(): Promise<PickerItem[]> {
-  const supabase = await createClient();
-  return readAllRows((from, to) =>
-    supabase
-      .from("items")
-      .select("id, name, category")
-      .is("archived_at", null)
-      .order("name", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, to),
+/**
+ * One page of the Add item picker for a supplier: non-archived items the
+ * supplier does not list anywhere in its catalogue, optionally narrowed by a
+ * name fragment, in name order. Read on demand when the dialog opens
+ * (`supplier_available_items()`, 0082), never with the page. A Route Handler
+ * passes the client it authorized with.
+ */
+export async function listAvailableItemsForSupplier(
+  supplierId: string,
+  options: { search?: string; page?: number | string },
+  client?: ServerClient,
+): Promise<{
+  rows: PickerItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const pageSize = SUPPLIER_PICKER_PAGE_SIZE;
+  const { page, from } = pageBounds(options.page, pageSize);
+  if (!isUuid(supplierId)) return { rows: [], total: 0, page, pageSize };
+
+  const supabase = client ?? (await createClient());
+  const search = options.search?.trim().slice(0, 80) || undefined;
+  const { data, error } = await supabase.rpc("supplier_available_items", {
+    p_supplier_id: supplierId,
+    p_search: search,
+    p_limit: pageSize,
+    p_offset: from,
+  });
+  if (error) throw error;
+
+  const payload = parseRpcPayload(
+    supplierAvailableItemsPayload,
+    data,
+    "supplier_available_items",
   );
+  return { rows: payload.rows, total: payload.total, page, pageSize };
 }

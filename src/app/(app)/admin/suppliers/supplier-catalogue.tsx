@@ -18,12 +18,14 @@ import {
 /**
  * The "by supplier" view: one card per supplier, each listing what that
  * supplier carries with its own buy price, sell price and per-order cap —
- * mirrors the sourcing sheet. Super Admin only.
+ * mirrors the sourcing sheet. Super Admin only. A card shows the first lines
+ * only; the count is the supplier's full catalogue and the rest are on its
+ * (paged) detail page.
  */
 export function SupplierCatalogue({ groups }: { groups: SupplierGroup[] }) {
   return (
     <div className="flex flex-col gap-6">
-      {groups.map(({ supplier, lines }) => (
+      {groups.map(({ supplier, lines, lineCount }) => (
         <Card key={supplier.id}>
           <CardHeader className="flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -38,8 +40,7 @@ export function SupplierCatalogue({ groups }: { groups: SupplierGroup[] }) {
               {!supplier.active ? <Badge tone="warning">Inactive</Badge> : null}
             </div>
             <span className="text-sm text-muted-foreground">
-              {formatQuantity(lines.length)}{" "}
-              {lines.length === 1 ? "item" : "items"}
+              {formatQuantity(lineCount)} {lineCount === 1 ? "item" : "items"}
             </span>
           </CardHeader>
           <CardContent className="pt-2">
@@ -103,6 +104,16 @@ export function SupplierCatalogue({ groups }: { groups: SupplierGroup[] }) {
                 </TableBody>
               </Table>
             )}
+            {lineCount > lines.length ? (
+              <div className="flex justify-center pt-3">
+                <Link
+                  href={`/admin/suppliers/${supplier.id}`}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  View all {formatQuantity(lineCount)} items
+                </Link>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ))}

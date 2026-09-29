@@ -204,3 +204,53 @@ describe("the proxy never bounces an unusable session in a loop", () => {
     await expect(Page()).rejects.toThrow("REDIRECT /login");
   });
 });
+
+describe("authorizeSuperAdmin (route handlers)", () => {
+  const as = (role: string, status: string) =>
+    installFake({
+      user: USER,
+      tables: { members: [{ ...member("ACTIVE"), role, status }] },
+    });
+
+  it("401 signed out, 403 member or inactive admin, ok for an active admin", async () => {
+    const { authorizeSuperAdmin } = await import("@/lib/auth/session");
+    const client = () =>
+      state.fake!.client as Parameters<typeof authorizeSuperAdmin>[0];
+
+    signedOut();
+    expect(await authorizeSuperAdmin(client())).toEqual({
+      ok: false,
+      status: 401,
+    });
+    noMember();
+    expect(await authorizeSuperAdmin(client())).toEqual({
+      ok: false,
+      status: 403,
+    });
+    as("MEMBER", "ACTIVE");
+    expect(await authorizeSuperAdmin(client())).toEqual({
+      ok: false,
+      status: 403,
+    });
+    as("SUPER_ADMIN", "INACTIVE");
+    expect(await authorizeSuperAdmin(client())).toEqual({
+      ok: false,
+      status: 403,
+    });
+    as("SUPER_ADMIN", "ACTIVE");
+    expect(await authorizeSuperAdmin(client())).toMatchObject({ ok: true });
+  });
+
+  it("a failed member read throws rather than reading as 'not an admin'", async () => {
+    installFake({
+      user: USER,
+      failTables: { members: { message: "down", code: "08006" } },
+    });
+    const { authorizeSuperAdmin } = await import("@/lib/auth/session");
+    await expect(
+      authorizeSuperAdmin(
+        state.fake!.client as Parameters<typeof authorizeSuperAdmin>[0],
+      ),
+    ).rejects.toMatchObject({ code: "08006" });
+  });
+});

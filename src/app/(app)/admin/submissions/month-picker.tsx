@@ -7,7 +7,8 @@ import { MonthPicker as MonthPickerField } from "@/components/ui/month-picker";
 
 /**
  * Drives the `?month=YYYY-MM` param for the submissions grid. Picking the
- * current month drops the param (current month is the default).
+ * current month drops the param (current month is the default). A new month
+ * starts from its first page.
  */
 export function MonthPicker({ value, max }: { value: string; max: string }) {
   const router = useRouter();
@@ -22,6 +23,7 @@ export function MonthPicker({ value, max }: { value: string; max: string }) {
       max={max}
       onChange={(v) => {
         const next = new URLSearchParams(params);
+        next.delete("page");
         if (!v || v === max) next.delete("month");
         else next.set("month", v);
         router.replace(`${pathname}?${next.toString()}` as Route);

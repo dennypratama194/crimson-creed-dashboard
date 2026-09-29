@@ -312,24 +312,115 @@ describe("bounded parents with more than 1000 children", () => {
     })),
   );
 
-  it("the grouped supplier view hydrates every line of the page", async () => {
-    installFake({ tables: { suppliers, items, supplier_items: lines } });
-    const { listSupplierGroups } = await import("@/lib/db/suppliers");
-    const r = await listSupplierGroups({ page: 1 });
-    expect(r.groups).toHaveLength(10);
-    expect(r.groups.reduce((n, g) => n + g.lines.length, 0)).toBe(1500);
-    expect(r.groups.every((g) => g.lines.length === 150)).toBe(true);
+  it("the grouped supplier view is bounded in SQL: suppliers AND their lines", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const fake = installFake({
+      tables: { suppliers, items, supplier_items: lines },
+      rpc: {
+        supplier_catalogue_groups: (args) => {
+          calls.push(args);
+          return {
+            total: "10",
+            groups: suppliers.map((supplier) => ({
+              supplier,
+              lineCount: 150,
+              lines: lines
+                .filter((l) => l.supplier_id === supplier.id)
+                .slice(0, Number(args.p_lines))
+                .map((l) => ({ ...l, item: items[0] })),
+            })),
+          };
+        },
+      },
+    });
+    const { listSupplierGroups, SUPPLIER_GROUP_LINES } =
+      await import("@/lib/db/suppliers");
+    const r = await listSupplierGroups({ page: 2 });
+    expect(calls).toEqual([
+      { p_limit: 10, p_offset: 10, p_lines: SUPPLIER_GROUP_LINES },
+    ]);
+    expect(r.total).toBe(10);
+    expect(r.groups.every((g) => g.lineCount === 150)).toBe(true);
+    expect(r.groups.every((g) => g.lines.length === SUPPLIER_GROUP_LINES)).toBe(
+      true,
+    );
+    // No line or item table is downloaded to hydrate the cards.
+    expect(fake.log.every((l) => l.kind === "rpc")).toBe(true);
   });
 
-  it("one supplier's catalogue past 1000 lines comes back whole", async () => {
-    const big = Array.from({ length: 1200 }, (_, i) => ({
-      id: uuid(500_000 + i),
-      supplier_id: suppliers[0]!.id,
-      item_id: items[i % items.length]!.id,
-    }));
-    installFake({ tables: { items, supplier_items: big } });
-    const { getSupplierCatalogue } = await import("@/lib/db/suppliers");
-    expect(await getSupplierCatalogue(suppliers[0]!.id)).toHaveLength(1200);
+  it("a supplier's catalogue is one SQL page with the full counts", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const fake = installFake({
+      rpc: {
+        supplier_catalogue_page: (args) => {
+          calls.push(args);
+          return {
+            total: 1200,
+            soldToMembers: "800",
+            rows: Array.from({ length: Number(args.p_limit) }, (_, i) => ({
+              id: uuid(500_000 + Number(args.p_offset) + i),
+              item: items[0],
+            })),
+          };
+        },
+      },
+    });
+    const { getSupplierCatalogue, SUPPLIER_CATALOGUE_PAGE_SIZE } =
+      await import("@/lib/db/suppliers");
+    const r = await getSupplierCatalogue(suppliers[0]!.id, { page: "3" });
+    expect(calls).toEqual([
+      {
+        p_supplier_id: suppliers[0]!.id,
+        p_limit: SUPPLIER_CATALOGUE_PAGE_SIZE,
+        p_offset: 2 * SUPPLIER_CATALOGUE_PAGE_SIZE,
+      },
+    ]);
+    expect(r).toMatchObject({ total: 1200, soldToMembers: 800, page: 3 });
+    expect(r.rows).toHaveLength(SUPPLIER_CATALOGUE_PAGE_SIZE);
+    expect(fake.requests).toBe(1);
+
+    // A malformed id is an empty catalogue before any query.
+    expect((await getSupplierCatalogue("../x")).total).toBe(0);
+    expect(fake.requests).toBe(1);
+  });
+
+  it("the Add item picker is a searched page, and a drifted payload fails loudly", async () => {
+    const calls: Record<string, unknown>[] = [];
+    installFake({
+      rpc: {
+        supplier_available_items: (args) => {
+          calls.push(args);
+          return {
+            total: 57,
+            rows: [{ id: uuid(9), name: "Rope", category: "OTHER" }],
+          };
+        },
+      },
+    });
+    const { listAvailableItemsForSupplier } =
+      await import("@/lib/db/suppliers");
+    const r = await listAvailableItemsForSupplier(suppliers[0]!.id, {
+      search: "  rope ",
+      page: 2,
+    });
+    expect(calls[0]).toEqual({
+      p_supplier_id: suppliers[0]!.id,
+      p_search: "rope",
+      p_limit: 20,
+      p_offset: 20,
+    });
+    expect(r).toMatchObject({ total: 57, page: 2, pageSize: 20 });
+
+    installFake({
+      rpc: {
+        supplier_available_items: () => ({ total: 1, rows: [{ id: 1 }] }),
+      },
+    });
+    await expect(
+      listAvailableItemsForSupplier(suppliers[0]!.id, {}),
+    ).rejects.toThrow(
+      /supplier_available_items\(\) returned an unexpected payload/,
+    );
   });
 
   it("supplier counts come from SQL, not from the (capped) child rows", async () => {
@@ -390,9 +481,10 @@ describe("bounded parents with more than 1000 children", () => {
     installFake({
       tables: { submission_material_types: mt },
       rpc: {
-        admin_submission_month: () => ({
+        admin_submission_month_page: () => ({
           hasPeriod: true,
           targets: { [uuid(1)]: 10 },
+          total: 1,
           rows: [
             {
               memberId: uuid(50),
@@ -401,10 +493,6 @@ describe("bounded parents with more than 1000 children", () => {
               active: false,
               submissionId: uuid(60),
               status: "CONFIRMED",
-              submittedAt: TS,
-              confirmedAt: TS,
-              note: null,
-              reviewNote: null,
               receivedById: null,
               receivedByName: null,
               quantities: { [uuid(1)]: 7 },
@@ -430,6 +518,55 @@ describe("bounded parents with more than 1000 children", () => {
       memberName: "Former member",
       rank: "SOLDIER",
     });
+  });
+});
+
+// ── audit: summaries in the list, snapshots on demand ─────────────────────
+describe("audit log reads", () => {
+  const big = { before: "x".repeat(4000) };
+  const entries = Array.from({ length: 30 }, (_, i) => ({
+    id: uuid(i),
+    created_at: TS,
+    actor_id: null,
+    action: "ITEM_UPDATED",
+    entity_type: "item",
+    entity_id: uuid(900 + i),
+    old_values: big,
+    new_values: big,
+    metadata: {},
+  }));
+
+  it("the list never carries the before/after snapshots", async () => {
+    installFake({ tables: { audit_logs: entries } });
+    const { listAudit } = await import("@/lib/db/activity");
+    const r = await listAudit({ page: 1 });
+    expect(r.rows).toHaveLength(30);
+    for (const row of r.rows) {
+      expect(row).not.toHaveProperty("old_values");
+      expect(row).not.toHaveProperty("new_values");
+      expect(row).toMatchObject({
+        action: "ITEM_UPDATED",
+        entity_type: "item",
+      });
+    }
+    // 30 rows x 8 KB of snapshots no longer ride along with the page.
+    expect(JSON.stringify(r.rows).length).toBeLessThan(10_000);
+  });
+
+  it("one entry's snapshots, absence, a malformed id and a failure", async () => {
+    const fake = installFake({ tables: { audit_logs: entries } });
+    const { getAuditDetail } = await import("@/lib/db/activity");
+    expect(await getAuditDetail(uuid(3))).toEqual({
+      oldValues: big,
+      newValues: big,
+    });
+    expect(await getAuditDetail(uuid(999))).toBeNull();
+    const before = fake.requests;
+    expect(await getAuditDetail("not-a-uuid")).toBeNull();
+    expect(fake.requests).toBe(before);
+
+    installFake({ failTables: { audit_logs: DB_ERROR } });
+    await expect(getAuditDetail(uuid(3))).rejects.toMatchObject(DB_ERROR);
   });
 });
 
@@ -492,7 +629,7 @@ describe("a query failure is never rendered as zero, empty or missing", () => {
 
     installFake({
       tables: { submission_material_types: [] },
-      failRpc: { admin_submission_month: DB_ERROR },
+      failRpc: { admin_submission_month_page: DB_ERROR },
     });
     await expect(getAdminSubmissionMonth("2026-09-01")).rejects.toMatchObject(
       DB_ERROR,

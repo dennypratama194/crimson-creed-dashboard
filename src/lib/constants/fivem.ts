@@ -17,25 +17,76 @@ export const FIVEM_DEFAULT_ENDPOINT = "https://main.imeroleplay.com:30120";
 
 /**
  * How long the proxy waits on each FiveM endpoint before giving up. A snapshot
- * costs at most two of these back to back (the transport race, then the player
- * and info reads), so this has to stay under half Vercel's 10s Hobby function
+ * costs at most two of these back to back (the transport race — plus
+ * `FIVEM_TRANSPORT_HEAD_START_MS` when a remembered transport hangs — then the
+ * player and info reads), so this has to stay under half Vercel's 10s Hobby function
  * limit — otherwise a server that simply ignores us produces a platform 504
  * instead of our own "offline" snapshot.
  */
 export const FIVEM_FETCH_TIMEOUT_MS = 4000;
 
-/** Client auto-refresh cadence while the server is online. */
+/**
+ * Client auto-refresh cadence while the game server itself answers (real
+ * roster, live counts). See `fivemRefreshInterval` for how the others apply.
+ */
 export const FIVEM_REFRESH_INTERVAL_MS = 30_000;
+
+/**
+ * Cadence while the snapshot comes from the public directory, even when that
+ * says the server is online. The directory's own numbers lag by minutes, so
+ * polling it every 30s buys nothing but invocations.
+ */
+export const FIVEM_DIRECTORY_REFRESH_INTERVAL_MS = 2 * 60_000;
 
 /** Retry less aggressively when the upstream server is unreachable. */
 export const FIVEM_OFFLINE_REFRESH_INTERVAL_MS = 60_000;
 
 /**
- * How long a computed snapshot is reused before `/api/fivem` fetches again.
- * Kept well under the client poll cadence so the monitor never feels stale, but
- * enough to collapse a burst of Super Admin tabs into one upstream round-trip.
+ * Longest the client waits between attempts while `/api/fivem` itself keeps
+ * failing (the offline cadence doubles per consecutive failure up to this).
  */
-export const FIVEM_SNAPSHOT_CACHE_MS = 5_000;
+export const FIVEM_ERROR_REFRESH_MAX_MS = 10 * 60_000;
+
+/**
+ * How long a computed snapshot is reused before `/api/fivem` fetches again —
+ * half the matching client cadence, so a single tab always gets a fresh read
+ * while a burst of Super Admin tabs collapses into one upstream round trip.
+ * Warm-instance only: see `getServerSnapshot`.
+ */
+export const FIVEM_SNAPSHOT_CACHE_MS = 15_000;
+/** A directory-sourced snapshot: the source is minutes stale anyway. */
+export const FIVEM_DIRECTORY_SNAPSHOT_CACHE_MS = 60_000;
+/** An offline snapshot: the upstream backoff decides when to try again. */
+export const FIVEM_OFFLINE_SNAPSHOT_CACHE_MS = 30_000;
+
+/**
+ * `info.json` (project name, server vars) changes when the server is
+ * reconfigured, not between polls, so it is cached per endpoint far longer
+ * than the live roster. A failed read is retried sooner.
+ */
+export const FIVEM_INFO_CACHE_MS = 30 * 60_000;
+export const FIVEM_INFO_RETRY_MS = 5 * 60_000;
+
+/**
+ * How long the transport (http vs https) that last answered is tried alone
+ * first. Racing both on every snapshot doubles the upstream requests for
+ * nothing once we know which one this network lets through.
+ */
+export const FIVEM_TRANSPORT_MEMORY_MS = 10 * 60_000;
+
+/**
+ * Head start the remembered transport gets before the other is raced anyway.
+ * A remembered transport that errors hands over immediately; one that hangs
+ * costs at most this much extra before the fallback is in flight.
+ */
+export const FIVEM_TRANSPORT_HEAD_START_MS = 500;
+
+/**
+ * Backoff before an unreachable upstream (the game server / relay, or the
+ * directory) is tried again: doubles per consecutive failure, capped.
+ */
+export const FIVEM_UPSTREAM_BACKOFF_BASE_MS = 30_000;
+export const FIVEM_UPSTREAM_BACKOFF_MAX_MS = 5 * 60_000;
 
 /** How many player rows to render before the "Show more" control. */
 export const FIVEM_PLAYERS_PER_PAGE = 20;

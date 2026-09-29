@@ -87,3 +87,13 @@ export type SupplierListStatus = (typeof SUPPLIER_LIST_STATUSES)[number];
 
 export const SUPPLIER_LIST_SORTS = ["name", "recent"] as const;
 export type SupplierListSort = (typeof SUPPLIER_LIST_SORTS)[number];
+
+/**
+ * The Add item picker's request (`/api/admin/suppliers/[id]/available-items`).
+ * Search is a name fragment; the RPC trims and caps it again.
+ */
+export const supplierPickerQuerySchema = z.object({
+  supplierId: z.uuid(),
+  q: z.string().trim().max(80).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).optional(),
+});

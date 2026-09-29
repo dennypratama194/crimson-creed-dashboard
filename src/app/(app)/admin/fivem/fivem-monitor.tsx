@@ -12,12 +12,8 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import {
-  FIVEM_LABELS,
-  FIVEM_OFFLINE_REFRESH_INTERVAL_MS,
-  FIVEM_PLAYERS_PER_PAGE,
-  FIVEM_REFRESH_INTERVAL_MS,
-} from "@/lib/constants/fivem";
+import { FIVEM_LABELS, FIVEM_PLAYERS_PER_PAGE } from "@/lib/constants/fivem";
+import { fivemRefreshInterval, formatCadence } from "@/lib/fivem-cadence";
 import { APP_TIME_ZONE } from "@/lib/format";
 import type { FivemPlayer, FivemSnapshot } from "@/lib/validation/fivem";
 import { cn } from "@/lib/utils";
@@ -30,7 +26,22 @@ import { Input } from "@/components/ui/input";
 async function fetchSnapshot(): Promise<FivemSnapshot> {
   const res = await fetch("/api/fivem", { cache: "no-store" });
   if (!res.ok) throw new Error(`Snapshot request failed (${res.status})`);
-  return (await res.json()) as FivemSnapshot;
+  const body: unknown = await res.json();
+  // Anything that is not a snapshot is a failed poll (and backs off), never
+  // something to render over the last good reading.
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("online" in body) ||
+    typeof body.online !== "boolean" ||
+    !("players" in body) ||
+    !Array.isArray(body.players) ||
+    !("fetchedAt" in body) ||
+    typeof body.fetchedAt !== "string"
+  ) {
+    throw new Error("Snapshot request returned an unexpected body");
+  }
+  return body as FivemSnapshot;
 }
 
 function pingTone(ping: number): "gray" | "success" | "warning" | "error" {
@@ -58,20 +69,27 @@ export function FivemMonitor({
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(FIVEM_PLAYERS_PER_PAGE);
 
-  const { data, refetch, isFetching } = useQuery({
+  // One cadence drives the timer AND staleness, so a focus refetch only fires
+  // once a poll would have been due anyway — it cannot shortcut the slower
+  // directory cadence or the error backoff. `fetchFailureCount` resets on the
+  // first success. No automatic retries: the next interval is the retry.
+  const { data, refetch, isFetching, isError, failureCount } = useQuery({
     queryKey: ["fivem-snapshot"],
     queryFn: fetchSnapshot,
     initialData: initialSnapshot,
-    refetchInterval: (query) => {
-      if (!auto) return false;
-      return query.state.data?.online
-        ? FIVEM_REFRESH_INTERVAL_MS
-        : FIVEM_OFFLINE_REFRESH_INTERVAL_MS;
-    },
+    initialDataUpdatedAt: () => Date.parse(initialSnapshot.fetchedAt),
+    retry: false,
+    staleTime: (query) =>
+      fivemRefreshInterval(query.state.data, query.state.fetchFailureCount),
+    refetchInterval: (query) =>
+      auto
+        ? fivemRefreshInterval(query.state.data, query.state.fetchFailureCount)
+        : false,
     refetchOnWindowFocus: auto,
   });
 
   const snapshot = data ?? initialSnapshot;
+  const cadence = fivemRefreshInterval(snapshot, failureCount);
 
   const filtered = useMemo<FivemPlayer[]>(() => {
     const q = search.trim().toLowerCase();
@@ -151,6 +169,17 @@ export function FivemMonitor({
         </div>
       </div>
 
+      {isError ? (
+        <div className="flex items-start gap-3 rounded-xl border border-tone-warning-border bg-tone-warning-bg px-4 py-3 text-sm text-tone-warning-fg">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            Couldn&rsquo;t refresh the server status. Showing the last reading
+            from {formatTime(snapshot.fetchedAt)}; trying again in{" "}
+            {formatCadence(cadence)}.
+          </span>
+        </div>
+      ) : null}
+
       {snapshot.error ? (
         <div className="flex items-start gap-3 rounded-xl border border-tone-error-border bg-tone-error-bg px-4 py-3 text-sm text-tone-error-fg">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -192,7 +221,7 @@ export function FivemMonitor({
         <KpiCard
           label="Updated"
           value={formatTime(snapshot.fetchedAt)}
-          hint={auto ? "Auto every 10s" : "Manual"}
+          hint={auto ? `Auto every ${formatCadence(cadence)}` : "Manual"}
         />
       </div>
 

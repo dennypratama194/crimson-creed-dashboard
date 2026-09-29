@@ -3,13 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import {
-  getSupplier,
-  getSupplierCatalogue,
-  listCatalogueItemsForPicker,
-} from "@/lib/db/suppliers";
+import { requireSuperAdmin } from "@/lib/auth/session";
+import { getSupplier, getSupplierCatalogue } from "@/lib/db/suppliers";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/patterns/page-header";
+import { Pagination } from "@/components/patterns/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,17 +18,20 @@ export const metadata: Metadata = { title: "Supplier" };
 
 export default async function SupplierDetailPage({
   params,
+  searchParams,
 }: PageProps<"/admin/suppliers/[id]">) {
-  const { id } = await params;
-  const supplier = await getSupplier(id);
-  if (!supplier) notFound();
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
+  const pageParam = Array.isArray(sp.page) ? sp.page[0] : sp.page;
 
-  const [lines, pickerItems] = await Promise.all([
-    getSupplierCatalogue(supplier.id),
-    listCatalogueItemsForPicker(),
+  // A page renders alongside the admin layout, not after it: authorize before
+  // calling an admin-only RPC (memoized — the layout's check is reused). Then
+  // the two reads are independent; an unknown supplier simply has no lines.
+  await requireSuperAdmin();
+  const [supplier, catalogue] = await Promise.all([
+    getSupplier(id),
+    getSupplierCatalogue(id, { page: pageParam }),
   ]);
-
-  const soldToMembers = lines.filter((l) => l.sell_price !== null).length;
+  if (!supplier) notFound();
 
   function statusBadge() {
     if (supplier!.archived_at) return <Badge tone="gray">Archived</Badge>;
@@ -66,10 +67,10 @@ export default async function SupplierDetailPage({
               <span>{supplier.contact ?? "—"}</span>
             </Row>
             <Row label="Items listed">
-              <span className="tabular-nums">{lines.length}</span>
+              <span className="tabular-nums">{catalogue.total}</span>
             </Row>
             <Row label="Sold to members">
-              <span className="tabular-nums">{soldToMembers}</span>
+              <span className="tabular-nums">{catalogue.soldToMembers}</span>
             </Row>
             {supplier.notes ? (
               <div className="flex flex-col gap-1 border-t border-border pt-3">
@@ -82,13 +83,20 @@ export default async function SupplierDetailPage({
 
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="flex flex-col gap-4 pt-6">
               <SupplierCatalogueEditor
                 supplierId={supplier.id}
                 supplierArchived={supplier.archived_at !== null}
-                lines={lines}
-                pickerItems={pickerItems}
+                lines={catalogue.rows}
+                total={catalogue.total}
               />
+              {catalogue.total > catalogue.pageSize ? (
+                <Pagination
+                  page={catalogue.page}
+                  pageSize={catalogue.pageSize}
+                  total={catalogue.total}
+                />
+              ) : null}
             </CardContent>
           </Card>
         </div>

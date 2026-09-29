@@ -55,12 +55,21 @@ export function createFakeSupabase(options: FakeOptions = {}) {
     private wantCount = false;
     private head = false;
     private mode: "many" | "maybeSingle" | "single" = "many";
+    private columns: string[] | null = null;
 
     constructor(private table: string) {}
 
-    select(_columns?: string, opts?: { count?: string; head?: boolean }) {
+    /**
+     * A plain column list (`"id, name"`) is projected like PostgREST would, so
+     * a reader that narrows its select really does not receive the rest.
+     * `*` and embedded resources are returned whole.
+     */
+    select(columns?: string, opts?: { count?: string; head?: boolean }) {
       this.wantCount = opts?.count === "exact";
       this.head = opts?.head ?? false;
+      if (columns && columns !== "*" && !/[()*:]/.test(columns)) {
+        this.columns = columns.split(",").map((c) => c.trim());
+      }
       return this;
     }
     eq(column: string, value: unknown) {
@@ -149,6 +158,14 @@ export function createFakeSupabase(options: FakeOptions = {}) {
         rows = rows.slice(this.rangeFrom, this.rangeTo + 1);
       }
       rows = rows.slice(0, maxRows);
+      const columns = this.columns;
+      if (columns) {
+        rows = rows.map((row) =>
+          Object.fromEntries(
+            columns.filter((c) => c in row).map((c) => [c, row[c]]),
+          ),
+        );
+      }
 
       if (this.mode === "many") return { data: rows, error: null, count };
       if (rows.length > 1) {

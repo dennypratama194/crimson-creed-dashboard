@@ -6,13 +6,22 @@ import {
   FIVEM_DEFAULT_ENDPOINT,
   FIVEM_DEFAULT_JOIN_CODE,
   FIVEM_DIRECTORY_MAX_AGE_MS,
+  FIVEM_DIRECTORY_SNAPSHOT_CACHE_MS,
   FIVEM_DIRECTORY_URL,
   FIVEM_FETCH_TIMEOUT_MS,
+  FIVEM_INFO_CACHE_MS,
+  FIVEM_INFO_RETRY_MS,
+  FIVEM_OFFLINE_SNAPSHOT_CACHE_MS,
   FIVEM_SNAPSHOT_CACHE_MS,
+  FIVEM_TRANSPORT_HEAD_START_MS,
+  FIVEM_TRANSPORT_MEMORY_MS,
   FIVEM_UPLINK_MAX_AGE_MS,
+  FIVEM_UPSTREAM_BACKOFF_BASE_MS,
+  FIVEM_UPSTREAM_BACKOFF_MAX_MS,
 } from "@/lib/constants/fivem";
 import { brand } from "@/lib/brand";
 import { getFivemUplink } from "@/lib/db/fivem";
+import type { ServerClient } from "@/lib/supabase/server";
 import {
   fivemDirectorySchema,
   fivemDynamicSchema,
@@ -77,10 +86,12 @@ type ResolvedEndpoint = {
  * address, usually a since-recycled tunnel hostname, is dead weight. Without that
  * cutoff a stale row shadows a working `FIVEM_SERVER_URL` forever.
  */
-async function resolveEndpoint(): Promise<ResolvedEndpoint> {
+async function resolveEndpoint(
+  supabase?: ServerClient,
+): Promise<ResolvedEndpoint> {
   const strip = (value: string) => value.replace(/\/+$/, "");
 
-  const uplink = await getFivemUplink();
+  const uplink = await getFivemUplink(supabase);
   if (uplink) {
     const age = Date.now() - new Date(uplink.updatedAt).getTime();
     if (Number.isFinite(age) && age <= FIVEM_UPLINK_MAX_AGE_MS) {
@@ -117,10 +128,10 @@ async function resolveEndpoint(): Promise<ResolvedEndpoint> {
  * TLS handshake to the game port (a browser or curl gets through, undici does
  * not) while plain http is fine. Trying both covers every case.
  */
-async function candidateEndpoints(): Promise<
-  ResolvedEndpoint & { candidates: [string, ...string[]] }
-> {
-  const resolved = await resolveEndpoint();
+async function candidateEndpoints(
+  supabase?: ServerClient,
+): Promise<ResolvedEndpoint & { candidates: [string, ...string[]] }> {
+  const resolved = await resolveEndpoint(supabase);
   const primary = resolved.base;
   let flipped: string | null = null;
   if (primary.startsWith("https://")) {
@@ -201,10 +212,11 @@ class HttpStatusError extends Error {
   }
 }
 
-async function getJson(url: string): Promise<unknown> {
+async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const timeout = AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS);
   const res = await undiciFetch(url, {
     dispatcher: fivemDispatcher,
-    signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     headers: { accept: "application/json" },
   });
   if (!res.ok) throw new HttpStatusError(res.status, url);
@@ -261,8 +273,21 @@ async function readDirectory(
     process.env.FIVEM_JOIN_CODE?.trim() ||
     (brand.isCrimson ? FIVEM_DEFAULT_JOIN_CODE : "");
   if (!joinCode) return null;
+  const url = `${FIVEM_DIRECTORY_URL}/${joinCode}`;
+  if (upstreamBackoff.blocked(url)) return null;
+  const snapshot = await fetchDirectory(url, host, startedAt);
+  if (snapshot) upstreamBackoff.succeed(url);
+  else upstreamBackoff.fail(url, null);
+  return snapshot;
+}
+
+async function fetchDirectory(
+  url: string,
+  host: string,
+  startedAt: number,
+): Promise<FivemSnapshot | null> {
   try {
-    const res = await undiciFetch(`${FIVEM_DIRECTORY_URL}/${joinCode}`, {
+    const res = await undiciFetch(url, {
       dispatcher: directoryDispatcher,
       signal: AbortSignal.timeout(FIVEM_FETCH_TIMEOUT_MS),
       headers: { accept: "application/json" },
@@ -333,30 +358,110 @@ function shouldTryDirectory(err: unknown): boolean {
   return !(err instanceof HttpStatusError && err.status === 502);
 }
 
-// Warm-instance cache. `/api/fivem` is force-dynamic and every Super Admin tab
-// polls it every 10s, so without this each poll fans three live fetches at the
-// game server. Shared across all callers on the instance; concurrent misses are
-// coalesced into one computation.
-let snapshotCache: { at: number; value: FivemSnapshot } | null = null;
+// ── upstream state (warm instance only) ──────────────────────────────────
+//
+// Everything below lives in module scope, so it is shared by every request an
+// instance serves and by nothing else. Vercel runs many instances and starts
+// cold ones at will: each keeps its own snapshot, remembered transport, info
+// cache and backoff, and a fresh instance starts from nothing. That bounds the
+// upstream traffic per warm instance; it does not make it global. Nothing here
+// is user data — the route and the page authorize the Super Admin before any
+// of it is read.
+
+/**
+ * Consecutive failures per upstream (keyed by the resolved endpoint, or the
+ * directory URL), with the earliest time it may be tried again. An endpoint
+ * change is a new key, so a relay that republishes a new address is tried at
+ * once rather than inheriting the old one's backoff.
+ */
+class UpstreamBackoff {
+  private entries = new Map<
+    string,
+    { failures: number; retryAt: number; lastError: unknown }
+  >();
+
+  blocked(key: string): boolean {
+    const entry = this.entries.get(key);
+    return entry !== undefined && Date.now() < entry.retryAt;
+  }
+
+  lastError(key: string): unknown {
+    return this.entries.get(key)?.lastError;
+  }
+
+  fail(key: string, error: unknown) {
+    const failures = (this.entries.get(key)?.failures ?? 0) + 1;
+    const delay = Math.min(
+      FIVEM_UPSTREAM_BACKOFF_MAX_MS,
+      FIVEM_UPSTREAM_BACKOFF_BASE_MS * 2 ** Math.min(failures - 1, 16),
+    );
+    // A handful of keys at most; never let a churning uplink grow the map.
+    if (!this.entries.has(key) && this.entries.size >= 8) this.entries.clear();
+    this.entries.set(key, {
+      failures,
+      retryAt: Date.now() + delay,
+      lastError: error,
+    });
+  }
+
+  succeed(key: string) {
+    this.entries.delete(key);
+  }
+}
+
+const upstreamBackoff = new UpstreamBackoff();
+
+/** The transport that last answered for an endpoint, until it expires. */
+let rememberedTransport: { key: string; base: string; until: number } | null =
+  null;
+
+/** `info.json` for one endpoint. Replaced, not accumulated, when it changes. */
+let infoCache: {
+  endpoint: string;
+  until: number;
+  projectName: string | null;
+} | null = null;
+
+let snapshotCache: { until: number; value: FivemSnapshot } | null = null;
 let snapshotInFlight: Promise<FivemSnapshot> | null = null;
 
 /**
- * Live snapshot of the configured FiveM server, cached for
- * `FIVEM_SNAPSHOT_CACHE_MS`. Never throws — a failure (server down, timeout,
- * unexpected payload) resolves to an offline snapshot carrying a human-readable
- * `error`.
+ * How long a snapshot is served from the warm-instance cache: half the client
+ * cadence for the same state (see `fivemRefreshInterval`), so one open tab
+ * always gets a fresh read and several collapse into one upstream call.
  */
-export async function getServerSnapshot(): Promise<FivemSnapshot> {
-  const now = Date.now();
-  if (snapshotCache && now - snapshotCache.at < FIVEM_SNAPSHOT_CACHE_MS) {
+export function snapshotCacheMs(
+  snapshot: Pick<FivemSnapshot, "online" | "source">,
+): number {
+  if (snapshot.source === "directory") return FIVEM_DIRECTORY_SNAPSHOT_CACHE_MS;
+  return snapshot.online
+    ? FIVEM_SNAPSHOT_CACHE_MS
+    : FIVEM_OFFLINE_SNAPSHOT_CACHE_MS;
+}
+
+/**
+ * Live snapshot of the configured FiveM server, cached per warm instance for
+ * `snapshotCacheMs`. Never throws — a failure (server down, timeout,
+ * unexpected payload) resolves to an offline snapshot carrying a human-readable
+ * `error`. Concurrent misses are coalesced into one computation.
+ *
+ * Callers authorize first: the route and the page both require a Super Admin
+ * before calling this, because a cached snapshot needs no database read that
+ * RLS could refuse. `supabase` lets a route handler reuse the client it already
+ * authorized with for the uplink lookup.
+ */
+export async function getServerSnapshot(
+  options: { supabase?: ServerClient } = {},
+): Promise<FivemSnapshot> {
+  if (snapshotCache && Date.now() < snapshotCache.until) {
     return snapshotCache.value;
   }
   if (snapshotInFlight) return snapshotInFlight;
 
   snapshotInFlight = (async () => {
     try {
-      const value = await computeServerSnapshot();
-      snapshotCache = { at: Date.now(), value };
+      const value = await computeServerSnapshot(options.supabase);
+      snapshotCache = { until: Date.now() + snapshotCacheMs(value), value };
       return value;
     } finally {
       snapshotInFlight = null;
@@ -365,8 +470,110 @@ export async function getServerSnapshot(): Promise<FivemSnapshot> {
   return snapshotInFlight;
 }
 
-async function computeServerSnapshot(): Promise<FivemSnapshot> {
-  const { candidates, source, publishedAt } = await candidateEndpoints();
+/**
+ * `dynamic.json` from whichever transport answers first. Every request gets
+ * its own AbortController, and the moment one wins the others are aborted so
+ * a losing transport does not keep a socket open until its timeout.
+ *
+ * With a remembered transport, that one starts alone and the rest join after
+ * `FIVEM_TRANSPORT_HEAD_START_MS` — or immediately, if it fails first. In the
+ * normal case that is one upstream request instead of two; when the network
+ * changed under us it is still one race, not two sequential timeouts.
+ */
+function raceDynamic(
+  candidates: readonly string[],
+  preferred: string | null,
+): Promise<{ base: string; raw: unknown }> {
+  const ordered =
+    preferred && candidates.includes(preferred)
+      ? [preferred, ...candidates.filter((c) => c !== preferred)]
+      : [...candidates];
+  const controllers = ordered.map(() => new AbortController());
+  const errors = new Map<string, unknown>();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let started = 0;
+    let failed = 0;
+    let headStart: ReturnType<typeof setTimeout> | null = null;
+
+    const start = (i: number) => {
+      started += 1;
+      const base = ordered[i]!;
+      getJson(`${base}/dynamic.json`, controllers[i]!.signal).then(
+        (raw) => {
+          if (settled) return;
+          settled = true;
+          if (headStart) clearTimeout(headStart);
+          controllers.forEach((c, j) => {
+            if (j !== i) c.abort();
+          });
+          resolve({ base, raw });
+        },
+        (err: unknown) => {
+          if (settled) return;
+          errors.set(base, err);
+          failed += 1;
+          if (started < ordered.length) {
+            startRest();
+          } else if (failed === ordered.length) {
+            settled = true;
+            // Report in configured order: the first candidate's cause is the
+            // one `offlineMessage` / `shouldTryDirectory` should judge.
+            reject(new AggregateError(candidates.map((c) => errors.get(c))));
+          }
+        },
+      );
+    };
+    const startRest = () => {
+      if (headStart) clearTimeout(headStart);
+      headStart = null;
+      for (let i = started; i < ordered.length; i += 1) start(i);
+    };
+
+    if (preferred && ordered[0] === preferred && ordered.length > 1) {
+      start(0);
+      headStart = setTimeout(startRest, FIVEM_TRANSPORT_HEAD_START_MS);
+    } else {
+      startRest();
+    }
+  });
+}
+
+/** `sv_projectName` for an endpoint, from cache when it is still fresh. */
+async function readProjectName(endpoint: string): Promise<string | null> {
+  const now = Date.now();
+  if (infoCache && infoCache.endpoint === endpoint && now < infoCache.until) {
+    return infoCache.projectName;
+  }
+  try {
+    const info = fivemInfoSchema.safeParse(
+      await getJson(`${endpoint}/info.json`),
+    );
+    const projectName = info.success
+      ? (info.data.vars?.sv_projectName?.trim() ?? null)
+      : null;
+    infoCache = { endpoint, until: now + FIVEM_INFO_CACHE_MS, projectName };
+    return projectName;
+  } catch {
+    // Optional data. Keep a previous good name for the same endpoint, and do
+    // not ask again on every snapshot.
+    const previous =
+      infoCache?.endpoint === endpoint ? infoCache.projectName : null;
+    infoCache = {
+      endpoint,
+      until: now + FIVEM_INFO_RETRY_MS,
+      projectName: previous,
+    };
+    return previous;
+  }
+}
+
+async function computeServerSnapshot(
+  supabase?: ServerClient,
+): Promise<FivemSnapshot> {
+  const { base, candidates, source, publishedAt } =
+    await candidateEndpoints(supabase);
   if (!candidates[0]) {
     return offlineSnapshot(
       "",
@@ -377,6 +584,27 @@ async function computeServerSnapshot(): Promise<FivemSnapshot> {
   const host = resolvePublicHost(candidates[0], source);
   const startedAt = Date.now();
 
+  // Still inside the backoff window from the last failure: do not knock on a
+  // server that just ignored us. The directory (under its own backoff) can
+  // still answer whether it is up.
+  if (upstreamBackoff.blocked(base)) {
+    const lastErr = upstreamBackoff.lastError(base);
+    const viaDirectory = shouldTryDirectory(lastErr)
+      ? await readDirectory(host, startedAt)
+      : null;
+    return (
+      viaDirectory ??
+      offlineSnapshot(host, offlineMessage(source, lastErr), null)
+    );
+  }
+
+  const remembered =
+    rememberedTransport &&
+    rememberedTransport.key === base &&
+    Date.now() < rememberedTransport.until
+      ? rememberedTransport.base
+      : null;
+
   // Race the transports rather than trying them in turn: whichever answers
   // `dynamic.json` first wins and its response is kept. Sequential attempts
   // would cost the sum of both timeouts on a server that ignores us, which
@@ -385,21 +613,23 @@ async function computeServerSnapshot(): Promise<FivemSnapshot> {
   let dynamicRaw: unknown;
   let lastErr: unknown;
   try {
-    const won = await Promise.any(
-      candidates.map(async (base) => ({
-        base,
-        raw: await getJson(`${base}/dynamic.json`),
-      })),
-    );
+    const won = await raceDynamic(candidates, remembered);
     endpoint = won.base;
     dynamicRaw = won.raw;
+    rememberedTransport = {
+      key: base,
+      base: won.base,
+      until: Date.now() + FIVEM_TRANSPORT_MEMORY_MS,
+    };
   } catch (err) {
     // AggregateError — every transport failed. Report the first cause.
     lastErr = err instanceof AggregateError ? (err.errors[0] ?? err) : err;
+    if (rememberedTransport?.key === base) rememberedTransport = null;
   }
 
   if (endpoint === null) {
     const latencyMs = Date.now() - startedAt;
+    upstreamBackoff.fail(base, lastErr);
     console.error("[fivem] snapshot fetch failed", {
       candidates,
       source,
@@ -419,14 +649,15 @@ async function computeServerSnapshot(): Promise<FivemSnapshot> {
   }
 
   let playersRaw: unknown;
-  let infoRaw: unknown;
+  let projectName: string | null;
   try {
-    [playersRaw, infoRaw] = await Promise.all([
+    [playersRaw, projectName] = await Promise.all([
       getJson(`${endpoint}/players.json`),
-      getJson(`${endpoint}/info.json`).catch(() => ({})),
+      readProjectName(endpoint),
     ]);
   } catch (err) {
     const latencyMs = Date.now() - startedAt;
+    upstreamBackoff.fail(base, err);
     console.error("[fivem] snapshot fetch failed", {
       endpoint,
       source,
@@ -442,6 +673,7 @@ async function computeServerSnapshot(): Promise<FivemSnapshot> {
 
     return offlineSnapshot(host, offlineMessage(source, err), latencyMs);
   }
+  upstreamBackoff.succeed(base);
 
   const latencyMs = Date.now() - startedAt;
   const dynamic = fivemDynamicSchema.safeParse(dynamicRaw);
@@ -457,11 +689,6 @@ async function computeServerSnapshot(): Promise<FivemSnapshot> {
     .parse(playersRaw)
     .map((p) => ({ id: p.id, name: stripColorCodes(p.name), ping: p.ping }))
     .sort((a, b) => a.name.localeCompare(b.name));
-
-  const info = fivemInfoSchema.safeParse(infoRaw);
-  const projectName = info.success
-    ? (info.data.vars?.sv_projectName?.trim() ?? null)
-    : null;
 
   const hostname = dynamic.data.hostname
     ? stripColorCodes(dynamic.data.hostname)
@@ -512,8 +739,11 @@ export type FivemProbe = {
  * `source` and `publishedAt` say where the address came from, which is the
  * first thing to check when the monitor reads a stale relay URL.
  */
-export async function probeServer(): Promise<FivemProbe> {
-  const { candidates, source, publishedAt } = await candidateEndpoints();
+export async function probeServer(
+  supabase?: ServerClient,
+): Promise<FivemProbe> {
+  const { candidates, source, publishedAt } =
+    await candidateEndpoints(supabase);
   const targets = candidates.filter(Boolean).map((base) => ({
     name: base.startsWith("https://") ? "https" : "http",
     url: `${base}/dynamic.json`,

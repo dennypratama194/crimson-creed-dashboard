@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus, Truck } from "lucide-react";
 
+import { requireSuperAdmin } from "@/lib/auth/session";
 import { listSupplierGroups, listSuppliers } from "@/lib/db/suppliers";
 import {
   SUPPLIER_LIST_SORTS,
@@ -28,6 +29,8 @@ export default async function AdminSuppliersPage({
 }: PageProps<"/admin/suppliers">) {
   const sp = await searchParams;
   const view = one(sp.view) === "catalogue" ? "catalogue" : "list";
+  // Both views call admin-only RPCs; authorize first (memoized with the layout).
+  await requireSuperAdmin();
 
   const tabs = (
     <div className="flex rounded-md border border-border p-0.5 text-sm">

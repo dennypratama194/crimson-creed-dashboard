@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type ServerClient } from "@/lib/supabase/server";
 
 export type FivemUplink = {
   /** Base URL the relay published for itself, e.g. a tunnel hostname. */
@@ -15,11 +15,14 @@ export type FivemUplink = {
  * Read through the caller's session — RLS restricts the row to Super Admin, and
  * every page that reads it is already Super-Admin-gated. Never throws: if the
  * lookup fails the caller falls back to the env-configured endpoint rather than
- * reporting the game server offline over a database hiccup.
+ * reporting the game server offline over a database hiccup. A Route Handler
+ * passes the client it already authorized with.
  */
-export async function getFivemUplink(): Promise<FivemUplink | null> {
+export async function getFivemUplink(
+  client?: ServerClient,
+): Promise<FivemUplink | null> {
   try {
-    const supabase = await createClient();
+    const supabase = client ?? (await createClient());
     const { data } = await supabase
       .from("fivem_uplink")
       .select("endpoint, updated_at")

@@ -7,13 +7,44 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-/** Keep a left-open, visible tab's badge roughly current without a socket. */
-export const POLL_MS = 60_000;
+/**
+ * Keep a left-open, visible tab's badge roughly current without a socket. Every
+ * tick is a function invocation plus a count query, per open tab, so this is
+ * deliberately slow: anything that changes the count through this app (mark
+ * read, a Server Action that revalidates) replaces the badge directly.
+ */
+export const POLL_MS = 3 * 60_000;
 /**
  * Minimum gap between routine refreshes. Focus, becoming visible and a client
- * navigation often fire together; within this gap they collapse into none.
+ * navigation often fire together, and people tab back and forth; within this
+ * gap they collapse into none.
  */
-export const MIN_REFRESH_GAP_MS = 15_000;
+export const MIN_REFRESH_GAP_MS = 60_000;
+/** First wait after a failed refresh; doubles per consecutive failure. */
+export const BACKOFF_BASE_MS = 2 * 60_000;
+/** Longest wait between attempts while the endpoint keeps failing. */
+export const BACKOFF_MAX_MS = 15 * 60_000;
+
+/**
+ * How long to wait after `failures` consecutive failures: 2, 4, 8, then 15
+ * minutes for good. Zero when the last attempt succeeded.
+ */
+export function backoffDelay(failures: number): number {
+  if (failures <= 0) return 0;
+  const exponent = Math.min(failures - 1, 16);
+  return Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** exponent);
+}
+
+/** A usable count, or null for anything else the endpoint might send back. */
+function parseCount(data: unknown): number | null {
+  if (typeof data !== "object" || data === null || !("count" in data)) {
+    return null;
+  }
+  const { count } = data;
+  return typeof count === "number" && Number.isInteger(count) && count >= 0
+    ? count
+    : null;
+}
 
 /**
  * `initialCount` is the server's count from the (app) layout, or null when the
@@ -23,7 +54,10 @@ export const MIN_REFRESH_GAP_MS = 15_000;
  * unchanged number still overrides a newer polled one.
  *
  * Requests: at most one in flight; skipped while the tab is hidden; aborted on
- * unmount. A failed request keeps the last known count rather than clearing it.
+ * unmount. A failed request — an HTTP error, a network error or a body that is
+ * not a count — keeps the last known count and backs off exponentially
+ * (`backoffDelay`). Every trigger (the timer, focus, visibility, navigation)
+ * respects the backoff; the first success clears it.
  */
 export function NotificationBell({
   initialCount,
@@ -45,23 +79,36 @@ export function NotificationBell({
   // Last time the count was known to be fresh: now, if the server supplied it.
   const freshAtRef = useRef<number | null>(null);
   const hasInitialRef = useRef(initialCount !== null);
+  // Consecutive failures, and the earliest time another attempt is allowed.
+  const failuresRef = useRef(0);
+  const retryAtRef = useRef(0);
 
   useEffect(() => {
-    if (initialCount !== null) freshAtRef.current = Date.now();
+    if (initialCount === null) return;
+    // The server just counted successfully, so whatever made the endpoint
+    // fail has recovered: resume the normal cadence from here.
+    freshAtRef.current = Date.now();
+    failuresRef.current = 0;
+    retryAtRef.current = 0;
   }, [initialCount, countedAt]);
 
   useEffect(() => {
     let inFlight: AbortController | null = null;
     let disposed = false;
 
+    function recordFailure() {
+      failuresRef.current += 1;
+      retryAtRef.current = Date.now() + backoffDelay(failuresRef.current);
+    }
+
     async function refresh() {
       if (disposed || inFlight || document.visibilityState === "hidden") {
         return;
       }
+      const now = Date.now();
+      if (now < retryAtRef.current) return;
       const freshAt = freshAtRef.current;
-      if (freshAt !== null && Date.now() - freshAt < MIN_REFRESH_GAP_MS) {
-        return;
-      }
+      if (freshAt !== null && now - freshAt < MIN_REFRESH_GAP_MS) return;
 
       const controller = new AbortController();
       inFlight = controller;
@@ -70,14 +117,24 @@ export function NotificationBell({
           cache: "no-store",
           signal: controller.signal,
         });
-        if (!res.ok) return;
-        const data: { count?: unknown } = await res.json();
-        if (!disposed && typeof data.count === "number") {
-          freshAtRef.current = Date.now();
-          setCount(data.count);
+        if (disposed) return;
+        if (!res.ok) {
+          recordFailure();
+          return;
         }
+        const next = parseCount(await res.json());
+        if (disposed) return;
+        if (next === null) {
+          recordFailure();
+          return;
+        }
+        failuresRef.current = 0;
+        retryAtRef.current = 0;
+        freshAtRef.current = Date.now();
+        setCount(next);
       } catch {
-        // Network error or abort: keep the last known count.
+        // Network error or unparseable body; an abort only happens on unmount.
+        if (!disposed) recordFailure();
       } finally {
         if (inFlight === controller) inFlight = null;
       }
@@ -105,7 +162,7 @@ export function NotificationBell({
   }, []);
 
   // A client navigation keeps the layout (and its prop) mounted, so check
-  // again — subject to the same in-flight and freshness gates.
+  // again — subject to the same in-flight, freshness and backoff gates.
   const firstPathRef = useRef(true);
   useEffect(() => {
     if (firstPathRef.current) {

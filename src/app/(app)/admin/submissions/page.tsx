@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { KpiCard } from "@/components/patterns/kpi-card";
 import { PageHeader } from "@/components/patterns/page-header";
+import { Pagination } from "@/components/patterns/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,9 +73,11 @@ export default async function AdminSubmissionsPage({
   const monthLabel = formatMonth(periodMonth);
   const thisPeriodMonth = currentPeriodMonth();
   const me = await requireSuperAdmin();
+  // The grid and the Super Admin's own hand-in share the material types and
+  // (for the current month) the period lookup through per-render memoization.
   const [data, gate, receivers, materials, myTargets, mySubmission] =
     await Promise.all([
-      getAdminSubmissionMonth(periodMonth),
+      getAdminSubmissionMonth(periodMonth, { page: one(sp.page) }),
       getSubmissionGate(),
       listSuperAdmins(),
       getMaterialTypes(),
@@ -191,128 +194,163 @@ export default async function AdminSubmissionsPage({
           />
         </div>
 
-        {data.rows.length === 0 ? (
+        {data.total === 0 ? (
           <EmptyState
             icon={Recycle}
             title="No active members"
             description="Add members before tracking monthly submissions."
           />
+        ) : data.rows.length === 0 ? (
+          <>
+            <EmptyState
+              icon={Recycle}
+              title="Nothing on this page"
+              description="There are fewer members than this page. Go back a page."
+            />
+            <Pagination
+              page={data.page}
+              pageSize={data.pageSize}
+              total={data.total}
+            />
+          </>
         ) : (
-          <Table className="min-w-[720px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">No.</TableHead>
-                <TableHead>Member</TableHead>
-                {data.materials.map((m) => (
-                  <TableHead key={m.id} className="text-right">
-                    <span className="block">{m.name}</span>
-                    {m.target > 0 ? (
-                      <span className="block text-xs font-normal text-muted-foreground">
-                        target {formatQuantity(m.target)}
-                      </span>
-                    ) : null}
-                  </TableHead>
-                ))}
-                <TableHead>Received by</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.rows.map((row, i) => {
-                const missing = row.status === null;
-                return (
-                  <TableRow
-                    key={row.memberId}
-                    className={cn(missing && "text-muted-foreground")}
-                  >
-                    <TableCell className="tabular-nums">{i + 1}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <span
-                        className={cn(
-                          "text-foreground",
-                          !missing && "font-medium",
-                        )}
-                      >
-                        {row.memberName}
-                      </span>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {MEMBER_RANK_LABEL[row.rank]}
-                        {row.active ? "" : " · inactive"}
-                      </span>
-                    </TableCell>
-                    {data.materials.map((m) => {
-                      const value = row.quantities[m.id] ?? 0;
-                      const short =
-                        !missing && m.target > 0 && value < m.target;
-                      return (
-                        <TableCell
-                          key={m.id}
-                          className={cn(
-                            "text-right tabular-nums",
-                            short && "text-tone-warning-fg",
-                          )}
-                        >
-                          {missing ? "—" : formatQuantity(value)}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="whitespace-nowrap">
-                      {row.receivedByName ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      {row.status ? (
-                        <Badge tone={MEMBER_SUBMISSION_STATUS_TONE[row.status]}>
-                          {MEMBER_SUBMISSION_STATUS_LABEL[row.status]}
-                        </Badge>
-                      ) : (
-                        <Badge tone="gray">
-                          {MEMBER_SUBMISSION_MISSING_LABEL}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.submissionId &&
-                      (row.status === "PENDING" ||
-                        row.status === "CONFIRMED") ? (
-                        <ReviewSubmissionDialog
-                          submissionId={row.submissionId}
-                          memberName={row.memberName}
-                          monthLabel={monthLabel}
-                          materials={data.materials}
-                          quantities={row.quantities}
-                          receivers={receivers}
-                          initialReceivedById={row.receivedById}
-                          alreadyConfirmed={row.status === "CONFIRMED"}
-                          trigger={
-                            <Button variant="ghost" size="sm">
-                              {row.status === "CONFIRMED" ? "Adjust" : "Review"}
-                            </Button>
-                          }
-                        />
-                      ) : row.status === "REJECTED" ? (
-                        <span className="text-xs text-muted-foreground">
-                          Awaiting resubmit
+          <>
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">No.</TableHead>
+                  <TableHead>Member</TableHead>
+                  {data.materials.map((m) => (
+                    <TableHead key={m.id} className="text-right">
+                      <span className="block">{m.name}</span>
+                      {m.target > 0 ? (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          target {formatQuantity(m.target)}
                         </span>
                       ) : null}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              <TableRow className="border-t-2 font-semibold">
-                <TableCell />
-                <TableCell>Total</TableCell>
-                {data.materials.map((m) => (
-                  <TableCell key={m.id} className="text-right tabular-nums">
-                    {formatQuantity(data.totals[m.id] ?? 0)}
+                    </TableHead>
+                  ))}
+                  <TableHead>Received by</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.rows.map((row, i) => {
+                  const missing = row.status === null;
+                  return (
+                    <TableRow
+                      key={row.memberId}
+                      className={cn(missing && "text-muted-foreground")}
+                    >
+                      <TableCell className="tabular-nums">
+                        {(data.page - 1) * data.pageSize + i + 1}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <span
+                          className={cn(
+                            "text-foreground",
+                            !missing && "font-medium",
+                          )}
+                        >
+                          {row.memberName}
+                        </span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {MEMBER_RANK_LABEL[row.rank]}
+                          {row.active ? "" : " · inactive"}
+                        </span>
+                      </TableCell>
+                      {data.materials.map((m) => {
+                        const value = row.quantities[m.id] ?? 0;
+                        const short =
+                          !missing && m.target > 0 && value < m.target;
+                        return (
+                          <TableCell
+                            key={m.id}
+                            className={cn(
+                              "text-right tabular-nums",
+                              short && "text-tone-warning-fg",
+                            )}
+                          >
+                            {missing ? "—" : formatQuantity(value)}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="whitespace-nowrap">
+                        {row.receivedByName ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        {row.status ? (
+                          <Badge
+                            tone={MEMBER_SUBMISSION_STATUS_TONE[row.status]}
+                          >
+                            {MEMBER_SUBMISSION_STATUS_LABEL[row.status]}
+                          </Badge>
+                        ) : (
+                          <Badge tone="gray">
+                            {MEMBER_SUBMISSION_MISSING_LABEL}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.submissionId &&
+                        (row.status === "PENDING" ||
+                          row.status === "CONFIRMED") ? (
+                          <ReviewSubmissionDialog
+                            submissionId={row.submissionId}
+                            memberName={row.memberName}
+                            monthLabel={monthLabel}
+                            materials={data.materials}
+                            quantities={row.quantities}
+                            receivers={receivers}
+                            initialReceivedById={row.receivedById}
+                            alreadyConfirmed={row.status === "CONFIRMED"}
+                            trigger={
+                              <Button variant="ghost" size="sm">
+                                {row.status === "CONFIRMED"
+                                  ? "Adjust"
+                                  : "Review"}
+                              </Button>
+                            }
+                          />
+                        ) : row.status === "REJECTED" ? (
+                          <span className="text-xs text-muted-foreground">
+                            Awaiting resubmit
+                          </span>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                <TableRow className="border-t-2 font-semibold">
+                  <TableCell />
+                  <TableCell>
+                    Total
+                    {data.total > data.pageSize ? (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        all {data.counts.members} members
+                      </span>
+                    ) : null}
                   </TableCell>
-                ))}
-                <TableCell />
-                <TableCell />
-                <TableCell />
-              </TableRow>
-            </TableBody>
-          </Table>
+                  {data.materials.map((m) => (
+                    <TableCell key={m.id} className="text-right tabular-nums">
+                      {formatQuantity(data.totals[m.id] ?? 0)}
+                    </TableCell>
+                  ))}
+                  <TableCell />
+                  <TableCell />
+                  <TableCell />
+                </TableRow>
+              </TableBody>
+            </Table>
+            {data.total > data.pageSize ? (
+              <Pagination
+                page={data.page}
+                pageSize={data.pageSize}
+                total={data.total}
+              />
+            ) : null}
+          </>
         )}
       </div>
     </>

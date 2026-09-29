@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import type {
   ItemUnit,
   MemberRank,
@@ -7,7 +9,7 @@ import type {
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import {
-  adminSubmissionMonthPayload,
+  adminSubmissionMonthPagePayload,
   mySubmissionHistoryPayload,
   parseRpcPayload,
 } from "@/lib/db/contracts";
@@ -41,7 +43,14 @@ export async function listSubmissionReceivers(): Promise<SubmissionReceiver[]> {
   return (data ?? []).map((r) => ({ id: r.id, displayName: r.display_name }));
 }
 
-export async function getMaterialTypes(): Promise<MaterialType[]> {
+/**
+ * The seeded material columns (MS / EB / EC). Per-render memoized: the admin
+ * grid reads them for its columns and the page reads them again for the
+ * Super Admin's own hand-in dialog. Seeded config, read-only, the same for
+ * every caller — and `React.cache` is discarded with the render, so a Server
+ * Action and the render after it each read the table afresh.
+ */
+export const getMaterialTypes = cache(async (): Promise<MaterialType[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("submission_material_types")
@@ -51,22 +60,29 @@ export async function getMaterialTypes(): Promise<MaterialType[]> {
     .order("id", { ascending: true });
   if (error) throw error;
   return data ?? [];
-}
+});
 
 /**
  * The period row for a month, or null when nobody has opened that month yet —
  * a real state (periods are created lazily), not a failure. Failures throw.
+ *
+ * Per-render memoized by month: `getMonthTargets` and `getMyMonthSubmission`
+ * both need it for the same month on the same page. A period is only ever
+ * created by a submission (a Server Action), never during a render, so the
+ * memoized value cannot go stale within one.
  */
-async function findPeriodId(periodMonth: string): Promise<string | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("submission_periods")
-    .select("id")
-    .eq("period_month", periodMonth)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.id ?? null;
-}
+const findPeriodId = cache(
+  async (periodMonth: string): Promise<string | null> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("submission_periods")
+      .select("id")
+      .eq("period_month", periodMonth)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.id ?? null;
+  },
+);
 
 /** materialTypeId -> target quantity for a month (0 when unset). */
 export async function getMonthTargets(
@@ -220,21 +236,22 @@ export type AdminSubmissionRow = {
   active: boolean;
   submissionId: string | null;
   status: MemberSubmissionStatus | null;
-  submittedAt: string | null;
-  confirmedAt: string | null;
-  note: string | null;
-  reviewNote: string | null;
   receivedById: string | null;
   receivedByName: string | null;
   quantities: Record<string, number>;
 };
 
+export const ADMIN_SUBMISSION_PAGE_SIZE = 25;
+
 export type AdminSubmissionMonth = {
   periodMonth: string;
   hasPeriod: boolean;
   materials: AdminMaterialColumn[];
+  /** One page of the grid. */
   rows: AdminSubmissionRow[];
+  /** Per material, over every submission of the month — not just this page. */
   totals: Record<string, number>;
+  /** Status counts over the whole grid — not just this page. */
   counts: {
     members: number;
     confirmed: number;
@@ -242,29 +259,41 @@ export type AdminSubmissionMonth = {
     rejected: number;
     missing: number;
   };
+  /** Rows in the whole grid, for the pager. */
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 /**
- * The Super Admin month grid. Rows, per-material totals and status counts are
- * built in SQL by `admin_submission_month()` (0080) and arrive as one jsonb
- * value, so neither the lines nor the totals can be cut short by the PostgREST
- * row cap however many members submit.
+ * One page of the Super Admin month grid: every active member, then anyone
+ * no longer active who submitted that month, in (name, id) order. Paged,
+ * totalled and counted in SQL by `admin_submission_month_page()` (0082), so
+ * the page carries 25 rows and only the fields the grid renders, while the
+ * totals and status counts still cover the whole month.
  */
 export async function getAdminSubmissionMonth(
   periodMonth: string,
+  options: { page?: number | string } = {},
 ): Promise<AdminSubmissionMonth> {
   const supabase = await createClient();
+  const pageSize = ADMIN_SUBMISSION_PAGE_SIZE;
+  const { page, from } = pageBounds(options.page, pageSize);
 
   const [materials, { data, error }] = await Promise.all([
     getMaterialTypes(),
-    supabase.rpc("admin_submission_month", { p_period_month: periodMonth }),
+    supabase.rpc("admin_submission_month_page", {
+      p_period_month: periodMonth,
+      p_limit: pageSize,
+      p_offset: from,
+    }),
   ]);
   if (error) throw error;
 
   const payload = parseRpcPayload(
-    adminSubmissionMonthPayload,
+    adminSubmissionMonthPagePayload,
     data,
-    "admin_submission_month",
+    "admin_submission_month_page",
   );
 
   const columns: AdminMaterialColumn[] = materials.map((m) => ({
@@ -290,5 +319,8 @@ export async function getAdminSubmissionMonth(
     })),
     totals,
     counts: payload.counts,
+    total: payload.total,
+    page,
+    pageSize,
   };
 }

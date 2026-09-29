@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import type { Tables } from "@/lib/database.types";
 import {
   distributionSummaryPayload,
@@ -25,8 +27,16 @@ type RateRow = Pick<
   "item_id" | "unit_rate" | "updated_at"
 >;
 
-/** Every company cut. One row per drawable item, read in bounded batches. */
-async function readAllRates(): Promise<RateRow[]> {
+/**
+ * Every company cut. One row per drawable item, read in bounded batches.
+ *
+ * Per-render memoized: the Company cut page lists the cuts and, beside them,
+ * the items that do not have one yet — both from this same set. Only a
+ * render shares it. A Server Action (e.g. `issue_distribution`'s draw dialog
+ * loading `getDrawableItems`) gets no React memoization and reads it afresh,
+ * and the database re-checks the rate at issue regardless.
+ */
+const readAllRates = cache(async (): Promise<RateRow[]> => {
   const supabase = await createClient();
   return readAllRows((from, to) =>
     supabase
@@ -35,7 +45,7 @@ async function readAllRates(): Promise<RateRow[]> {
       .order("item_id", { ascending: true })
       .range(from, to),
   );
-}
+});
 
 // ── drawable items ─────────────────────────────────────────────────────────
 export type DrawableItem = {

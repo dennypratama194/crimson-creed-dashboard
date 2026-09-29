@@ -206,7 +206,41 @@ routes are dynamic, and the only persistent cache is one `unstable_cache`.
   price; `create_order` prices from the database regardless.
 - **Within one request, dedupe with `React.cache`.** `getUser`,
   `getCurrentMember` and `getUnreadNotificationCount` are memoized so the layout
-  and the page share one lookup. Do not build a cross-request cache for these.
+  and the page share one lookup; so are read-only helpers a page repeats —
+  `getMaterialTypes`, the submission period lookup, the company-cut read. Do not
+  build a cross-request cache for these, or for anything user-specific.
+- **One Supabase client per render.** `createClient()` is `React.cache`d, so a
+  Server Component render builds one client however many readers it calls. That
+  memoization only exists inside a render: in a Server Action body or a Route
+  Handler every call builds a fresh client, which is also why an action's
+  cookie rotation never leaks into the render after it. A Route Handler creates
+  one with `createRequestClient()` and passes it to every helper that accepts a
+  client (`authorizeSuperAdmin`, `countUnreadNotifications`, …). Never hold a
+  client or cookies in module scope.
+- **A page authorizes before calling an admin-only RPC.** A page renders
+  alongside its layout, not after it, so the admin layout's guard does not stop
+  a page's reads from starting. `await requireSuperAdmin()` first — it is
+  memoized, so it costs nothing extra.
+- **Load heavy or optional data when it is asked for.** Audit before/after
+  snapshots (`/api/admin/audit/[id]`) and the supplier Add item picker
+  (`/api/admin/suppliers/[id]/available-items`) are fetched when their dialog
+  opens, not serialized into every page. Such routes validate input, answer
+  401 / 403 as JSON (a `fetch` that follows a redirect gets an unparseable 200)
+  and send `private, no-store`.
+- **Search fields submit; they do not follow the keyboard.** Every navigation
+  re-renders the whole page on the server. Admin list searches use
+  `UrlSearchField` (Enter or the Search button, skipped when the normalized term
+  is unchanged, page reset, other filters kept). Selects may still navigate on
+  change — one change is one navigation.
+- **Polling is slow and backs off.** The notification badge polls every 3
+  minutes on a visible tab and backs off exponentially on failure; `/admin/fivem`
+  sets its cadence from the snapshot's source. A new poller follows the same
+  shape: hidden-tab suppression, one request in flight, abort on unmount,
+  bounded backoff that every trigger respects.
+- **Module-scope caches are per warm instance.** The FiveM proxy keeps its
+  snapshot, remembered transport, `info.json` and upstream backoff in module
+  scope. On Vercel that is shared by the requests one instance serves and by
+  nothing else; never describe it as global, and never keep user data there.
   `getUser` reads `getClaims()` (local JWT verification, no Auth round trip), so
   a session revoked elsewhere lives until its access token expires; the live
   `members` row check is what actually gates access. It needs asymmetric JWT

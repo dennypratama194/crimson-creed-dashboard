@@ -28,6 +28,7 @@
 import { z } from "zod";
 
 import {
+  ITEM_CATEGORIES,
   MEMBER_RANKS,
   MEMBER_SUBMISSION_STATUSES,
 } from "@/lib/constants/enums";
@@ -42,6 +43,8 @@ type OrderRow = Tables<"orders">;
 type PayrollRunLineRow = Tables<"payroll_run_lines">;
 type ProductionAssignmentRow = Tables<"production_assignments">;
 type ProductionAssignmentMemberRow = Tables<"production_assignment_members">;
+type SupplierRow = Tables<"suppliers">;
+type SupplierItemRow = Tables<"supplier_items">;
 
 /**
  * The one place a jsonb RPC result becomes a typed value. Throws with the RPC
@@ -162,44 +165,47 @@ export type MyProductionAssignmentsPayload = z.infer<
   typeof myProductionAssignmentsPayload
 >;
 
-// ── admin_submission_month() / my_submission_history()  (0080) ──────────────
+// ── submission grid + history  (0080, 0082) ─────────────────────────────────
 // materialTypeId -> quantity. jsonb_object_agg over integers, coerced anyway.
 const quantities = z.record(z.string(), num);
 const submissionStatus = z.enum(MEMBER_SUBMISSION_STATUSES);
 
-export const adminSubmissionMonthPayload = z.object({
+// admin_submission_month() (0080) is no longer read by the app — the grid
+// reads the paged RPC below — but stays in the database so the build that is
+// live while 0082 is applied keeps working.
+const submissionCounts = z.object({
+  members: num,
+  confirmed: num,
+  pending: num,
+  rejected: num,
+  missing: num,
+});
+
+// ── admin_submission_month_page()  (0082) ───────────────────────────────────
+// One page of the same grid, only the fields it renders. `totals` and `counts`
+// cover the whole month; `total` is the grid's row count for the pager.
+export const adminSubmissionMonthPagePayload = z.object({
   hasPeriod: z.boolean(),
   targets: quantities,
+  total: num,
   rows: z.array(
     z.object({
       memberId: z.string(),
-      // null only for a straggler whose member row is gone
       memberName: z.string().nullable(),
-      // null for stragglers; the reader substitutes the display default
       rank: z.enum(MEMBER_RANKS).nullable(),
       active: z.boolean(),
       submissionId: z.string().nullable(),
       status: submissionStatus.nullable(),
-      submittedAt: z.string().nullable(),
-      confirmedAt: z.string().nullable(),
-      note: z.string().nullable(),
-      reviewNote: z.string().nullable(),
       receivedById: z.string().nullable(),
       receivedByName: z.string().nullable(),
       quantities,
     }),
   ),
   totals: quantities,
-  counts: z.object({
-    members: num,
-    confirmed: num,
-    pending: num,
-    rejected: num,
-    missing: num,
-  }),
+  counts: submissionCounts,
 });
-export type AdminSubmissionMonthPayload = z.infer<
-  typeof adminSubmissionMonthPayload
+export type AdminSubmissionMonthPagePayload = z.infer<
+  typeof adminSubmissionMonthPagePayload
 >;
 
 export const mySubmissionHistoryPayload = z.object({
@@ -212,6 +218,48 @@ export const mySubmissionHistoryPayload = z.object({
   ),
   total: num,
 });
+
+// ── supplier catalogue reads  (0082) ────────────────────────────────────────
+// A price-book line with the catalogue item it points at, joined in SQL.
+export type SupplierCatalogueLinePayload = SupplierItemRow & {
+  item: Pick<
+    ItemRow,
+    "name" | "category" | "unit" | "image_url" | "active" | "orderable"
+  >;
+};
+
+export const supplierCataloguePagePayload = z.object({
+  total: num,
+  soldToMembers: num,
+  rows: rows<SupplierCatalogueLinePayload>(),
+});
+
+export const supplierCatalogueGroupsPayload = z.object({
+  total: num,
+  groups: z.array(
+    z.object({
+      supplier: z.unknown().transform((s) => s as SupplierRow),
+      lineCount: num,
+      lines: rows<SupplierCatalogueLinePayload>(),
+    }),
+  ),
+});
+
+// The Add item picker. Rendered straight into a <select>, so each row is
+// checked, not just the list.
+export const supplierAvailableItemsPayload = z.object({
+  total: num,
+  rows: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      category: z.enum(ITEM_CATEGORIES),
+    }),
+  ),
+});
+export type SupplierAvailableItemsPayload = z.infer<
+  typeof supplierAvailableItemsPayload
+>;
 
 // ── item_delete_impact()  (0076) ────────────────────────────────────────────
 // Advisory only. delete_item re-checks every blocker under a row lock; nothing

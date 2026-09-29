@@ -87,9 +87,8 @@ export default async function AdminAuditPage({
                     </TableCell>
                     <TableCell className="text-right">
                       <AuditDetailDialog
+                        entryId={entry.id}
                         action={humanizeToken(entry.action)}
-                        oldValues={entry.old_values}
-                        newValues={entry.new_values}
                       />
                     </TableCell>
                   </TableRow>

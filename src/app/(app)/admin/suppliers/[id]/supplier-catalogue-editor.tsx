@@ -1,10 +1,10 @@
 "use client";
 
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useState } from "react";
 
 import { ITEM_CATEGORY_LABEL } from "@/lib/constants/labels";
-import type { PickerItem, SupplierCatalogueLine } from "@/lib/db/suppliers";
+import type { SupplierCatalogueLine } from "@/lib/db/suppliers";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { IDLE_FORM_STATE } from "@/lib/forms";
 import { useActionToast } from "@/lib/toast";
@@ -23,13 +23,6 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -41,31 +34,29 @@ import {
   removeSupplierItemAction,
   setSupplierItemAction,
 } from "@/app/(app)/admin/suppliers/actions";
+import { SupplierItemPicker } from "@/app/(app)/admin/suppliers/[id]/supplier-item-picker";
 
 type DialogState =
   { mode: "add" } | { mode: "edit"; line: SupplierCatalogueLine } | null;
 
+/**
+ * One page of a supplier's price book (`lines`), with add / edit / remove.
+ * `total` is every line the supplier lists, so an empty page past the end is
+ * told apart from an empty catalogue. The Add item list is not passed in: the
+ * dialog fetches it when it opens.
+ */
 export function SupplierCatalogueEditor({
   supplierId,
   supplierArchived,
   lines,
-  pickerItems,
+  total,
 }: {
   supplierId: string;
   supplierArchived: boolean;
   lines: SupplierCatalogueLine[];
-  pickerItems: PickerItem[];
+  total: number;
 }) {
   const [dialog, setDialog] = useState<DialogState>(null);
-
-  const listedItemIds = useMemo(
-    () => new Set(lines.map((l) => l.item_id)),
-    [lines],
-  );
-  const availableItems = useMemo(
-    () => pickerItems.filter((i) => !listedItemIds.has(i.id)),
-    [pickerItems, listedItemIds],
-  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -76,7 +67,6 @@ export function SupplierCatalogueEditor({
             size="sm"
             variant="secondary"
             onClick={() => setDialog({ mode: "add" })}
-            disabled={availableItems.length === 0}
           >
             <Plus aria-hidden />
             Add item
@@ -84,7 +74,7 @@ export function SupplierCatalogueEditor({
         ) : null}
       </div>
 
-      {lines.length === 0 ? (
+      {total === 0 ? (
         <EmptyState
           title="Nothing listed"
           description={
@@ -92,6 +82,11 @@ export function SupplierCatalogueEditor({
               ? "This supplier is archived."
               : "Add the items this supplier carries and what they cost."
           }
+        />
+      ) : lines.length === 0 ? (
+        <EmptyState
+          title="Nothing on this page"
+          description="The price book is shorter than this now. Go back a page."
         />
       ) : (
         <Table>
@@ -202,7 +197,6 @@ export function SupplierCatalogueEditor({
               key={dialog.mode === "edit" ? dialog.line.id : "add"}
               supplierId={supplierId}
               dialog={dialog}
-              availableItems={availableItems}
               onDone={() => {
                 setDialog(null);
               }}
@@ -217,12 +211,10 @@ export function SupplierCatalogueEditor({
 function SupplierItemDialogBody({
   supplierId,
   dialog,
-  availableItems,
   onDone,
 }: {
   supplierId: string;
   dialog: Exclude<DialogState, null>;
-  availableItems: PickerItem[];
   onDone: () => void;
 }) {
   const isEdit = dialog.mode === "edit";
@@ -261,20 +253,7 @@ function SupplierItemDialogBody({
         {isEdit ? (
           <input type="hidden" name="itemId" value={line!.item_id} />
         ) : (
-          <Field label="Item" htmlFor="itemId" required error={errors.itemId}>
-            <Select name="itemId">
-              <SelectTrigger id="itemId">
-                <SelectValue placeholder="Choose an item" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableItems.map((i) => (
-                  <SelectItem key={i.id} value={i.id}>
-                    {i.name} · {ITEM_CATEGORY_LABEL[i.category]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <SupplierItemPicker supplierId={supplierId} error={errors.itemId} />
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">

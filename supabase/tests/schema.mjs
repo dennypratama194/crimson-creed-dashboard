@@ -4510,6 +4510,316 @@ await expectThrows(
     ),
   "Too many",
 );
+// ── paged admin reads (0082) ──────────────────────────────────────────────
+console.log("\nPaged admin reads (0082)");
+await asRole(null);
+// Ties: 30 active members who share one display name, so the grid's
+// (bucket, name, id) order is only unique through the id tie-breaker.
+await db.exec(`
+  insert into auth.users (email)
+  select 'twin' || g || '@test' from generate_series(1, 30) g;
+  insert into members (user_id, username, display_name, role, status)
+  select u.id, 'twin_' || substr(u.email, 5, length(u.email) - 9), 'Twin',
+         'MEMBER', 'ACTIVE'
+  from auth.users u where u.email like 'twin%@test';
+`);
+await asRole("authenticated", admin.id);
+/** Every page of admin_submission_month_page, in order. */
+async function walkGrid(month, limit) {
+  const pages = [];
+  for (let offset = 0; ; offset += limit) {
+    const p = (
+      await one(`select admin_submission_month_page($1::date, $2, $3) p`, [
+        month,
+        limit,
+        offset,
+      ])
+    ).p;
+    pages.push(p);
+    if (offset + limit >= Number(p.total)) return pages;
+  }
+}
+await expect(
+  "admin_submission_month_page walks the same grid as the unpaged RPC",
+  async () => {
+    const full = (
+      await one(`select admin_submission_month($1::date) p`, [bulkMonth])
+    ).p;
+    const pages = await walkGrid(bulkMonth, 25);
+    assert(pages.length > 16, `only ${pages.length} pages`);
+    const ids = pages.flatMap((p) => p.rows.map((r) => r.memberId));
+    assert(
+      ids.length === full.rows.length && new Set(ids).size === ids.length,
+      `paged ${ids.length} (unique ${new Set(ids).size}) vs ${full.rows.length}`,
+    );
+    assert(
+      JSON.stringify(ids) === JSON.stringify(full.rows.map((r) => r.memberId)),
+      "paged order differs from the unpaged grid",
+    );
+    assert(
+      pages.every((p) => Number(p.total) === full.rows.length),
+      "total drifts between pages",
+    );
+    const twins = ids.filter((id) =>
+      full.rows.some((r) => r.memberId === id && r.memberName === "Twin"),
+    );
+    assert(twins.length === 30, `twins seen ${twins.length}`);
+  },
+);
+await expect(
+  "admin_submission_month_page totals and counts cover the whole month on every page",
+  async () => {
+    const full = (
+      await one(`select admin_submission_month($1::date) p`, [bulkMonth])
+    ).p;
+    const pages = await walkGrid(bulkMonth, 25);
+    for (const p of [pages[0], pages[pages.length - 1]]) {
+      assert(
+        JSON.stringify(p.counts) === JSON.stringify(full.counts),
+        `counts ${JSON.stringify(p.counts)} vs ${JSON.stringify(full.counts)}`,
+      );
+      for (const [id, total] of Object.entries(full.totals)) {
+        assert(Number(p.totals[id]) === Number(total), `total ${id}`);
+      }
+    }
+    const c = pages[0].counts;
+    assert(c.confirmed + c.pending + c.rejected === 400, JSON.stringify(c));
+    assert(pages[0].rows.length === 25, `page size ${pages[0].rows.length}`);
+  },
+);
+await expect(
+  "admin_submission_month_page sends only the fields the grid uses",
+  async () => {
+    const p = (
+      await one(`select admin_submission_month_page($1::date, 25, 0) p`, [
+        bulkMonth,
+      ])
+    ).p;
+    const keys = Object.keys(p.rows.find((r) => r.submissionId)).sort();
+    const expected = [
+      "active",
+      "memberId",
+      "memberName",
+      "quantities",
+      "rank",
+      "receivedById",
+      "receivedByName",
+      "status",
+      "submissionId",
+    ];
+    assert(
+      JSON.stringify(keys) === JSON.stringify(expected),
+      `keys ${keys.join(",")}`,
+    );
+  },
+);
+await expect(
+  "admin_submission_month_page clamps its inputs and never opens a month",
+  async () => {
+    const big = (
+      await one(`select admin_submission_month_page($1::date, 100000, -9) p`, [
+        bulkMonth,
+      ])
+    ).p;
+    assert(big.rows.length === 100, `rows ${big.rows.length}`);
+    const empty = (
+      await one(
+        `select admin_submission_month_page('1998-01-01'::date, 25, 0) p`,
+      )
+    ).p;
+    assert(empty.hasPeriod === false, "hasPeriod");
+    await asRole(null);
+    const n = await one(
+      `select count(*)::int n from submission_periods where period_month = '1998-01-01'`,
+    );
+    assert(n.n === 0, "reading a month created its period");
+    await asRole("authenticated", admin.id);
+  },
+);
+
+// Supplier catalogue: a supplier whose 30 lines all share one item name and
+// category, plus 5 more same-named items it does not list, one archived item
+// and one archived supplier.
+await asRole(null);
+await db.exec(`
+  insert into suppliers (name) values ('Twin Supplier');
+  insert into suppliers (name, archived_at) values ('Gone Supplier', now());
+  insert into items (name, category, unit, price)
+  select 'Same Name', 'OTHER', 'UNIT', 1 from generate_series(1, 35);
+  insert into items (name, category, unit, price, archived_at)
+  values ('Same Name', 'OTHER', 'UNIT', 1, now()),
+         ('100% Legit_Item', 'OTHER', 'UNIT', 1, null);
+  insert into supplier_items (supplier_id, item_id, buy_price, sell_price)
+  select s.id, i.id, 1, case when row_number() over (order by i.id) <= 12 then 2 end
+  from suppliers s,
+       (select id from items where name = 'Same Name' and archived_at is null
+        order by id limit 30) i
+  where s.name = 'Twin Supplier';
+`);
+const twinSupplier = await one(
+  `select id from suppliers where name = 'Twin Supplier'`,
+);
+const bulkSupplier = await one(
+  `select id from suppliers where name = 'Bulk Supplier 01'`,
+);
+await asRole("authenticated", admin.id);
+await expect(
+  "supplier_catalogue_page pages 30 identical-looking lines without repeats",
+  async () => {
+    const seen = [];
+    let total = null;
+    let sold = null;
+    for (let offset = 0; offset < 30; offset += 25) {
+      const p = (
+        await one(`select supplier_catalogue_page($1, 25, $2) p`, [
+          twinSupplier.id,
+          offset,
+        ])
+      ).p;
+      total = Number(p.total);
+      sold = Number(p.soldToMembers);
+      for (const r of p.rows) seen.push(r.id);
+      assert(
+        p.rows.every((r) => r.item?.name === "Same Name"),
+        "line not joined to its item",
+      );
+    }
+    assert(total === 30 && sold === 12, `total ${total}, sold ${sold}`);
+    assert(
+      seen.length === 30 && new Set(seen).size === 30,
+      `seen ${seen.length}, unique ${new Set(seen).size}`,
+    );
+    const sorted = [...seen].sort();
+    assert(
+      JSON.stringify(seen) === JSON.stringify(sorted),
+      "ties not broken by line id",
+    );
+  },
+);
+await expect(
+  "supplier_catalogue_page counts all 60 lines of a supplier but returns a page",
+  async () => {
+    const p = (
+      await one(`select supplier_catalogue_page($1, 25, 0) p`, [
+        bulkSupplier.id,
+      ])
+    ).p;
+    const direct = await one(
+      `select count(*) filter (where sell_price is not null)::int sold
+       from supplier_items where supplier_id = $1`,
+      [bulkSupplier.id],
+    );
+    assert(Number(p.total) === 60, `total ${p.total}`);
+    assert(Number(p.soldToMembers) === direct.sold, `sold ${p.soldToMembers}`);
+    assert(p.rows.length === 25, `rows ${p.rows.length}`);
+  },
+);
+await expect(
+  "supplier_catalogue_groups bounds lines per supplier and pages suppliers",
+  async () => {
+    const live = Number(
+      (
+        await one(
+          `select count(*)::int n from suppliers where archived_at is null`,
+        )
+      ).n,
+    );
+    const ids = [];
+    let total = null;
+    for (let offset = 0; offset < live; offset += 10) {
+      const p = (
+        await one(`select supplier_catalogue_groups(10, $1, 5) p`, [offset])
+      ).p;
+      total = Number(p.total);
+      for (const g of p.groups) {
+        ids.push(g.supplier.id);
+        assert(g.lines.length <= 5, `${g.supplier.name}: ${g.lines.length}`);
+        if (g.supplier.name.startsWith("Bulk Supplier")) {
+          assert(Number(g.lineCount) === 60, `lineCount ${g.lineCount}`);
+          assert(g.lines.length === 5, "first lines missing");
+        }
+        assert(g.supplier.archived_at === null, "archived supplier listed");
+      }
+    }
+    assert(total === live, `total ${total} vs ${live}`);
+    assert(
+      ids.length === live && new Set(ids).size === live,
+      `seen ${ids.length}`,
+    );
+  },
+);
+await expect(
+  "supplier_available_items excludes everything the supplier lists, on any page",
+  async () => {
+    const bulk = (
+      await one(`select supplier_available_items($1, 'Bulk Item', 50, 0) p`, [
+        bulkSupplier.id,
+      ])
+    ).p;
+    assert(Number(bulk.total) === 0, `bulk available ${bulk.total}`);
+
+    const seen = [];
+    let total = null;
+    for (let offset = 0; offset < 5; offset += 2) {
+      const p = (
+        await one(`select supplier_available_items($1, 'same name', 2, $2) p`, [
+          twinSupplier.id,
+          offset,
+        ])
+      ).p;
+      total = Number(p.total);
+      for (const r of p.rows) seen.push(r.id);
+    }
+    // 35 active 'Same Name' items, 30 listed, the archived one never offered
+    assert(total === 5, `total ${total}`);
+    assert(seen.length === 5 && new Set(seen).size === 5, `seen ${seen}`);
+  },
+);
+await expect(
+  "supplier_available_items matches LIKE wildcards literally",
+  async () => {
+    const pct = (
+      await one(`select supplier_available_items($1, '100%', 50, 0) p`, [
+        twinSupplier.id,
+      ])
+    ).p;
+    assert(
+      pct.rows.length === 1 && pct.rows[0].name === "100% Legit_Item",
+      JSON.stringify(pct.rows),
+    );
+    const underscore = (
+      await one(`select supplier_available_items($1, 'legi__item', 50, 0) p`, [
+        twinSupplier.id,
+      ])
+    ).p;
+    assert(Number(underscore.total) === 0, `'_' matched ${underscore.total}`);
+  },
+);
+await asRole("authenticated", m1.id);
+await expect("a member cannot call any 0082 read", async () => {
+  for (const sql of [
+    `select admin_submission_month_page('${bulkMonth}'::date, 25, 0)`,
+    `select supplier_catalogue_page('${twinSupplier.id}', 25, 0)`,
+    `select supplier_catalogue_groups(10, 0, 10)`,
+    `select supplier_available_items('${twinSupplier.id}', null, 20, 0)`,
+  ]) {
+    const err = await callRolledBack(sql);
+    assert(err?.code === "42501", `${sql} -> ${err?.message ?? "allowed"}`);
+  }
+});
+await asRole("anon", null);
+await expect("anon cannot call any 0082 read", async () => {
+  for (const sql of [
+    `select admin_submission_month_page('${bulkMonth}'::date, 25, 0)`,
+    `select supplier_catalogue_page('${twinSupplier.id}', 25, 0)`,
+    `select supplier_catalogue_groups(10, 0, 10)`,
+    `select supplier_available_items('${twinSupplier.id}', null, 20, 0)`,
+  ]) {
+    const err = await callRolledBack(sql);
+    assert(err?.code === "42501", `${sql} -> ${err?.message ?? "allowed"}`);
+  }
+});
+
 await asRole(null);
 
 // ── log retention (0081) ──────────────────────────────────────────────────
@@ -4798,6 +5108,16 @@ if (!baseRef) {
         assert(
           grid.counts.pending === 1,
           `grid ${JSON.stringify(grid.counts)}`,
+        );
+        const paged = (
+          await upOne(
+            `select admin_submission_month_page(date_trunc('month', current_date)::date, 25, 0) p`,
+          )
+        ).p;
+        assert(
+          JSON.stringify(paged.counts) === JSON.stringify(grid.counts) &&
+            paged.rows.length === grid.rows.length,
+          `paged grid ${JSON.stringify(paged.counts)}`,
         );
         await as("service_role", null);
         const w = await upOne(

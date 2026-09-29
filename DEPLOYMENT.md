@@ -240,6 +240,62 @@ undo them. `member_action_throttle` only ever holds counters.
   constraint match 0045, apply the rest of 0045 by hand, then
   `npx supabase migration repair --status applied 0045`. Do not edit the file.
 
+## Release notes — Fluid Compute pass (migration 0082)
+
+One additive migration and an app build that depends on it.
+
+| Migration                | Adds                                                                                                                                                                                                                                                                                                                             | Reversible by a forward migration |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `0082_paged_admin_reads` | Read-only, Super-Admin-gated RPCs `admin_submission_month_page(date, int, int)`, `supplier_catalogue_page(uuid, int, int)`, `supplier_catalogue_groups(int, int, int)`, `supplier_available_items(uuid, text, int, int)`, plus the internal `app.supplier_line_json`. No table, index, policy, data or existing-function change. | Yes — drop the five functions.    |
+
+**Compatibility.** `admin_submission_month` (0080) is untouched and stays: the
+build that is live while 0082 is applied keeps calling it, and 0082 does not
+change anything that build reads. The **new** build calls the four new RPCs
+from `/admin/submissions`, `/admin/suppliers` (both views),
+`/admin/suppliers/[id]` and the new `/api/admin/suppliers/[id]/available-items`
+route, so it must not go out before 0082 is applied — those pages would fail.
+The other changes in this build (notification polling, the FiveM proxy, search
+fields, the audit detail route, per-render memoization) need no database
+change.
+
+**Order — database first, then the app.**
+
+1. Back up production (step 4 of "Every time you add a feature" above).
+2. `npx supabase migration list` against staging; confirm only 0082 is pending.
+3. Apply 0082 to staging, deploy the build to staging, and exercise:
+   `/admin/submissions` (switch month — the pager returns to page 1; page past
+   25 members; review / adjust a submission; the Super Admin's own Submit),
+   `/admin/suppliers?view=catalogue` ("View all N items" on a supplier with
+   more than 10 lines), a supplier detail page past page one, Add item (search
+   with Enter, page, pick, save; the picker must not offer anything the
+   supplier already lists), edit / remove a line, `/admin/audit` → View on an
+   entry, `/admin/fivem`, and every admin list search (typing must not reload
+   the page; Enter or Search does).
+4. Apply 0082 to production, confirm `migration list`, then deploy the app.
+
+**Rollback.** Redeploy the previous build first — it does not use 0082, so the
+migration can stay. To remove it afterwards:
+`drop function if exists public.admin_submission_month_page(date, integer, integer), public.supplier_catalogue_page(uuid, integer, integer), public.supplier_catalogue_groups(integer, integer, integer), public.supplier_available_items(uuid, text, integer, integer), app.supplier_line_json(supplier_items, items);`
+then `npx supabase migration repair --status reverted 0082`. Nothing to
+restore: the migration writes no data.
+
+**Runtime behaviour worth knowing after this deploy.**
+
+- The notification badge polls every **3 minutes** (was 1) on a visible tab,
+  at most once a minute on focus / navigation, and backs off 2 → 4 → 8 → 15
+  minutes while `/api/notifications/unread-count` keeps failing.
+- `/admin/fivem` polls every 30s only while the game server answers directly;
+  a public-directory snapshot is polled every 2 minutes even when it says
+  online. The proxy remembers which transport (http / https) answered for 10
+  minutes, caches `info.json` per endpoint for 30 minutes, and backs off an
+  unreachable upstream 30s → 5 min.
+- **The FiveM snapshot cache, transport memory, `info.json` cache and upstream
+  backoff are per warm function instance.** Vercel runs several instances and
+  starts cold ones freely; each has its own copy and a new one starts empty. So
+  these bound upstream traffic per instance, not globally — N busy instances can
+  still make N upstream calls per window. Making it global would need a shared
+  store (e.g. a KV cache); that is not part of this change.
+
 ## Guardrails in the repo
 
 - **`SUPABASE_ENV`** in every env file marks it `development` or `production`.

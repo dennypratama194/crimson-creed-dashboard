@@ -1109,6 +1109,27 @@ export interface Database {
           orderable_count: number;
         }[];
       };
+      admin_submission_month_page: {
+        Args: { p_limit?: number; p_offset?: number; p_period_month: string };
+        Returns: Json;
+      };
+      supplier_available_items: {
+        Args: {
+          p_limit?: number;
+          p_offset?: number;
+          p_search?: string;
+          p_supplier_id: string;
+        };
+        Returns: Json;
+      };
+      supplier_catalogue_groups: {
+        Args: { p_limit?: number; p_lines?: number; p_offset?: number };
+        Returns: Json;
+      };
+      supplier_catalogue_page: {
+        Args: { p_limit?: number; p_offset?: number; p_supplier_id: string };
+        Returns: Json;
+      };
     };
     Enums: {
       app_role: AppRole;

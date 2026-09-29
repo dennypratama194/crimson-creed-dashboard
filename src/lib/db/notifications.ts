@@ -4,7 +4,7 @@ import { cache } from "react";
 
 import type { Tables } from "@/lib/database.types";
 import { pageBounds } from "@/lib/db/paging";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type ServerClient } from "@/lib/supabase/server";
 
 export type Notification = Tables<"notifications">;
 
@@ -58,12 +58,21 @@ export async function listNotifications(options: {
  * one query. Nothing in a render writes notifications, so the shared value
  * cannot be stale within it.
  */
-export const getUnreadNotificationCount = cache(async (): Promise<number> => {
-  const supabase = await createClient();
+export const getUnreadNotificationCount = cache(async (): Promise<number> =>
+  countUnreadNotifications(await createClient()),
+);
+
+/**
+ * The same count on an explicit client, for the badge's Route Handler — which
+ * already made one to check the session, and gets no React memoization.
+ */
+export async function countUnreadNotifications(
+  supabase: ServerClient,
+): Promise<number> {
   const { count, error } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .is("read_at", null);
   if (error) throw error;
   return count ?? 0;
-});
+}

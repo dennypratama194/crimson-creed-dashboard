@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { getUser } from "@/lib/auth/session";
-import { getUnreadNotificationCount } from "@/lib/db/notifications";
+import { getSessionUserId } from "@/lib/auth/session";
+import { countUnreadNotifications } from "@/lib/db/notifications";
+import { createRequestClient } from "@/lib/supabase/server";
 
 /**
  * The count is per recipient, so the response must never be stored by a shared
@@ -10,10 +11,14 @@ import { getUnreadNotificationCount } from "@/lib/db/notifications";
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
 export async function GET() {
+  // One client for the whole poll: React does not memoize in a Route Handler,
+  // so the session check and the count would otherwise build one each.
+  const supabase = await createRequestClient();
+
   // Don't run a DB query for callers with no session. The bell treats any
-  // non-OK response as "keep the current count".
-  const user = await getUser();
-  if (!user) {
+  // non-OK response as "keep the current count" and backs off.
+  const userId = await getSessionUserId(supabase);
+  if (!userId) {
     return NextResponse.json(
       { error: "unauthenticated" },
       { status: 401, headers: NO_STORE },
@@ -21,7 +26,7 @@ export async function GET() {
   }
 
   try {
-    const count = await getUnreadNotificationCount();
+    const count = await countUnreadNotifications(supabase);
     return NextResponse.json({ count }, { headers: NO_STORE });
   } catch {
     // Not `{ count: 0 }`: that would clear a real badge during an outage.
