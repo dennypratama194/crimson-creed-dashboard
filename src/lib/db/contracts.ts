@@ -37,6 +37,7 @@ import type { PayrollRunStatus, Tables } from "@/lib/database.types";
 // Row aliases, via the generated `Tables<>` helper rather than the generator's
 // internal names — so regenerating the schema file cannot break this one.
 type ActivityLogRow = Tables<"activity_logs">;
+type CashEntryRow = Tables<"cash_entries">;
 type ItemRow = Tables<"items">;
 type MemberSubmissionRow = Tables<"member_submissions">;
 type OrderRow = Tables<"orders">;
@@ -151,6 +152,15 @@ export const cashSummaryPayload = z.object({
   entryCount: num,
 });
 export type CashSummaryPayload = z.infer<typeof cashSummaryPayload>;
+
+// ── cash_ledger_page()  (0083) ──────────────────────────────────────────────
+// One page of the ledger in display order. running_balance is summed over the
+// whole ledger in that order, so it adds up row to row even for backdated
+// entries; balance_after stays the balance at the moment of posting.
+export const cashLedgerPagePayload = z.object({
+  total: num,
+  rows: rows<CashEntryRow & { running_balance: number }>(),
+});
 
 // ── my_production_assignments()  (0075) ─────────────────────────────────────
 // One page of the caller's own jobs, each with exactly one crew line — their

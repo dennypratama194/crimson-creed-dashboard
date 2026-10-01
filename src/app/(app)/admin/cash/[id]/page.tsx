@@ -85,7 +85,9 @@ export default async function CashEntryPage({
               {signedMoney(entry.direction, entry.amount)}
             </span>
           </Row>
-          <Row label="Balance after">{formatMoney(entry.balance_after)}</Row>
+          <Row label="Balance when recorded">
+            {formatMoney(entry.balance_after)}
+          </Row>
           <Row label="Date">{formatDateTime(entry.occurred_at)}</Row>
           <Row label="Source">{CASH_ENTRY_SOURCE_LABEL[entry.source]}</Row>
           <Row label="Handled by">{handledByName ?? "—"}</Row>

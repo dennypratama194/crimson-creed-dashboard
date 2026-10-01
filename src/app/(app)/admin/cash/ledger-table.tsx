@@ -91,7 +91,7 @@ export function LedgerTable({ rows }: { rows: CashEntryRow[] }) {
               {signedMoney(entry.direction, entry.amount)}
             </TableCell>
             <TableCell className="text-right text-muted-foreground tabular-nums">
-              {formatMoney(entry.balance_after)}
+              {formatMoney(entry.running_balance)}
             </TableCell>
             <TableCell className="text-right">
               <ChevronRight

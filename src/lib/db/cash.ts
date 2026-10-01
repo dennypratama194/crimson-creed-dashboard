@@ -7,7 +7,11 @@ import type {
 } from "@/lib/constants/enums";
 import type { Tables } from "@/lib/database.types";
 import { getMemberNames } from "@/lib/db/members";
-import { cashSummaryPayload, parseRpcPayload } from "@/lib/db/contracts";
+import {
+  cashLedgerPagePayload,
+  cashSummaryPayload,
+  parseRpcPayload,
+} from "@/lib/db/contracts";
 import { isUuid } from "@/lib/db/ids";
 import { pageBounds } from "@/lib/db/paging";
 import { createClient } from "@/lib/supabase/server";
@@ -56,10 +60,17 @@ export async function getCashSummary(range?: {
 }
 
 export type CashEntryRow = CashEntry & {
+  /** Ledger balance in display order — see `cash_ledger_page()` (0083). */
+  running_balance: number;
   created_by_name: string | null;
   handled_by_name: string | null;
 };
 
+/**
+ * One page of the ledger, newest first, filtered and paged in SQL by
+ * `cash_ledger_page()` (0083). Each row's `running_balance` is summed over the
+ * whole ledger in this same order, so backdated entries still add up.
+ */
 export async function listCashEntries(options: {
   page?: number;
   direction?: CashDirection;
@@ -73,23 +84,23 @@ export async function listCashEntries(options: {
 }> {
   const supabase = await createClient();
   const pageSize = CASH_ENTRY_PAGE_SIZE;
-  const { page, from, to } = pageBounds(options.page, pageSize);
+  const { page, from } = pageBounds(options.page, pageSize);
 
-  let query = supabase
-    .from("cash_entries")
-    .select("*", { count: "exact" })
-    .order("occurred_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-
-  if (options.direction) query = query.eq("direction", options.direction);
-  if (options.category) query = query.eq("category", options.category);
-  if (options.source) query = query.eq("source", options.source);
-
-  const { data, error, count } = await query.range(from, to);
+  const { data, error } = await supabase.rpc("cash_ledger_page", {
+    p_direction: options.direction ?? null,
+    p_category: options.category ?? null,
+    p_source: options.source ?? null,
+    p_limit: pageSize,
+    p_offset: from,
+  });
   if (error) throw error;
 
-  const rows = data ?? [];
+  const payload = parseRpcPayload(
+    cashLedgerPagePayload,
+    data,
+    "cash_ledger_page",
+  );
+  const rows = payload.rows;
   const names = await getMemberNames(
     rows
       .flatMap((r) => [r.created_by, r.handled_by])
@@ -102,7 +113,7 @@ export async function listCashEntries(options: {
       created_by_name: r.created_by ? (names.get(r.created_by) ?? null) : null,
       handled_by_name: r.handled_by ? (names.get(r.handled_by) ?? null) : null,
     })),
-    total: count ?? 0,
+    total: payload.total,
     page,
     pageSize,
   };

@@ -1127,6 +1127,64 @@ await expect("a reversal carries the original's handler", async () => {
   );
 });
 
+// ── cash ledger running balance (0083) ──────────────────────────────────────
+const ledgerPayload = ({ p }) => (typeof p === "string" ? JSON.parse(p) : p);
+let backdated;
+await expect(
+  "ledger balance adds up row to row, backdated entries included",
+  async () => {
+    backdated = await one(
+      `select * from record_cash_entry('IN', 1000, 'OTHER_INCOME', '2000-01-01T00:00:00Z', 'backdated', false)`,
+    );
+    const p = ledgerPayload(
+      await one(`select cash_ledger_page(null, null, null, 100, 0) as p`),
+    );
+    const acct = await one(`select balance from cash_account where id = true`);
+    assert(p.total === p.rows.length, `total ${p.total} vs ${p.rows.length}`);
+    assert(
+      Number(p.rows[0].running_balance) === Number(acct.balance),
+      `top row ${p.rows[0].running_balance} vs account ${acct.balance}`,
+    );
+    for (let i = 0; i < p.rows.length - 1; i++) {
+      const r = p.rows[i];
+      const delta = (r.direction === "IN" ? 1 : -1) * Number(r.amount);
+      const step =
+        Number(r.running_balance) - Number(p.rows[i + 1].running_balance);
+      assert(step === delta, `${r.entry_number}: step ${step} vs ${delta}`);
+    }
+    const last = p.rows[p.rows.length - 1];
+    assert(last.id === backdated.id, "backdated entry should sort oldest");
+    assert(
+      Number(last.running_balance) === 1000,
+      `backdated running_balance ${last.running_balance}`,
+    );
+    assert(
+      Number(backdated.balance_after) === Number(acct.balance),
+      "balance_after stays the balance at posting",
+    );
+  },
+);
+await expect("a filter narrows the rows, not the balance", async () => {
+  const p = ledgerPayload(
+    await one(
+      `select cash_ledger_page(null, 'OTHER_INCOME', null, 100, 0) as p`,
+    ),
+  );
+  assert(
+    p.rows.every((r) => r.category === "OTHER_INCOME"),
+    "filter leaked another category",
+  );
+  const row = p.rows.find((r) => r.id === backdated.id);
+  assert(Number(row.running_balance) === 1000, `got ${row?.running_balance}`);
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "member cannot read the cash ledger page",
+  () => db.query(`select cash_ledger_page()`),
+  "Super Admin",
+);
+await asRole("authenticated", admin.id);
+
 await asRole("authenticated", m1.id);
 await expect("member cannot see the cash ledger or balance", async () => {
   const e = await one(`select count(*)::int n from cash_entries`);

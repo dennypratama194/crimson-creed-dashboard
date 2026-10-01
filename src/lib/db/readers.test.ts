@@ -166,16 +166,27 @@ describe("pagination is stable across equal sort keys", () => {
     expectCompleteAndUnique({ ids, total }, N);
   });
 
+  // Ordering (with id as the tie-break) and paging happen in SQL, in
+  // cash_ledger_page() (0083) — covered by db:test. Here: the reader pages
+  // through the RPC by offset without dropping or repeating a row.
   it("cash entries: identical occurred_at and created_at", async () => {
+    const ledger = Array.from({ length: 60 }, (_, i) => ({
+      id: uuid(i),
+      occurred_at: TS,
+      created_at: TS,
+      created_by: null,
+      handled_by: null,
+      running_balance: 0,
+    }));
     installFake({
-      tables: {
-        cash_entries: Array.from({ length: 60 }, (_, i) => ({
-          id: uuid(i),
-          occurred_at: TS,
-          created_at: TS,
-          created_by: null,
-          handled_by: null,
-        })),
+      rpc: {
+        cash_ledger_page: (args) => ({
+          total: ledger.length,
+          rows: ledger.slice(
+            Number(args.p_offset),
+            Number(args.p_offset) + Number(args.p_limit),
+          ),
+        }),
       },
     });
     const { listCashEntries } = await import("@/lib/db/cash");

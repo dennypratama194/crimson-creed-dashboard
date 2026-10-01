@@ -25,13 +25,28 @@
  * logon, which is why everything is also written to a log file — a hidden
  * process has nowhere else to say what went wrong.
  *
+ * Multiple brands on the SAME game server (e.g. Crimson Creed and 30s Fams both
+ * play in iMe Roleplay) share one relay and one tunnel — there is only one real
+ * game server to reach — but each brand's deployment reads its OWN Supabase
+ * project's `fivem_uplink` row. So one heartbeat publishes the same resolved
+ * endpoint to every configured target, not just the primary one. Add
+ * `FIVEM_UPLINK_TARGET_2_URL` / `FIVEM_UPLINK_TARGET_2_KEY` for a second brand's
+ * project, `_3_` for a third, and so on — numbering must start at 2 and be
+ * contiguous (it stops at the first gap). A brand with no game server of its
+ * own (a genuinely different FiveM server) does not belong here at all: give it
+ * its own separate uplink process instead, pointed at that server.
+ *
  * Env (read from .env.local at the repo root, or the real environment):
- *   NEXT_PUBLIC_SUPABASE_URL     required
- *   SUPABASE_SERVICE_ROLE_KEY    required — writes bypass RLS
- *   FIVEM_RELAY_PORT             relay listen port          (default 8787)
- *   FIVEM_HEARTBEAT_MS           re-publish cadence         (default 60000)
- *   FIVEM_TUNNEL_URL             skip cloudflared and publish this fixed URL
- *                                (for a named tunnel or a reserved ngrok domain)
+ *   NEXT_PUBLIC_SUPABASE_URL       required — primary target
+ *   SUPABASE_SERVICE_ROLE_KEY      required — primary target; writes bypass RLS
+ *   FIVEM_UPLINK_TARGET_2_URL      optional — a second brand's project
+ *   FIVEM_UPLINK_TARGET_2_KEY      required if _2_URL is set
+ *   FIVEM_UPLINK_TARGET_3_URL      optional — a third, and so on
+ *   FIVEM_UPLINK_TARGET_3_KEY      required if _3_URL is set
+ *   FIVEM_RELAY_PORT               relay listen port          (default 8787)
+ *   FIVEM_HEARTBEAT_MS             re-publish cadence         (default 60000)
+ *   FIVEM_TUNNEL_URL               skip cloudflared and publish this fixed URL
+ *                                  (for a named tunnel or a reserved ngrok domain)
  */
 
 import { spawn } from "node:child_process";
@@ -66,6 +81,32 @@ for (const envFile of [".env.relay.local", ".env.prod.local", ".env.local"]) {
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+/**
+ * Every Supabase project this heartbeat publishes to: the primary, plus any
+ * `FIVEM_UPLINK_TARGET_{n}_URL` / `_KEY` pair, numbered contiguously from 2.
+ * `readPublishedRow()` (the standby/primary decision) only ever looks at
+ * `targets[0]` — the extra targets are write-only followers of that decision,
+ * not separate primaries with their own takeover logic.
+ */
+function resolveTargets() {
+  const targets = [{ label: "primary", url: SUPABASE_URL, key: SERVICE_KEY }];
+  for (let n = 2; ; n += 1) {
+    const url = process.env[`FIVEM_UPLINK_TARGET_${n}_URL`]?.trim();
+    const key = process.env[`FIVEM_UPLINK_TARGET_${n}_KEY`]?.trim();
+    if (!url && !key) break;
+    if (!url || !key) {
+      log(
+        `[uplink] FIVEM_UPLINK_TARGET_${n}_URL and _KEY must both be set — ` +
+          `ignoring target ${n} (only one was).`,
+      );
+      break;
+    }
+    targets.push({ label: `target${n}`, url, key });
+  }
+  return targets;
+}
+
 const PORT = Number(process.env.FIVEM_RELAY_PORT) || 8787;
 const HEARTBEAT_MS = Number(process.env.FIVEM_HEARTBEAT_MS) || 60_000;
 const FIXED_URL = process.env.FIVEM_TUNNEL_URL?.trim() || null;
@@ -114,6 +155,8 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
   process.exit(1);
 }
 
+const TARGETS = resolveTargets();
+
 const QUICK_TUNNEL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 
 /**
@@ -140,16 +183,16 @@ function resolveCloudflared() {
 }
 
 /**
- * Write the current address into the singleton row. The service key bypasses
- * RLS, which is the only way to write this table — no RPC exposes it, so a
- * browser can never repoint where the server makes requests.
+ * Write the current address into one target's singleton row. The service key
+ * bypasses RLS, which is the only way to write this table — no RPC exposes it,
+ * so a browser can never repoint where the server makes requests.
  */
-async function publish(endpoint) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/fivem_uplink?id=eq.true`, {
+async function publishTo(target, endpoint) {
+  const res = await fetch(`${target.url}/rest/v1/fivem_uplink?id=eq.true`, {
     method: "PATCH",
     headers: {
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
+      apikey: target.key,
+      authorization: `Bearer ${target.key}`,
       "content-type": "application/json",
       prefer: "return=minimal",
     },
@@ -162,10 +205,11 @@ async function publish(endpoint) {
 }
 
 /**
- * Read the singleton row so a `standby` can tell whether the primary is still
- * alive. Returns `{ endpoint, updatedAt }` or null. Throws on a transport/HTTP
- * error so the caller can decide to publish anyway rather than sit idle on a
- * hiccup.
+ * Read the primary target's singleton row so a `standby` can tell whether the
+ * primary machine is still alive. Only the primary target's row is checked —
+ * every other target is a write-only follower of that one decision. Returns
+ * `{ endpoint, updatedAt }` or null. Throws on a transport/HTTP error so the
+ * caller can decide to publish anyway rather than sit idle on a hiccup.
  */
 async function readPublishedRow() {
   const res = await fetch(
@@ -396,11 +440,19 @@ async function standbyShouldPublish() {
 async function heartbeat() {
   if (!current) return;
   if (ROLE === "standby" && !(await standbyShouldPublish())) return;
-  try {
-    await publish(current);
-    log(`[uplink] published ${current}`);
-  } catch (err) {
-    log(`[uplink] publish failed: ${err.message}`);
+
+  // One target's failure (a brand's project down, a bad key) never blocks the
+  // others — each publish is independent and logged on its own.
+  const results = await Promise.allSettled(
+    TARGETS.map((target) => publishTo(target, current)),
+  );
+  for (const [i, result] of results.entries()) {
+    const label = TARGETS[i].label;
+    if (result.status === "fulfilled") {
+      log(`[uplink] published ${current} -> ${label}`);
+    } else {
+      log(`[uplink] publish to ${label} failed: ${result.reason.message}`);
+    }
   }
 }
 
@@ -429,7 +481,8 @@ if (FIXED_URL) {
 }
 
 log(
-  `[uplink] role ${ROLE}, relay port ${PORT}, heartbeat ${HEARTBEAT_MS}ms` +
+  `[uplink] role ${ROLE}, ${TARGETS.length} target(s) (${TARGETS.map((t) => t.label).join(", ")}), ` +
+    `relay port ${PORT}, heartbeat ${HEARTBEAT_MS}ms` +
     (ROLE === "standby" ? `, takeover after ${STANDBY_TAKEOVER_MS}ms` : "") +
     `, log ${logFile}`,
 );

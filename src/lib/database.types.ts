@@ -984,6 +984,16 @@ export interface Database {
         Args: { p_from?: string | null; p_to?: string | null };
         Returns: Json;
       };
+      cash_ledger_page: {
+        Args: {
+          p_direction?: CashDirection | null;
+          p_category?: CashCategory | null;
+          p_source?: CashEntrySource | null;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: Json;
+      };
       my_earnings_summary: {
         Args: Record<string, never>;
         Returns: Json;
