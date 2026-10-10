@@ -127,7 +127,7 @@ export const adminDashboardPayload = z.object({
 });
 export type AdminDashboardPayload = z.infer<typeof adminDashboardPayload>;
 
-// ── member_dashboard()  (0050, extended by 0063) ────────────────────────────
+// ── member_dashboard()  (0050, extended by 0063 and 0085) ───────────────────
 // The row lists are typed by their consumers in src/lib/db/dashboard.ts, which
 // owns the Order / Notification / submission-alert aliases.
 export const memberDashboardPayload = z.object({
@@ -142,6 +142,8 @@ export const memberDashboardPayload = z.object({
   recentOrders: rows<unknown>(),
   recentNotifications: rows<unknown>(),
   submissionDebt: z.array(z.string()),
+  // 0085. Optional so an app deployed ahead of the migration still parses.
+  submissionWaitingOn: z.string().nullable().optional(),
 });
 
 // ── cash_summary()  (0057) ──────────────────────────────────────────────────

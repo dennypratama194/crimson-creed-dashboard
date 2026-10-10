@@ -6,9 +6,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MonthPicker as MonthPickerField } from "@/components/ui/month-picker";
 
 /**
- * Drives the `?month=YYYY-MM` param for the submissions grid. Picking the
- * current month drops the param (current month is the default). A new month
- * starts from its first page.
+ * Drives the `?month=YYYY-MM` param on the submissions pages (the member's own
+ * and the Super Admin grid). Picking the current month drops the param
+ * (current month is the default). A new month starts from its first page.
  */
 export function MonthPicker({ value, max }: { value: string; max: string }) {
   const router = useRouter();

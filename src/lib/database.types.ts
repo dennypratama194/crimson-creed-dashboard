@@ -964,6 +964,13 @@ export interface Database {
         Args: Record<string, never>;
         Returns: string[];
       };
+      my_owed_submissions: {
+        Args: Record<string, never>;
+        Returns: {
+          period_month: string;
+          status: MemberSubmissionStatus | null;
+        }[];
+      };
       member_dashboard: {
         Args: Record<string, never>;
         Returns: Json;

@@ -160,7 +160,15 @@ file is wrong about process; fix the one that strayed.
   role only) with **no CONFIRMED** submission — MISSING / PENDING / REJECTED all
   block (strict). Members clear a month via `submit_material_submission(…, p_period_month)`;
   it stays PENDING until a Super Admin confirms it. `my_submission_debt()` backs
-  the member-facing block on `/orders/new`, `/submissions` and the dashboard.
+  the member-facing block on `/orders/new` and the dashboard. **Past months
+  first** (0084): `submit_material_submission` refuses the _current_ month while
+  any owed month is MISSING or REJECTED — a PENDING owed month no longer holds
+  it back, though ordering still waits for CONFIRMED. `/submissions` has a month
+  picker fed by `my_owed_submissions()` (owed months + status) and shows the
+  current month's button only once every owed month is handed in.
+  `member_dashboard()` returns `submissionWaitingOn` (0085, the same oldest
+  MISSING / REJECTED owed month) so the dashboard nags about that month instead
+  of the current one.
   Do not add grace periods, auto-approval, or per-material owed logic without
   agreeing it first.
 - `items.stock_type` (Phase 18) splits the `items` table: `CATALOGUE` is the

@@ -10,7 +10,13 @@ export default function LoadingSubmissions() {
       />
       <div className="flex flex-col gap-6">
         <Skeleton className="h-24 w-full rounded-xl" />
-        <Skeleton className="h-32 w-full rounded-xl" />
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-9 w-[10.5rem]" />
+          </div>
+          <Skeleton className="h-24 w-full rounded-xl" />
+        </div>
         <div className="flex flex-col gap-3">
           <Skeleton className="h-5 w-24" />
           <div className="overflow-hidden rounded-xl border border-border">

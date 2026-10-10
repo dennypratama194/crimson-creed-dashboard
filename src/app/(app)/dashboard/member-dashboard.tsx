@@ -42,14 +42,21 @@ export function MemberDashboardView({
     distribution,
     submissionAlert,
     submissionDebt,
+    submissionWaitingOn,
     activeOrders,
     recentOrders,
     recentNotifications,
   } = data;
 
   const submissionMonth = formatMonth(submissionAlert.periodMonth);
-  const submissionNag =
-    submissionAlert.state === "MISSING"
+  // While an earlier month is still to hand in, the current month cannot be
+  // submitted (0084) — point at the month that is actually actionable.
+  const submissionNag = submissionWaitingOn
+    ? {
+        tone: "warning" as const,
+        text: `Hand in your ${formatMonth(submissionWaitingOn)} material submission first.`,
+      }
+    : submissionAlert.state === "MISSING"
       ? {
           tone: "warning" as const,
           text: `Your material submission for ${submissionMonth} is due.`,
@@ -102,7 +109,11 @@ export function MemberDashboardView({
 
       {submissionNag ? (
         <Link
-          href="/submissions"
+          href={
+            submissionWaitingOn
+              ? `/submissions?month=${submissionWaitingOn.slice(0, 7)}`
+              : "/submissions"
+          }
           className={cn(
             "mb-4 flex items-center gap-3 rounded-lg border border-l-4 px-4 py-3 text-sm transition-colors",
             submissionNag.tone === "warning" &&

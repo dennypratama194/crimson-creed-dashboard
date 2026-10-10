@@ -104,6 +104,11 @@ export type MemberDashboard = {
   submissionAlert: MemberSubmissionAlert;
   /** Closed months owing a confirmed submission — ordering is locked while non-empty. */
   submissionDebt: string[];
+  /**
+   * Oldest owed month still to hand in (MISSING / REJECTED), `YYYY-MM-01`, or
+   * null. While set, the current month cannot be submitted (0084).
+   */
+  submissionWaitingOn: string | null;
   activeOrders: Order[];
   recentOrders: Order[];
   recentNotifications: Notification[];
@@ -122,6 +127,7 @@ type MemberDashboardPayload = {
   recentOrders: Order[];
   recentNotifications: Notification[];
   submissionDebt: string[];
+  submissionWaitingOn?: string | null;
 };
 
 /**
@@ -155,6 +161,7 @@ export async function getMemberDashboard(): Promise<MemberDashboard> {
       state: d.submissionState,
     },
     submissionDebt: [...d.submissionDebt].sort(),
+    submissionWaitingOn: d.submissionWaitingOn ?? null,
     activeOrders: d.activeOrders,
     recentOrders: d.recentOrders,
     recentNotifications: d.recentNotifications,

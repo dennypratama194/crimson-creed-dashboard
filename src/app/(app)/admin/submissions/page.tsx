@@ -45,7 +45,7 @@ import {
 import { SubmitMaterialsDialog } from "@/app/(app)/submissions/submit-materials-dialog";
 import { EditGateDialog } from "@/app/(app)/admin/submissions/edit-gate-dialog";
 import { EditTargetsDialog } from "@/app/(app)/admin/submissions/edit-targets-dialog";
-import { MonthPicker } from "@/app/(app)/admin/submissions/month-picker";
+import { MonthPicker } from "@/app/(app)/submissions/month-picker";
 import { ReviewSubmissionDialog } from "@/app/(app)/admin/submissions/review-submission-dialog";
 
 export const metadata: Metadata = { title: "Monthly submissions" };

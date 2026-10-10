@@ -199,6 +199,23 @@ export async function getMySubmissionDebt(): Promise<string[]> {
   return [...(data ?? [])].sort();
 }
 
+/**
+ * The same owed months, each with the caller's submission state for it —
+ * `MISSING`, `PENDING` or `REJECTED` (a confirmed month is not owed). Oldest
+ * first. Any MISSING / REJECTED month keeps the current month closed (0084).
+ */
+export async function getMyOwedSubmissions(): Promise<MemberSubmissionAlert[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("my_owed_submissions");
+  if (error) throw error;
+  return (data ?? [])
+    .map((r) => ({
+      periodMonth: r.period_month,
+      state: r.status ?? ("MISSING" as const),
+    }))
+    .sort((a, b) => a.periodMonth.localeCompare(b.periodMonth));
+}
+
 export type SubmissionGate = {
   enabled: boolean;
   /** First day of the reach-back month, `YYYY-MM-01`, or null when unset. */

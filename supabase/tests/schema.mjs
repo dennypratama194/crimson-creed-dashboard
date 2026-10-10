@@ -1908,6 +1908,42 @@ await expectThrows(
   () => db.query(`select create_order($1::jsonb, null)`, [gateOrder]),
   "monthly materials",
 );
+await expect(
+  "my_owed_submissions lists the owed month as not filed",
+  async () => {
+    const r = await db.query(
+      `select to_char(period_month, 'YYYY-MM-DD') m, status from my_owed_submissions()`,
+    );
+    assert(r.rows.length === 1, `expected 1 owed month, got ${r.rows.length}`);
+    assert(r.rows[0].m === gateStart, `owed ${r.rows[0].m}`);
+    assert(r.rows[0].status === null, `status ${r.rows[0].status}`);
+  },
+);
+// 0084: the current month waits until every owed month is handed in.
+const currentMonthSubmit = () =>
+  db.query(
+    `select * from submit_material_submission($1::jsonb, null, null, $2::uuid)`,
+    [subLines(250, 0, 0), memberId.admin],
+  );
+await expectThrows(
+  "current month is refused while an owed month is not handed in",
+  currentMonthSubmit,
+  "Hand in your .+ submission first",
+);
+// 0085: the dashboard points at the owed month instead of the current one.
+const dashboardGate = async () => {
+  const r = await one(`select member_dashboard() as d`);
+  const d = typeof r.d === "string" ? JSON.parse(r.d) : r.d;
+  return { waitingOn: d.submissionWaitingOn, debt: d.submissionDebt };
+};
+await expect("dashboard waits on the unfiled owed month", async () => {
+  const g = await dashboardGate();
+  assert(g.waitingOn === gateStart, `waitingOn ${g.waitingOn}`);
+  assert(
+    g.debt.length === 1 && g.debt[0] === gateStart,
+    `submissionDebt ${JSON.stringify(g.debt)}`,
+  );
+});
 
 let lateSub;
 await expect("member hands in the owed month (stays PENDING)", async () => {
@@ -1922,6 +1958,47 @@ await expectThrows(
   () => db.query(`select create_order($1::jsonb, null)`, [gateOrder]),
   "monthly materials",
 );
+await expect("current month opens once the owed month is PENDING", async () => {
+  const r = (await currentMonthSubmit()).rows[0];
+  assert(r.status === "PENDING", `status ${r.status}`);
+  const o = await one(`select status from my_owed_submissions()`);
+  assert(o.status === "PENDING", `owed status ${o.status}`);
+});
+await expect(
+  "dashboard stops waiting once the owed month is PENDING",
+  async () => {
+    const g = await dashboardGate();
+    assert(g.waitingOn === null, `waitingOn ${g.waitingOn}`);
+    assert(g.debt.length === 1, "a PENDING month is still debt for ordering");
+  },
+);
+
+await asRole("authenticated", admin.id);
+await expect("admin rejects the owed month", async () => {
+  const r = await one(`select * from reject_member_submission($1, $2)`, [
+    lateSub.id,
+    "recount",
+  ]);
+  assert(r.status === "REJECTED", `status ${r.status}`);
+});
+await asRole("authenticated", m1.id);
+await expectThrows(
+  "a REJECTED owed month blocks the current month again",
+  currentMonthSubmit,
+  "Hand in your .+ submission first",
+);
+await expect("dashboard waits again on the REJECTED month", async () => {
+  const g = await dashboardGate();
+  assert(g.waitingOn === gateStart, `waitingOn ${g.waitingOn}`);
+});
+await expect("member resubmits the owed month", async () => {
+  const r = await one(
+    `select * from submit_material_submission($1::jsonb, $2, $3::date, $4::uuid)`,
+    [subLines(10, 0, 0), "recounted", gateStart, memberId.admin],
+  );
+  assert(r.id === lateSub.id, "resubmit created a second row");
+  assert(r.status === "PENDING", `status ${r.status}`);
+});
 await expectThrows(
   "cannot hand in for a month before the start month",
   () =>
@@ -2004,6 +2081,10 @@ await expect(
       "recentNotifications not an array",
     );
     assert(Array.isArray(d.submissionDebt), "submissionDebt not an array");
+    assert(
+      "submissionWaitingOn" in d && d.submissionWaitingOn === null,
+      `submissionWaitingOn ${d.submissionWaitingOn} with the gate off`,
+    );
     // order rows come through as full records
     assert(
       d.recentOrders[0].order_number?.startsWith("CC-"),
@@ -3529,6 +3610,7 @@ const MEMBER_CALLABLE = new Set([
   "my_earnings_summary",
   "my_distribution_summary",
   "my_payslips",
+  "my_owed_submissions",
   "my_production_assignments",
   "my_submission_debt",
   "my_submission_history",
